@@ -1,0 +1,1067 @@
+<!-- <?php
+// database/migrations/2024_01_01_000001_create_complete_hospital_system_tables.php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        // =========================================================================
+        // PART 1: CORE TABLES - PATIENTS, DOCTORS, USERS, ROLES
+        // =========================================================================
+
+        // Roles table (for Spatie Permission)
+        Schema::create('roles_', function (Blueprint $table) {
+            $table->id();
+            $table->string('name')->unique();
+            $table->string('guard_name')->default('web');
+            $table->timestamps();
+        });
+
+        // Permissions table
+        Schema::create('permissions_', function (Blueprint $table) {
+            $table->id();
+            $table->string('name')->unique();
+            $table->string('guard_name')->default('web');
+            $table->timestamps();
+        });
+
+        // Model has roles
+        Schema::create('model_has_roles_', function (Blueprint $table) {
+            $table->unsignedBigInteger('role_id');
+            $table->string('model_type');
+            $table->unsignedBigInteger('model_id');
+            $table->index(['model_id', 'model_type']);
+            $table->foreign('role_id')->references('id')->on('roles')->onDelete('cascade');
+            $table->primary(['role_id', 'model_id', 'model_type']);
+        });
+
+        // Model has permissions
+        Schema::create('model_has_permissions_', function (Blueprint $table) {
+            $table->unsignedBigInteger('permission_id');
+            $table->string('model_type');
+            $table->unsignedBigInteger('model_id');
+            $table->index(['model_id', 'model_type']);
+            $table->foreign('permission_id')->references('id')->on('permissions')->onDelete('cascade');
+            $table->primary(['permission_id', 'model_id', 'model_type']);
+        });
+
+        // Role has permissions
+        Schema::create('role_has_permissions_', function (Blueprint $table) {
+            $table->unsignedBigInteger('permission_id');
+            $table->unsignedBigInteger('role_id');
+            $table->foreign('permission_id')->references('id')->on('permissions')->onDelete('cascade');
+            $table->foreign('role_id')->references('id')->on('roles')->onDelete('cascade');
+            $table->primary(['permission_id', 'role_id']);
+        });
+
+       
+
+        // Patients table
+       
+        // Doctors table
+        Schema::create('doctors', function (Blueprint $table) {
+            $table->id();
+            $table->string('doctor_number')->unique();
+            $table->string('first_name');
+            $table->string('last_name');
+            $table->string('specialization');
+            $table->string('sub_specialty')->nullable();
+            $table->string('license_number')->unique();
+            $table->string('phone');
+            $table->string('email')->unique();
+            $table->string('qualification'); // MD, MBBS, etc.
+            $table->integer('years_experience')->nullable();
+            $table->json('available_days')->nullable(); // ['monday', 'wednesday']
+            $table->json('consultation_hours')->nullable();
+            $table->decimal('consultation_fee', 10, 2)->nullable();
+            $table->enum('status', ['active', 'inactive', 'on_leave', 'retired'])->default('active');
+            $table->text('biography')->nullable();
+            $table->string('profile_photo')->nullable();
+            $table->foreignId('user_id')->nullable()->constrained('users');
+            $table->timestamps();
+
+            $table->index(['doctor_number', 'specialization', 'status']);
+        });
+
+        // =========================================================================
+        // PART 2: VISITS, ADMISSIONS, CONSULTATIONS
+        // =========================================================================
+
+        // Visits table (tracks each patient encounter)
+        Schema::create('visits', function (Blueprint $table) {
+            $table->id();
+            $table->string('visit_number')->unique();
+            $table->foreignId('patient_id')->constrained()->onDelete('cascade');
+            $table->enum('visit_type', ['outpatient', 'inpatient', 'emergency', 'consultation', 'follow_up']);
+            $table->enum('payment_status', ['pending', 'partial', 'paid', 'waived'])->default('pending');
+            $table->enum('status', ['active', 'discharged', 'transferred', 'cancelled'])->default('active');
+            $table->datetime('check_in_time');
+            $table->datetime('check_out_time')->nullable();
+            $table->string('triage_category')->nullable(); // emergency, urgent, non-urgent
+            $table->text('chief_complaint')->nullable();
+            $table->foreignId('triage_nurse_id')->nullable()->constrained('users');
+            $table->foreignId('admitting_officer_id')->nullable()->constrained('users');
+            $table->text('notes')->nullable();
+            $table->timestamps();
+
+            $table->index(['patient_id', 'status', 'visit_type']);
+            $table->index(['visit_number', 'check_in_time']);
+        });
+
+        // Admissions table
+        Schema::create('admissions', function (Blueprint $table) {
+            $table->id();
+            $table->string('admission_number')->unique();
+            $table->foreignId('visit_id')->constrained()->onDelete('cascade');
+            $table->foreignId('patient_id')->constrained()->onDelete('cascade');
+            $table->datetime('admission_date');
+            $table->datetime('discharge_date')->nullable();
+            $table->string('ward'); // general, private, icu, maternity, paediatric
+            $table->string('room_number')->nullable();
+            $table->string('bed_number')->nullable();
+            $table->enum('admission_type', ['emergency', 'elective', 'transfer'])->default('elective');
+            $table->enum('status', ['admitted', 'discharged', 'transferred'])->default('admitted');
+            $table->text('reason_for_admission');
+            $table->string('admitting_diagnosis')->nullable();
+            $table->string('discharge_diagnosis')->nullable();
+            $table->foreignId('admitting_doctor_id')->constrained('doctors');
+            $table->foreignId('attending_doctor_id')->nullable()->constrained('doctors');
+            $table->text('treatment_plan')->nullable();
+            $table->text('discharge_instructions')->nullable();
+            $table->enum('discharge_type', ['regular', 'against_medical_advice', 'transfer', 'expired'])->nullable();
+            $table->timestamps();
+
+            $table->index(['patient_id', 'status', 'ward']);
+            $table->index(['admission_date', 'discharge_date']);
+        });
+
+        // Consultations table
+        Schema::create('consultations', function (Blueprint $table) {
+            $table->id();
+            $table->string('consultation_number')->unique();
+            $table->foreignId('visit_id')->constrained()->onDelete('cascade');
+            $table->foreignId('patient_id')->constrained();
+            $table->foreignId('doctor_id')->constrained('doctors');
+            $table->datetime('consultation_date');
+            $table->string('visit_type')->default('first_visit');
+            $table->text('chief_complaint');
+            $table->text('history_of_presenting_illness')->nullable();
+            $table->text('past_medical_history')->nullable();
+            $table->text('drug_history')->nullable();
+            $table->text('family_social_history')->nullable();
+            $table->text('review_of_systems')->nullable();
+            $table->text('physical_examination')->nullable();
+            $table->text('assessment')->nullable();
+            $table->text('diagnosis')->nullable();
+            $table->string('icd10_code')->nullable();
+            $table->text('treatment_plan')->nullable();
+            $table->text('follow_up_instructions')->nullable();
+            $table->date('follow_up_date')->nullable();
+            $table->enum('status', ['pending', 'in_progress', 'completed', 'cancelled'])->default('pending');
+            $table->timestamps();
+
+            $table->index(['patient_id', 'doctor_id', 'consultation_date']);
+            $table->index(['visit_id', 'status']);
+        });
+
+        // Vital Signs
+        Schema::create('vital_signs', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('visit_id')->constrained()->onDelete('cascade');
+            $table->foreignId('consultation_id')->nullable()->constrained();
+            $table->foreignId('patient_id')->constrained();
+            $table->datetime('recorded_at');
+            $table->decimal('temperature', 5, 2)->nullable();
+            $table->integer('heart_rate')->nullable();
+            $table->integer('respiratory_rate')->nullable();
+            $table->string('blood_pressure_systolic')->nullable();
+            $table->string('blood_pressure_diastolic')->nullable();
+            $table->decimal('weight', 5, 2)->nullable();
+            $table->decimal('height', 5, 2)->nullable();
+            $table->decimal('bmi', 5, 2)->nullable();
+            $table->decimal('oxygen_saturation', 5, 2)->nullable();
+            $table->decimal('pain_score', 3, 1)->nullable();
+            $table->decimal('head_circumference', 5, 2)->nullable();
+            $table->decimal('abdominal_circumference', 5, 2)->nullable();
+            $table->text('notes')->nullable();
+            $table->foreignId('recorded_by')->constrained('users');
+            $table->timestamps();
+
+            $table->index(['patient_id', 'recorded_at']);
+        });
+
+        // =========================================================================
+        // PART 3: SERVICES, BILLING, PAYMENTS
+        // =========================================================================
+
+        // Services catalog
+        Schema::create('services', function (Blueprint $table) {
+            $table->id();
+            $table->string('service_code')->unique();
+            $table->string('name');
+            $table->string('category'); // consultation, lab, radiology, pharmacy, procedure, accommodation
+            $table->string('sub_category')->nullable();
+            $table->string('department');
+            $table->decimal('price', 10, 2);
+            $table->decimal('insurance_price', 10, 2)->nullable();
+            $table->text('description')->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->boolean('requires_doctor_order')->default(true);
+            $table->boolean('is_emergency_only')->default(false);
+            $table->boolean('requires_pre_approval')->default(false);
+            $table->integer('duration_minutes')->nullable();
+            $table->json('applicable_departments')->nullable();
+            $table->string('tax_rate')->default(0);
+            $table->timestamps();
+
+            $table->index(['category', 'department', 'is_active']);
+            $table->index('service_code');
+        });
+
+        // Bills
+        Schema::create('bills', function (Blueprint $table) {
+            $table->id();
+            $table->string('bill_number')->unique();
+            $table->foreignId('visit_id')->constrained()->onDelete('cascade');
+            $table->foreignId('patient_id')->constrained();
+            $table->decimal('subtotal', 10, 2)->default(0);
+            $table->decimal('discount', 10, 2)->default(0);
+            $table->decimal('tax', 10, 2)->default(0);
+            $table->decimal('total', 10, 2)->default(0);
+            $table->decimal('paid', 10, 2)->default(0);
+            $table->decimal('balance', 10, 2)->default(0);
+            $table->decimal('credit_balance', 10, 2)->default(0); // Overpayment
+            $table->enum('status', ['pending', 'partial', 'paid', 'cancelled', 'refunded', 'waived'])->default('pending');
+            $table->enum('payment_type', ['cash', 'insurance', 'mixed', 'waiver'])->default('cash');
+            $table->string('insurance_provider')->nullable();
+            $table->string('insurance_approval_code')->nullable();
+            $table->date('insurance_approval_date')->nullable();
+            $table->decimal('insurance_covered_amount', 10, 2)->nullable();
+            $table->decimal('patient_responsibility', 10, 2)->nullable();
+            $table->text('notes')->nullable();
+            $table->text('waiver_reason')->nullable();
+            $table->foreignId('waiver_approved_by')->nullable()->constrained('users');
+            $table->datetime('waiver_approved_at')->nullable();
+            $table->foreignId('created_by')->constrained('users');
+            $table->foreignId('cancelled_by')->nullable()->constrained('users');
+            $table->datetime('cancelled_at')->nullable();
+            $table->text('cancellation_reason')->nullable();
+            $table->timestamps();
+
+            $table->index(['patient_id', 'status', 'created_at']);
+            $table->index(['visit_id', 'bill_number']);
+            $table->index(['insurance_provider', 'insurance_approval_code']);
+        });
+
+        // Bill Items
+        Schema::create('bill_items', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('bill_id')->constrained()->onDelete('cascade');
+            $table->morphs('billable'); // Links to specific service (consultation, lab test, drug, etc.)
+            $table->string('description');
+            $table->integer('quantity')->default(1);
+            $table->decimal('unit_price', 10, 2);
+            $table->decimal('discount', 10, 2)->default(0);
+            $table->decimal('tax', 10, 2)->default(0);
+            $table->decimal('total', 10, 2);
+            $table->enum('payment_status', ['pending', 'paid', 'waived', 'cancelled'])->default('pending');
+            $table->enum('service_status', ['ordered', 'completed', 'cancelled'])->default('ordered');
+            $table->boolean('is_emergency')->default(false);
+            $table->text('notes')->nullable();
+            $table->timestamps();
+
+            $table->index(['bill_id', 'payment_status']);
+            $table->index(['billable_type', 'billable_id']);
+        });
+
+        // Payments
+        Schema::create('payments', function (Blueprint $table) {
+            $table->id();
+            $table->string('payment_number')->unique();
+            $table->foreignId('bill_id')->constrained();
+            $table->decimal('amount', 10, 2);
+            $table->enum('method', ['cash', 'mobile_money', 'credit_card', 'debit_card', 'bank_transfer', 'insurance', 'cheque', 'mobile_money']);
+            $table->string('mobile_money_provider')->nullable(); // MTN, Airtel, Tigo
+            $table->string('mobile_money_number')->nullable();
+            $table->string('transaction_reference')->nullable();
+            $table->string('cheque_number')->nullable();
+            $table->string('bank_name')->nullable();
+            $table->string('card_last_four')->nullable();
+            $table->enum('status', ['pending', 'completed', 'failed', 'refunded', 'voided'])->default('pending');
+            $table->text('notes')->nullable();
+            $table->foreignId('received_by')->constrained('users');
+            $table->datetime('payment_date');
+            $table->datetime('voided_at')->nullable();
+            $table->foreignId('voided_by')->nullable()->constrained('users');
+            $table->text('void_reason')->nullable();
+            $table->timestamps();
+
+            $table->index(['bill_id', 'method', 'status']);
+            $table->index(['payment_number', 'transaction_reference']);
+        });
+
+        // Invoices
+        Schema::create('invoices', function (Blueprint $table) {
+            $table->id();
+            $table->string('invoice_number')->unique();
+            $table->foreignId('bill_id')->constrained();
+            $table->date('issue_date');
+            $table->date('due_date');
+            $table->decimal('amount', 10, 2);
+            $table->decimal('paid_amount', 10, 2)->default(0);
+            $table->enum('status', ['draft', 'sent', 'partial', 'paid', 'overdue', 'cancelled'])->default('draft');
+            $table->string('pdf_path')->nullable();
+            $table->datetime('sent_at')->nullable();
+            $table->datetime('paid_at')->nullable();
+            $table->text('notes')->nullable();
+            $table->timestamps();
+        });
+
+        // =========================================================================
+        // PART 4: PHARMACY & INVENTORY
+        // =========================================================================
+
+        // Drugs/Products catalog
+        Schema::create('drugs', function (Blueprint $table) {
+            $table->id();
+            $table->string('drug_code')->unique();
+            $table->string('name');
+            $table->string('generic_name')->nullable();
+            $table->string('category'); // antibiotic, analgesic, antimalarial, etc.
+            $table->string('therapeutic_class')->nullable();
+            $table->string('dosage_form'); // tablet, capsule, syrup, injection, cream
+            $table->string('strength');
+            $table->string('unit'); // mg, ml, g, IU
+            $table->string('route_of_administration')->nullable(); // oral, IV, topical
+            $table->string('manufacturer')->nullable();
+            $table->string('manufacturer_country')->nullable();
+            $table->boolean('requires_prescription')->default(true);
+            $table->boolean('is_controlled')->default(false); // narcotics, psychotropics
+            $table->string('controlled_category')->nullable(); // Class A, B, C
+            $table->decimal('selling_price', 10, 2);
+            $table->decimal('purchase_price', 10, 2)->nullable();
+            $table->integer('reorder_level');
+            $table->integer('max_level')->nullable();
+            $table->string('storage_conditions')->nullable(); // room temperature, refrigerated
+            $table->text('description')->nullable();
+            $table->text('side_effects')->nullable();
+            $table->text('contraindications')->nullable();
+            $table->json('drug_interactions')->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->timestamps();
+
+            $table->index(['drug_code', 'category', 'is_active']);
+            $table->index(['name', 'generic_name']);
+        });
+
+        // Drug stocks (batches)
+        Schema::create('drug_stocks', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('drug_id')->constrained()->onDelete('cascade');
+            $table->string('batch_number');
+            $table->date('manufacturing_date')->nullable();
+            $table->date('expiry_date');
+            $table->integer('initial_quantity');
+            $table->integer('current_quantity');
+            $table->integer('quantity_reserved')->default(0);
+            $table->decimal('purchase_price', 10, 2);
+            $table->decimal('selling_price', 10, 2);
+            $table->string('location')->nullable(); // shelf, rack, fridge number
+            $table->enum('status', ['in_stock', 'low_stock', 'out_of_stock', 'expired', 'damaged', 'quarantine'])->default('in_stock');
+            $table->date('received_date');
+            $table->foreignId('received_by')->constrained('users');
+            $table->text('notes')->nullable();
+            $table->timestamps();
+
+            $table->index(['drug_id', 'expiry_date', 'status']);
+            $table->index(['batch_number', 'location']);
+            $table->unique(['drug_id', 'batch_number']);
+        });
+
+        // Stock movements (ledger)
+        Schema::create('stock_movements', function (Blueprint $table) {
+            $table->id();
+            $table->string('reference_number')->unique();
+            $table->foreignId('drug_id')->constrained();
+            $table->foreignId('drug_stock_id')->nullable()->constrained();
+            $table->enum('movement_type', ['purchase', 'dispense', 'return', 'adjustment', 'transfer', 'damage', 'expired', 'theft']);
+            $table->integer('quantity');
+            $table->integer('quantity_before');
+            $table->integer('quantity_after');
+            $table->decimal('unit_cost', 10, 2)->nullable();
+            $table->decimal('total_cost', 10, 2)->nullable();
+            $table->morphs('reference'); // Links to purchase, dispensation, etc.
+            $table->text('reason')->nullable();
+            $table->foreignId('created_by')->constrained('users');
+            $table->timestamps();
+
+            $table->index(['drug_id', 'movement_type', 'created_at']);
+            $table->index('reference_number');
+        });
+
+        // Suppliers
+        Schema::create('suppliers', function (Blueprint $table) {
+            $table->id();
+            $table->string('supplier_code')->unique();
+            $table->string('name');
+            $table->string('contact_person')->nullable();
+            $table->string('phone');
+            $table->string('alternate_phone')->nullable();
+            $table->string('email')->nullable();
+            $table->text('address')->nullable();
+            $table->string('city')->nullable();
+            $table->string('country')->default('Rwanda');
+            $table->string('tax_number')->nullable();
+            $table->string('payment_terms')->nullable(); // net30, net60, COD
+            $table->json('products_supplied')->nullable();
+            $table->enum('status', ['active', 'inactive', 'blacklisted'])->default('active');
+            $table->text('notes')->nullable();
+            $table->timestamps();
+
+            $table->index(['supplier_code', 'status']);
+        });
+
+        // Purchases (supplier orders)
+        Schema::create('purchases', function (Blueprint $table) {
+            $table->id();
+            $table->string('purchase_order_number')->unique();
+            $table->foreignId('supplier_id')->constrained();
+            $table->string('supplier_invoice_number')->nullable();
+            $table->date('order_date');
+            $table->date('expected_delivery_date')->nullable();
+            $table->date('received_date')->nullable();
+            $table->enum('status', ['draft', 'ordered', 'partial', 'received', 'cancelled'])->default('draft');
+            $table->decimal('subtotal', 10, 2);
+            $table->decimal('tax', 10, 2)->default(0);
+            $table->decimal('shipping_cost', 10, 2)->default(0);
+            $table->decimal('other_costs', 10, 2)->default(0);
+            $table->decimal('total', 10, 2);
+            $table->text('notes')->nullable();
+            $table->foreignId('created_by')->constrained('users');
+            $table->foreignId('approved_by')->nullable()->constrained('users');
+            $table->datetime('approved_at')->nullable();
+            $table->timestamps();
+
+            $table->index(['purchase_order_number', 'status']);
+            $table->index('supplier_id');
+        });
+
+        // Purchase items
+        Schema::create('purchase_items', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('purchase_id')->constrained()->onDelete('cascade');
+            $table->foreignId('drug_id')->constrained();
+            $table->integer('quantity_ordered');
+            $table->integer('quantity_received')->default(0);
+            $table->decimal('unit_cost', 10, 2);
+            $table->decimal('total_cost', 10, 2);
+            $table->decimal('discount', 10, 2)->default(0);
+            $table->date('expiry_date')->nullable();
+            $table->string('batch_number')->nullable();
+            $table->enum('status', ['pending', 'partial', 'received', 'cancelled'])->default('pending');
+            $table->timestamps();
+
+            $table->index(['purchase_id', 'drug_id']);
+        });
+
+        // Prescriptions
+        Schema::create('prescriptions', function (Blueprint $table) {
+            $table->id();
+            $table->string('prescription_number')->unique();
+            $table->foreignId('visit_id')->constrained();
+            $table->foreignId('consultation_id')->constrained();
+            $table->foreignId('patient_id')->constrained();
+            $table->foreignId('doctor_id')->constrained('doctors');
+            $table->date('prescription_date');
+            $table->enum('status', ['active', 'dispensed', 'partial', 'cancelled', 'expired'])->default('active');
+            $table->text('notes')->nullable();
+            $table->text('clinical_notes')->nullable();
+            $table->datetime('dispensed_at')->nullable();
+            $table->timestamps();
+
+            $table->index(['patient_id', 'status']);
+            $table->index('prescription_number');
+        });
+
+        // Prescription items
+        Schema::create('prescription_items', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('prescription_id')->constrained()->onDelete('cascade');
+            $table->foreignId('drug_id')->constrained();
+            $table->string('dosage');
+            $table->string('frequency');
+            $table->string('duration'); // 7 days, 2 weeks, etc.
+            $table->integer('duration_days');
+            $table->integer('quantity');
+            $table->integer('quantity_dispensed')->default(0);
+            $table->text('instructions')->nullable();
+            $table->text('indication')->nullable();
+            $table->enum('status', ['pending', 'partial', 'dispensed', 'cancelled'])->default('pending');
+            $table->timestamps();
+
+            $table->index(['prescription_id', 'status']);
+        });
+
+        // Dispensations
+        Schema::create('dispensations', function (Blueprint $table) {
+            $table->id();
+            $table->string('dispensation_number')->unique();
+            $table->foreignId('visit_id')->constrained();
+            $table->foreignId('patient_id')->constrained();
+            $table->foreignId('prescription_id')->nullable()->constrained();
+            $table->foreignId('bill_id')->constrained();
+            $table->enum('status', ['pending', 'dispensed', 'partial', 'cancelled'])->default('pending');
+            $table->boolean('is_emergency')->default(false);
+            $table->string('emergency_reason')->nullable();
+            $table->text('pharmacist_notes')->nullable();
+            $table->foreignId('dispensed_by')->nullable()->constrained('users');
+            $table->datetime('dispensed_at')->nullable();
+            $table->timestamps();
+
+            $table->index(['dispensation_number', 'status']);
+            $table->index(['patient_id', 'dispensed_at']);
+        });
+
+        // Dispensation items
+        Schema::create('dispensation_items', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('dispensation_id')->constrained()->onDelete('cascade');
+            $table->foreignId('prescription_item_id')->nullable()->constrained();
+            $table->foreignId('drug_id')->constrained();
+            $table->foreignId('drug_stock_id')->constrained();
+            $table->integer('quantity');
+            $table->decimal('unit_price', 10, 2);
+            $table->decimal('total', 10, 2);
+            $table->string('dosage')->nullable();
+            $table->string('frequency')->nullable();
+            $table->integer('duration_days')->nullable();
+            $table->text('instructions')->nullable();
+            $table->timestamps();
+
+            $table->index('dispensation_id');
+        });
+
+        // =========================================================================
+        // PART 5: LABORATORY
+        // =========================================================================
+
+        // Lab tests catalog
+        Schema::create('lab_tests', function (Blueprint $table) {
+            $table->id();
+            $table->string('test_code')->unique();
+            $table->string('name');
+            $table->string('category'); // hematology, microbiology, chemistry, immunology, etc.
+            $table->string('specimen_type'); // blood, urine, stool, sputum, tissue, etc.
+            $table->string('specimen_container')->nullable();
+            $table->decimal('specimen_volume', 8, 2)->nullable(); // in ml
+            $table->string('unit')->nullable();
+            $table->decimal('price', 10, 2);
+            $table->decimal('insurance_price', 10, 2)->nullable();
+            $table->string('reference_range_low')->nullable();
+            $table->string('reference_range_high')->nullable();
+            $table->text('reference_range_text')->nullable();
+            $table->text('interpretation_guidance')->nullable();
+            $table->text('preparation_instructions')->nullable(); // fasting, etc.
+            $table->integer('turnaround_time_minutes')->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->boolean('requires_approval')->default(false);
+            $table->timestamps();
+
+            $table->index(['test_code', 'category']);
+        });
+
+        // Lab test panels (group of tests)
+        Schema::create('lab_panels', function (Blueprint $table) {
+            $table->id();
+            $table->string('panel_code')->unique();
+            $table->string('name');
+            $table->string('category');
+            $table->text('description')->nullable();
+            $table->decimal('price', 10, 2);
+            $table->decimal('insurance_price', 10, 2)->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->timestamps();
+        });
+
+        // Lab panel items
+        Schema::create('lab_panel_items', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('lab_panel_id')->constrained()->onDelete('cascade');
+            $table->foreignId('lab_test_id')->constrained();
+            $table->timestamps();
+
+            $table->unique(['lab_panel_id', 'lab_test_id']);
+        });
+
+        // Lab orders
+        Schema::create('lab_orders', function (Blueprint $table) {
+            $table->id();
+            $table->string('order_number')->unique();
+            $table->foreignId('visit_id')->constrained();
+            $table->foreignId('consultation_id')->constrained();
+            $table->foreignId('patient_id')->constrained();
+            $table->foreignId('doctor_id')->constrained('doctors');
+            $table->datetime('order_date');
+            $table->enum('priority', ['routine', 'urgent', 'stat'])->default('routine');
+            $table->enum('status', ['ordered', 'specimen_collected', 'processing', 'completed', 'cancelled', 'verified'])->default('ordered');
+            $table->text('clinical_notes')->nullable();
+            $table->text('diagnosis')->nullable();
+            $table->boolean('is_emergency')->default(false);
+            $table->datetime('specimen_collected_at')->nullable();
+            $table->foreignId('collected_by')->nullable()->constrained('users');
+            $table->datetime('results_entered_at')->nullable();
+            $table->datetime('verified_at')->nullable();
+            $table->foreignId('verified_by')->nullable()->constrained('users');
+            $table->timestamps();
+
+            $table->index(['patient_id', 'status', 'priority']);
+            $table->index(['order_number', 'order_date']);
+        });
+
+        // Lab order items
+        Schema::create('lab_order_items', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('lab_order_id')->constrained()->onDelete('cascade');
+            $table->foreignId('lab_test_id')->nullable()->constrained();
+            $table->foreignId('lab_panel_id')->nullable()->constrained();
+            $table->enum('status', ['pending', 'collected', 'processing', 'completed', 'cancelled'])->default('pending');
+            $table->timestamps();
+
+            $table->index(['lab_order_id', 'status']);
+        });
+
+        // Lab results
+        Schema::create('lab_results', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('lab_order_id')->constrained();
+            $table->foreignId('lab_order_item_id')->constrained('lab_order_items');
+            $table->foreignId('lab_test_id')->constrained();
+            $table->string('result_value')->nullable();
+            $table->text('result_text')->nullable();
+            $table->string('reference_range')->nullable();
+            $table->enum('flag', ['normal', 'high', 'low', 'critical', 'abnormal'])->nullable();
+            $table->text('comments')->nullable();
+            $table->text('interpretation')->nullable();
+            $table->string('attachment_path')->nullable();
+            $table->foreignId('technician_id')->constrained('users');
+            $table->foreignId('verified_by')->nullable()->constrained('users');
+            $table->datetime('result_datetime');
+            $table->datetime('verified_at')->nullable();
+            $table->enum('status', ['pending', 'completed', 'verified', 'amended', 'cancelled'])->default('pending');
+            $table->timestamps();
+
+            $table->index(['lab_order_id', 'lab_test_id']);
+            $table->index(['status', 'verified_at']);
+        });
+
+        // Lab specimens
+        Schema::create('lab_specimens', function (Blueprint $table) {
+            $table->id();
+            $table->string('specimen_number')->unique();
+            $table->foreignId('lab_order_id')->constrained();
+            $table->foreignId('patient_id')->constrained();
+            $table->string('specimen_type');
+            $table->datetime('collection_datetime');
+            $table->datetime('received_datetime')->nullable();
+            $table->string('collection_site')->nullable();
+            $table->string('container')->nullable();
+            $table->decimal('volume', 8, 2)->nullable();
+            $table->enum('quality', ['adequate', 'hemolyzed', 'lipemic', 'clotted', 'insufficient'])->nullable();
+            $table->enum('status', ['collected', 'received', 'processing', 'rejected', 'completed'])->default('collected');
+            $table->text('rejection_reason')->nullable();
+            $table->foreignId('collected_by')->constrained('users');
+            $table->foreignId('received_by')->nullable()->constrained('users');
+            $table->timestamps();
+        });
+
+        // =========================================================================
+        // PART 6: RADIOLOGY
+        // =========================================================================
+
+        // Radiology procedures
+        Schema::create('radiology_procedures', function (Blueprint $table) {
+            $table->id();
+            $table->string('procedure_code')->unique();
+            $table->string('name');
+            $table->string('modality'); // X-ray, Ultrasound, CT, MRI, Mammography, Fluoroscopy
+            $table->string('body_part');
+            $table->string('laterality')->nullable(); // left, right, bilateral
+            $table->text('description')->nullable();
+            $table->decimal('price', 10, 2);
+            $table->decimal('insurance_price', 10, 2)->nullable();
+            $table->text('preparation_instructions')->nullable();
+            $table->text('contraindications')->nullable();
+            $table->integer('duration_minutes')->nullable();
+            $table->boolean('requires_contrast')->default(false);
+            $table->string('contrast_type')->nullable();
+            $table->boolean('requires_consent')->default(false);
+            $table->boolean('is_active')->default(true);
+            $table->timestamps();
+
+            $table->index(['procedure_code', 'modality']);
+        });
+
+        // Radiology orders
+        Schema::create('radiology_orders', function (Blueprint $table) {
+            $table->id();
+            $table->string('order_number')->unique();
+            $table->foreignId('visit_id')->constrained();
+            $table->foreignId('consultation_id')->constrained();
+            $table->foreignId('patient_id')->constrained();
+            $table->foreignId('doctor_id')->constrained('doctors');
+            $table->datetime('order_date');
+            $table->enum('priority', ['routine', 'urgent', 'stat'])->default('routine');
+            $table->enum('status', ['ordered', 'scheduled', 'in_progress', 'completed', 'cancelled', 'verified'])->default('ordered');
+            $table->text('clinical_history')->nullable();
+            $table->text('indication')->nullable();
+            $table->text('relevant_findings')->nullable();
+            $table->boolean('is_emergency')->default(false);
+            $table->boolean('requires_contrast')->default(false);
+            $table->boolean('consent_obtained')->default(false);
+            $table->datetime('scheduled_date')->nullable();
+            $table->datetime('performed_date')->nullable();
+            $table->foreignId('technician_id')->nullable()->constrained('users');
+            $table->timestamps();
+
+            $table->index(['patient_id', 'status']);
+            $table->index('order_number');
+        });
+
+        // Radiology order items
+        Schema::create('radiology_order_items', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('radiology_order_id')->constrained()->onDelete('cascade');
+            $table->foreignId('radiology_procedure_id')->constrained();
+            $table->enum('status', ['pending', 'completed', 'cancelled'])->default('pending');
+            $table->text('technique_notes')->nullable();
+            $table->timestamps();
+
+            $table->index(['radiology_order_id', 'status']);
+        });
+
+        // Radiology results
+        Schema::create('radiology_results', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('radiology_order_id')->constrained();
+            $table->foreignId('radiology_order_item_id')->constrained('radiology_order_items');
+            $table->foreignId('radiology_procedure_id')->constrained();
+            $table->text('findings')->nullable();
+            $table->text('impression')->nullable();
+            $table->text('conclusion')->nullable();
+            $table->text('recommendations')->nullable();
+            $table->json('images')->nullable(); // Store image paths/URLs
+            $table->json('image_metadata')->nullable(); // DICOM tags, etc.
+            $table->text('report_text')->nullable();
+            $table->foreignId('radiologist_id')->constrained('users');
+            $table->foreignId('verified_by')->nullable()->constrained('users');
+            $table->datetime('report_datetime');
+            $table->datetime('verified_at')->nullable();
+            $table->enum('status', ['draft', 'preliminary', 'final', 'verified', 'amended'])->default('draft');
+            $table->text('amendment_reason')->nullable();
+            $table->timestamps();
+
+            $table->index(['radiology_order_id', 'status']);
+        });
+
+        // =========================================================================
+        // PART 7: EMERGENCY & LABOUR DELIVERY
+        // =========================================================================
+
+        // Emergency cases
+        Schema::create('emergency_cases', function (Blueprint $table) {
+            $table->id();
+            $table->string('case_number')->unique();
+            $table->foreignId('visit_id')->constrained();
+            $table->foreignId('patient_id')->constrained();
+            $table->datetime('arrival_time');
+            $table->enum('mode_of_arrival', ['walk_in', 'ambulance', 'police', 'private_vehicle'])->default('walk_in');
+            $table->string('ambulance_service')->nullable();
+            $table->enum('triage_category', ['resuscitation', 'emergency', 'urgent', 'semi_urgent', 'non_urgent']);
+            $table->integer('mews_score')->nullable(); // Modified Early Warning Score
+            $table->integer('gcs_score')->nullable(); // Glasgow Coma Scale
+            $table->text('chief_complaint');
+            $table->text('mechanism_of_injury')->nullable();
+            $table->text('prehospital_care')->nullable();
+            $table->enum('disposition', ['admitted', 'discharged', 'transferred', 'died', 'ama'])->nullable();
+            $table->foreignId('triaged_by')->constrained('users');
+            $table->foreignId('attending_doctor_id')->nullable()->constrained('doctors');
+            $table->datetime('disposition_time')->nullable();
+            $table->timestamps();
+
+            $table->index(['case_number', 'triage_category']);
+        });
+
+        // Labour & Delivery records
+        Schema::create('labour_deliveries', function (Blueprint $table) {
+            $table->id();
+            $table->string('delivery_number')->unique();
+            $table->foreignId('visit_id')->constrained();
+            $table->foreignId('patient_id')->constrained();
+            $table->datetime('admission_time');
+            $table->datetime('delivery_time')->nullable();
+            $table->integer('gestational_age_weeks');
+            $table->integer('gestational_age_days')->nullable();
+            $table->enum('parity', ['primigravida', 'multigravida', 'grand_multigravida']);
+            $table->integer('gravida')->nullable(); // number of pregnancies
+            $table->integer('para')->nullable(); // number of births after 24 weeks
+            $table->integer('living_children')->nullable();
+            $table->enum('labour_onset', ['spontaneous', 'induced', 'augmented'])->nullable();
+            $table->string('induction_method')->nullable();
+            $table->enum('delivery_mode', ['spontaneous_vaginal', 'assisted_vaginal', 'c_section', 'vacuum', 'forceps'])->nullable();
+            $table->string('c_section_reason')->nullable();
+            $table->enum('perineal_status', ['intact', 'first_degree_tear', 'second_degree_tear', 'third_degree_tear', 'fourth_degree_tear', 'episiotomy'])->nullable();
+            $table->decimal('blood_loss_ml', 8, 2)->nullable();
+            $table->text('complications')->nullable();
+            $table->text('notes')->nullable();
+            $table->foreignId('attended_by')->constrained('doctors');
+            $table->foreignId('assisted_by')->nullable()->constrained('users');
+            $table->timestamps();
+
+            $table->index(['delivery_number', 'delivery_time']);
+        });
+
+        // Newborn records
+        Schema::create('newborns', function (Blueprint $table) {
+            $table->id();
+            $table->string('newborn_number')->unique();
+            $table->foreignId('labour_delivery_id')->constrained()->onDelete('cascade');
+            $table->foreignId('mother_id')->constrained('patients');
+            $table->string('first_name')->nullable();
+            $table->string('last_name')->nullable();
+            $table->enum('gender', ['male', 'female', 'other']);
+            $table->datetime('birth_time');
+            $table->integer('birth_weight_grams');
+            $table->integer('birth_length_cm')->nullable();
+            $table->integer('head_circumference_cm')->nullable();
+            $table->integer('chest_circumference_cm')->nullable();
+            $table->integer('apgar_1_minute')->nullable();
+            $table->integer('apgar_5_minutes')->nullable();
+            $table->integer('apgar_10_minutes')->nullable();
+            $table->enum('resuscitation', ['none', 'oxygen', 'ppv', 'intubation', 'chest_compressions', 'medications'])->nullable();
+            $table->text('complications')->nullable();
+            $table->enum('feeding_method', ['breastfeeding', 'formula', 'mixed', 'iv'])->nullable();
+            $table->enum('status', ['active', 'transferred', 'deceased', 'discharged'])->default('active');
+            $table->foreignId('attended_by')->constrained('doctors');
+            $table->timestamps();
+        });
+
+        // =========================================================================
+        // PART 8: AUDIT & SYSTEM
+        // =========================================================================
+
+        // Activity logs
+        Schema::create('activity_logs', function (Blueprint $table) {
+            $table->id();
+            $table->string('log_number')->unique();
+            $table->foreignId('user_id')->nullable()->constrained();
+            $table->string('action'); // create, update, delete, view, print, export
+            $table->string('module'); // patient, billing, pharmacy, lab, radiology, etc.
+            $table->string('sub_module')->nullable();
+            $table->string('table_name');
+            $table->unsignedBigInteger('record_id');
+            $table->json('old_values')->nullable();
+            $table->json('new_values')->nullable();
+            $table->string('ip_address')->nullable();
+            $table->string('user_agent')->nullable();
+            $table->text('description')->nullable();
+            $table->enum('level', ['info', 'warning', 'danger', 'critical'])->default('info');
+            $table->timestamps();
+
+            $table->index(['user_id', 'action', 'module', 'created_at']);
+            $table->index(['table_name', 'record_id']);
+            $table->index('log_number');
+        });
+
+        // Financial audits (for critical transactions)
+        Schema::create('financial_audits', function (Blueprint $table) {
+            $table->id();
+            $table->string('audit_number')->unique();
+            $table->morphs('auditable');
+            $table->foreignId('user_id')->constrained();
+            $table->enum('action', ['create', 'update', 'delete', 'void', 'refund', 'waive']);
+            $table->decimal('amount_before', 10, 2);
+            $table->decimal('amount_after', 10, 2);
+            $table->decimal('difference', 10, 2);
+            $table->string('reason')->nullable();
+            $table->json('metadata')->nullable();
+            $table->string('ip_address')->nullable();
+            $table->timestamps();
+
+            $table->index(['auditable_type', 'auditable_id']);
+            $table->index('audit_number');
+        });
+
+        // System settings
+        Schema::create('system_settings', function (Blueprint $table) {
+            $table->id();
+            $table->string('key')->unique();
+            $table->text('value')->nullable();
+            $table->string('group');
+            $table->string('type'); // text, number, boolean, json, file
+            $table->text('description')->nullable();
+            $table->boolean('is_public')->default(false);
+            $table->boolean('is_editable')->default(true);
+            $table->timestamps();
+
+            $table->index(['key', 'group']);
+        });
+
+        // Notifications
+        Schema::create('notifications', function (Blueprint $table) {
+            $table->uuid('id')->primary();
+            $table->string('type');
+            $table->morphs('notifiable');
+            $table->text('data');
+            $table->timestamp('read_at')->nullable();
+            $table->timestamps();
+
+            $table->index(['notifiable_type', 'notifiable_id', 'read_at']);
+        });
+
+        // Failed jobs
+        Schema::create('failed_jobs', function (Blueprint $table) {
+            $table->id();
+            $table->string('uuid')->unique();
+            $table->text('connection');
+            $table->text('queue');
+            $table->longText('payload');
+            $table->longText('exception');
+            $table->timestamp('failed_at')->useCurrent();
+        });
+
+        // Jobs queue
+        Schema::create('jobs', function (Blueprint $table) {
+            $table->bigIncrements('id');
+            $table->string('queue')->index();
+            $table->longText('payload');
+            $table->unsignedTinyInteger('attempts');
+            $table->unsignedInteger('reserved_at')->nullable();
+            $table->unsignedInteger('available_at');
+            $table->unsignedInteger('created_at');
+
+            $table->index(['queue', 'reserved_at']);
+        });
+
+        // Personal access tokens (Sanctum)
+        Schema::create('personal_access_tokens', function (Blueprint $table) {
+            $table->id();
+            $table->morphs('tokenable');
+            $table->string('name');
+            $table->string('token', 64)->unique();
+            $table->text('abilities')->nullable();
+            $table->timestamp('last_used_at')->nullable();
+            $table->timestamp('expires_at')->nullable();
+            $table->timestamps();
+
+            $table->index(['tokenable_type', 'tokenable_id']);
+        });
+
+        // Cache table
+        Schema::create('cache', function (Blueprint $table) {
+            $table->string('key')->primary();
+            $table->mediumText('value');
+            $table->integer('expiration');
+        });
+
+        // Cache locks
+        Schema::create('cache_locks', function (Blueprint $table) {
+            $table->string('key')->primary();
+            $table->string('owner');
+            $table->integer('expiration');
+        });
+
+        // Sessions
+        Schema::create('sessions', function (Blueprint $table) {
+            $table->string('id')->primary();
+            $table->foreignId('user_id')->nullable()->index();
+            $table->string('ip_address', 45)->nullable();
+            $table->text('user_agent')->nullable();
+            $table->longText('payload');
+            $table->integer('last_activity')->index();
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        // Drop in reverse order to avoid foreign key constraints
+
+        // Audit & System
+        Schema::dropIfExists('sessions');
+        Schema::dropIfExists('cache_locks');
+        Schema::dropIfExists('cache');
+        Schema::dropIfExists('personal_access_tokens');
+        Schema::dropIfExists('jobs');
+        Schema::dropIfExists('failed_jobs');
+        Schema::dropIfExists('notifications');
+        Schema::dropIfExists('system_settings');
+        Schema::dropIfExists('financial_audits');
+        Schema::dropIfExists('activity_logs');
+
+        // Labour & Delivery
+        Schema::dropIfExists('newborns');
+        Schema::dropIfExists('labour_deliveries');
+
+        // Emergency
+        Schema::dropIfExists('emergency_cases');
+
+        // Radiology
+        Schema::dropIfExists('radiology_results');
+        Schema::dropIfExists('radiology_order_items');
+        Schema::dropIfExists('radiology_orders');
+        Schema::dropIfExists('radiology_procedures');
+
+        // Laboratory
+        Schema::dropIfExists('lab_specimens');
+        Schema::dropIfExists('lab_results');
+        Schema::dropIfExists('lab_order_items');
+        Schema::dropIfExists('lab_orders');
+        Schema::dropIfExists('lab_panel_items');
+        Schema::dropIfExists('lab_panels');
+        Schema::dropIfExists('lab_tests');
+
+        // Pharmacy
+        Schema::dropIfExists('dispensation_items');
+        Schema::dropIfExists('dispensations');
+        Schema::dropIfExists('prescription_items');
+        Schema::dropIfExists('prescriptions');
+        Schema::dropIfExists('purchase_items');
+        Schema::dropIfExists('purchases');
+        Schema::dropIfExists('suppliers');
+        Schema::dropIfExists('stock_movements');
+        Schema::dropIfExists('drug_stocks');
+        Schema::dropIfExists('drugs');
+
+        // Billing
+        Schema::dropIfExists('invoices');
+        Schema::dropIfExists('payments');
+        Schema::dropIfExists('bill_items');
+        Schema::dropIfExists('bills');
+        Schema::dropIfExists('services');
+
+        // Visits & Consultations
+        Schema::dropIfExists('vital_signs');
+        Schema::dropIfExists('consultations');
+        Schema::dropIfExists('admissions');
+        Schema::dropIfExists('visits');
+
+        // Core
+        Schema::dropIfExists('doctors');
+        Schema::dropIfExists('patients');
+        Schema::dropIfExists('users');
+        Schema::dropIfExists('role_has_permissions');
+        Schema::dropIfExists('model_has_permissions');
+        Schema::dropIfExists('model_has_roles');
+        Schema::dropIfExists('permissions');
+        Schema::dropIfExists('roles');
+    }
+}; -->
