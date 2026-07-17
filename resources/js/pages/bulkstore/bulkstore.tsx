@@ -20,10 +20,10 @@ import {
     Loader2,
 } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
-import ReceiveStock from '../pharmacies/components/ReceiveStock';
-import IssueStock from '../pharmacies/components/IssueStock';
-import AdjustStock from '../pharmacies/components/AdjustStock';
-import TransferStock from '../pharmacies/components/TransferStock';
+import ReceiveStock from './components/ReceiveStock';
+import IssueStock from './components/IssueStock';
+import AdjustStock from './components/AdjustStock';
+import TransferStock from './components/TransferStock';
 
 interface Product {
     id: number;

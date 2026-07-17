@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {usePage} from "@inertiajs/react";
-import { 
-  Pill, Syringe, Microscope, Clock, CheckCircle, XCircle, 
+import {
+  Pill, Syringe, Microscope, Clock, CheckCircle, XCircle,
   AlertCircle, Calendar, User, Stethoscope, FileText,
   Download, Printer, Eye, Plus, Trash2, Edit,
   StethoscopeIcon
@@ -52,7 +52,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import bg from '../../../../assets/img/bg_app.png';
+
 // Types
 interface PrescribedDrug {
   id: number;
@@ -102,7 +102,7 @@ interface AdmissionTabsProps {
 export default function AdmissionTab({ admissionId, patientId, patientName }: AdmissionTabsProps) {
   const [activeTab, setActiveTab] = useState("prescribed");
   const [loading, setLoading] = useState(false);
-  
+
   // Prescribed drugs state
   const [prescribedDrugs, setPrescribedDrugs] = useState<PrescribedDrug[]>([]);
   const [showPrescribeModal, setShowPrescribeModal] = useState(false);
@@ -157,7 +157,7 @@ export default function AdmissionTab({ admissionId, patientId, patientName }: Ad
         ...newDrug,
         patient_id: patientId
       });
-      
+
       setPrescribedDrugs([response.data, ...prescribedDrugs]);
       setShowPrescribeModal(false);
       setNewDrug({
@@ -186,7 +186,7 @@ export default function AdmissionTab({ admissionId, patientId, patientName }: Ad
         prescribed_drug_id: selectedDrug.id,
         ...administerData
       });
-      
+
       setAdministrations([response.data, ...administrations]);
       setShowAdministerModal(false);
       setSelectedDrug(null);
@@ -216,7 +216,7 @@ export default function AdmissionTab({ admissionId, patientId, patientName }: Ad
         ...newLabOrder,
         patient_id: patientId
       });
-      
+
       setLabOrders([response.data, ...labOrders]);
       setShowLabModal(false);
       setNewLabOrder({
@@ -242,8 +242,8 @@ export default function AdmissionTab({ admissionId, patientId, patientName }: Ad
         sample_collected_at: collected ? new Date().toISOString() : null,
         sample_collected_by: collected ? "Current User" : null
       });
-      
-      setLabOrders(labOrders.map(order => 
+
+      setLabOrders(labOrders.map(order =>
         order.id === orderId ? response.data : order
       ));
       toast.success(collected ? "Sample collection recorded" : "Sample collection reverted");
@@ -255,22 +255,22 @@ export default function AdmissionTab({ admissionId, patientId, patientName }: Ad
   };
 
    const {admissions, drugs, laborders,procedures} = usePage().props;
- 
+
   return (
     <div className="bg-white rounded-lg shadow">
-      {/* check if admision is active  */} 
+      {/* check if admision is active  */}
 
       {admissions.length > 0 ? (<></>) : <>
-      
+
         <div className="bg-gradient-to-r from-red-50 to-red-100 p-4 rounded-lg text-center" style={{background:`${bg}`}}>
             <center><StethoscopeIcon className="text-center justify-center" /></center>
             <h2 className="text-lg font-medium text-red-800">No Active Admission</h2>
             <p className="p-1 text-gray-600 font-stretch-75%">No recent admission found. Click the button below to create an admission.</p>
-            
+
         </div>
-      
+
       </>}
-       
+
       {/* Prescribe Drug Modal */}
       {/* <Dialog open={showPrescribeModal} onOpenChange={setShowPrescribeModal}>
         <DialogContent>
@@ -357,8 +357,8 @@ export default function AdmissionTab({ admissionId, patientId, patientName }: Ad
               </div>
               <div>
                 <Label>Administration Status *</Label>
-                <Select 
-                  value={administerData.administration_status} 
+                <Select
+                  value={administerData.administration_status}
                   onValueChange={(v: any) => setAdministerData({...administerData, administration_status: v})}
                 >
                   <SelectTrigger>
