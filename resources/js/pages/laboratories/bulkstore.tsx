@@ -2,10 +2,9 @@ import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/app-layout';
 import { Link, usePage } from '@inertiajs/react';
 import { BoxesIcon, BoxIcon, ChevronLeftIcon } from 'lucide-react';
-import { title } from 'process';
 import { href } from 'react-router-dom';
 import { useState } from 'react';
-import AddLabProduct from '@/components/forms/laboratories/addproducts';
+import AddLabProduct from '@/components/forms/laboratories/addProducts';
 import Stock from './components/stock';
 import StockAlerts from './components/stock';
 import { Spinner } from '@/components/ui/spinner';
@@ -286,13 +285,12 @@ export default function BulkStore() {
                                 />
                             </div>
                         </div>
-                             <div>
-                                <textarea
-                                    placeholder="Explain disparities if any"
-                                    className="mt-10 p-4 rounded-lg bg-gray-100">
-
-                                </textarea>
-                            </div>
+                        <div>
+                            <textarea
+                                placeholder="Explain disparities if any"
+                                className="mt-10 rounded-lg bg-gray-100 p-4"
+                            ></textarea>
+                        </div>
                     </div>
                     <DialogFooter>
                         <Button variant="outline">Cancel</Button>
