@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import Http from "../utils/Http"; // Assuming this import
-import Routes from "../constants/Routes"; // Assuming this import
+import Routes from "../constants/routes"; // Assuming this import
 
 export default function useDepartments(){
     const [loading, setLoading] = useState(false);
