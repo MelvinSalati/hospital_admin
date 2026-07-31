@@ -11,7 +11,7 @@ class Product extends Model
 {
     use HasFactory;
 
-    protected $table = 'drug_items';
+    protected $table = 'products';
 
     protected $fillable = [
         'product_uuid',

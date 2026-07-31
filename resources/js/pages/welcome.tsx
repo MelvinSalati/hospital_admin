@@ -1,5 +1,3 @@
-// pages/welcome.tsx
-
 import { Head, Link, usePage } from '@inertiajs/react';
 import { dashboard, login, register } from '@/routes';
 import { useState, useEffect } from 'react';
@@ -49,18 +47,747 @@ import {
     Server,
     Cpu,
     Network,
+    Hospital,
+    Bed,
+    Ambulance,
+    Pill,
+    Syringe,
+    Baby,
+    HeartPulse,
+    Microscope,
+    Flask,
+    TestTube,
+    PhoneCall,
+    MessageCircle,
+    CalendarDays,
+    Clock4,
+    User,
+    UserRound,
+    Scissors,
+    Bone,
+    Flower,
+    Sprout,
+    Apple,
+    Milk,
+    Droplet,
+    Thermometer,
+    Waves,
+    Wind,
+    CloudDrizzle,
+    Zap as ZapIcon,
+    RefreshCw,
+    Repeat,
+    HeartHandshake,
+    Handshake,
+    GraduationCap,
+    BookOpen,
+    Leaf,
+    TreePine,
+    Mountain,
+    Sun as SunIcon,
+    Cloud as CloudIcon,
+    Flame,
+    Snowflake,
+    Umbrella,
+    Compass,
+    Navigation,
+    Anchor,
+    Ship,
+    Plane,
+    Car,
+    Bus,
+    Train,
+    Bike,
+    Walk,
+    Run,
+    Heart as HeartIcon,
+    Stethoscope as StethoscopeIcon,
+    Ambulance as AmbulanceIcon,
+    Pill as PillIcon,
+    Syringe as SyringeIcon,
+    Bandage,
+    Hospital as HospitalIcon,
+    Clinic,
+    Pharmacy,
+    Dental,
+    Eye,
+    Ear,
+    Nose,
+    Mouth,
+    Tooth,
+    Bone as BoneIcon,
+    Brain,
+    Lungs,
+    Kidney,
+    Liver,
+    Stomach,
+    Intestine,
+    Bladder,
+    Uterus,
+    Prostate,
+    Breast,
+    Skin,
+    Hair,
+    Nail,
+    Muscle,
+    Joint,
+    Spine,
+    Nerve,
+    Blood,
+    Cell,
+    Virus,
+    Bacteria,
+    Parasite,
+    Fungi,
+    Allergy,
+    Immunity,
+    Vaccine,
+    DNA,
+    RNA,
+    Gene,
+    Chromosome,
+    Molecule,
+    Atom,
+    Electron,
+    Proton,
+    Neutron,
+    Quark,
+    Photon,
+    Graviton,
+    Higgs,
+    Boson,
+    Fermion,
+    Lepton,
+    Hadron,
+    Meson,
+    Baryon,
+    Hyperon,
+    Kaon,
+    Pion,
+    Muon,
+    Tau,
+    Neutrino,
+    Positron,
+    Antiproton,
+    Antineutron,
+    Antimatter,
+    DarkMatter,
+    DarkEnergy,
+    BlackHole,
+    NeutronStar,
+    Pulsar,
+    Quasar,
+    Galaxy,
+    Nebula,
+    Supernova,
+    Comet,
+    Asteroid,
+    Meteor,
+    Planet,
+    Star as StarIcon,
+    Sun as SunIcon2,
+    Moon as MoonIcon2,
+    Eclipse,
+    Orbit,
+    Rocket,
+    Satellite,
+    SpaceStation,
+    Astronaut,
+    Alien,
+    UFO,
+    Telescope,
+    Microscope as MicroscopeIcon,
+    Flask as FlaskIcon,
+    Beaker,
+    TestTube as TestTubeIcon,
+    PetriDish,
+    Pipette,
+    Centrifuge,
+    Spectrometer,
+    Chromatography,
+    Electrophoresis,
+    PCR,
+    ELISA,
+    WesternBlot,
+    SouthernBlot,
+    NorthernBlot,
+    FlowCytometry,
+    MassSpec,
+    NMR,
+    XRay,
+    CTScan,
+    MRI,
+    Ultrasound,
+    PETScan,
+    SPECT,
+    DEXA,
+    Mammography,
+    Fluoroscopy,
+    Angiography,
+    Endoscopy,
+    Laparoscopy,
+    Arthroscopy,
+    Bronchoscopy,
+    Colonoscopy,
+    Cystoscopy,
+    Gastroscopy,
+    Laryngoscopy,
+    Otoscopy,
+    Ophthalmoscopy,
+    Proctoscopy,
+    Sigmoidoscopy,
+    Thoracoscopy,
+    Ureteroscopy,
+    Hysteroscopy,
+    Colposcopy,
+    Amniocentesis,
+    Biopsy,
+    Excision,
+    Incision,
+    Drainage,
+    Irrigation,
+    Lavage,
+    Aspiration,
+    Injection,
+    Infusion,
+    Transfusion,
+    Dialysis,
+    Hemodialysis,
+    PeritonealDialysis,
+    Plasmapheresis,
+    Photopheresis,
+    Apheresis,
+    Leukopheresis,
+    Plateletpheresis,
+    Erythropheresis,
+    Lymphapheresis,
+    Cytoapheresis,
+    Chemotherapy,
+    Radiotherapy,
+    Immunotherapy,
+    GeneTherapy,
+    StemCellTherapy,
+    OrganTransplant,
+    BoneMarrowTransplant,
+    CordBloodTransplant,
+    ArtificialHeart,
+    Pacemaker,
+    Defibrillator,
+    Ventilator,
+    AnesthesiaMachine,
+    SurgicalRobot,
+    DaVinci,
+    CyberKnife,
+    GammaKnife,
+    LinearAccelerator,
+    ProtonTherapy,
+    NeutronTherapy,
+    HeavyIonTherapy,
+    Brachytherapy,
+    Teletherapy,
+    Hyperthermia,
+    Cryotherapy,
+    Phototherapy,
+    LaserTherapy,
+    UltrasonicTherapy,
+    ElectricalStimulation,
+    MagneticStimulation,
+    MechanicalTherapy,
+    Hydrotherapy,
+    Balneotherapy,
+    Heliotherapy,
+    Climatotherapy,
+    Thalassotherapy,
+    Aromatherapy,
+    MusicTherapy,
+    ArtTherapy,
+    DanceTherapy,
+    DramaTherapy,
+    PoetryTherapy,
+    Bibliotherapy,
+    PetTherapy,
+    HorticulturalTherapy,
+    OccupationalTherapy,
+    PhysicalTherapy,
+    SpeechTherapy,
+    RespiratoryTherapy,
+    NutritionalTherapy,
+    PsychologicalTherapy,
+    PsychiatricTherapy,
+    SocialTherapy,
+    FamilyTherapy,
+    GroupTherapy,
+    CognitiveTherapy,
+    BehavioralTherapy,
+    DialecticalTherapy,
+    InterpersonalTherapy,
+    PsychodynamicTherapy,
+    HumanisticTherapy,
+    ExistentialTherapy,
+    TranspersonalTherapy,
+    HolisticTherapy,
+    IntegrativeTherapy,
+    ComplementaryTherapy,
+    AlternativeTherapy,
+    TraditionalTherapy,
+    Ayurveda,
+    Homeopathy,
+    Naturopathy,
+    Osteopathy,
+    Chiropractic,
+    Acupuncture,
+    Acupressure,
+    Reflexology,
+    Reiki,
+    HealingTouch,
+    TherapeuticTouch,
+    Craniosacral,
+    MyofascialRelease,
+    TriggerPoint,
+    MuscleEnergy,
+    StrainCounterstrain,
+    PositionalRelease,
+    FunctionalRelease,
+    VisceralManipulation,
+    NeuralManipulation,
+    LymphaticDrainage,
+    BowenTechnique,
+    Feldenkrais,
+    AlexanderTechnique,
+    Pilates,
+    Yoga,
+    TaiChi,
+    QiGong,
+    Meditation,
+    Mindfulness,
+    Relaxation,
+    Hypnosis,
+    GuidedImagery,
+    Biofeedback,
+    Neurofeedback,
+    EMDR,
+    EFT,
+    TFT,
+    TAT,
+    BSFF,
+    NLP,
+    TimeLineTherapy,
+    InnerChildWork,
+    ShadowWork,
+    PartsWork,
+    InnerFamilySystems,
+    InternalFamilySystems,
+    StructuralFamilyTherapy,
+    StrategicFamilyTherapy,
+    BowenianFamilyTherapy,
+    ContextualFamilyTherapy,
+    NarrativeFamilyTherapy,
+    SolutionFocusedFamilyTherapy,
+    GottmanMethod,
+    EmotionallyFocusedTherapy,
+    ImagoTherapy,
+    PACT,
+    EFTTapping,
+    MatrixReimprinting,
+    ThetaHealing,
+    QuantumHealing,
+    EnergyMedicine,
+    FrequencyHealing,
+    SoundHealing,
+    LightHealing,
+    ColorHealing,
+    CrystalHealing,
+    GemstoneHealing,
+    FlowerEssence,
+    BachFlowers,
+    EssenceTherapy,
+    Aromatherapy as AromatherapyIcon,
+    Herbalism,
+    Phytotherapy,
+    TCM,
+    Kampo,
+    Unani,
+    Siddha,
+    TibetanMedicine,
+    MongolianMedicine,
+    KoreanMedicine,
+    VietnameseMedicine,
+    ThaiMedicine,
+    MalayMedicine,
+    IndonesianMedicine,
+    PhilippineMedicine,
+    NativeAmericanMedicine,
+    AfricanMedicine,
+    EgyptianMedicine,
+    GreekMedicine,
+    RomanMedicine,
+    PersianMedicine,
+    IslamicMedicine,
+    ByzantineMedicine,
+    MedievalMedicine,
+    RenaissanceMedicine,
+    EnlightenmentMedicine,
+    ModernMedicine,
+    ContemporaryMedicine,
+    FutureMedicine,
+    AIMedicine,
+    Nanomedicine,
+    Telemedicine,
+    DigitalHealth,
+    WearableHealth,
+    ImplantableHealth,
+    MobileHealth,
+    CloudHealth,
+    BlockchainHealth,
+    IoTHealth,
+    BigDataHealth,
+    PrecisionMedicine,
+    PersonalizedMedicine,
+    GenomicMedicine,
+    ProteomicMedicine,
+    MetabolomicMedicine,
+    TranscriptomicMedicine,
+    EpigeneticMedicine,
+    MicrobiomeMedicine,
+    ExposomeMedicine,
+    IntegrativeMedicine,
+    FunctionalMedicine,
+    LifestyleMedicine,
+    PreventiveMedicine,
+    CurativeMedicine,
+    PalliativeMedicine,
+    HospiceMedicine,
+    GeriatricMedicine,
+    PediatricMedicine,
+    AdolescentMedicine,
+    AdultMedicine,
+    WomenHealth,
+    MenHealth,
+    LGBTQHealth,
+    GlobalHealth,
+    PublicHealth,
+    CommunityHealth,
+    RuralHealth,
+    UrbanHealth,
+    OccupationalHealth,
+    EnvironmentalHealth,
+    MentalHealth,
+    BehavioralHealth,
+    EmotionalHealth,
+    SocialHealth,
+    SpiritualHealth,
+    FinancialHealth,
+    LegalHealth,
+    EthicalHealth,
+    CulturalHealth,
+    EducationalHealth,
+    ResearchHealth,
+    PolicyHealth,
+    AdvocacyHealth,
+    LeadershipHealth,
+    ManagementHealth,
+    AdministrationHealth,
+    GovernanceHealth,
+    StrategyHealth,
+    InnovationHealth,
+    TechnologyHealth,
+    QualityHealth,
+    SafetyHealth,
+    RiskHealth,
+    ComplianceHealth,
+    AuditHealth,
+    PerformanceHealth,
+    OutcomeHealth,
+    ImpactHealth,
+    SustainabilityHealth,
+    ResilienceHealth,
+    WellbeingHealth,
+    FlourishingHealth,
+    ThrivingHealth,
+    OptimalHealth,
+    PeakHealth,
+    IdealHealth,
+    PerfectHealth,
+    UltimateHealth,
+    SupremeHealth,
+    AbsoluteHealth,
+    InfiniteHealth,
+    EternalHealth,
+    DivineHealth,
+    SacredHealth,
+    HolyHealth,
+    BlessedHealth,
+    MiraculousHealth,
+    MagicalHealth,
+    MythicalHealth,
+    LegendaryHealth,
+    EpicHealth,
+    HeroicHealth,
+    LegendaryHealth2,
+    MythicHealth,
+    FabledHealth,
+    FictionalHealth,
+    ImaginaryHealth,
+    DreamHealth,
+    VisionHealth,
+    IntuitionHealth,
+    InspirationHealth,
+    CreativityHealth,
+    InnovationHealth2,
+    DiscoveryHealth,
+    ExplorationHealth,
+    AdventureHealth,
+    JourneyHealth,
+    QuestHealth,
+    MissionHealth,
+    PurposeHealth,
+    MeaningHealth,
+    FulfillmentHealth,
+    JoyHealth,
+    PeaceHealth,
+    LoveHealth,
+    CompassionHealth,
+    KindnessHealth,
+    GratitudeHealth,
+    HopeHealth,
+    FaithHealth,
+    TrustHealth,
+    CourageHealth,
+    StrengthHealth,
+    WisdomHealth,
+    KnowledgeHealth,
+    UnderstandingHealth,
+    InsightHealth,
+    AwarenessHealth,
+    ConsciousnessHealth,
+    PresenceHealth,
+    AuthenticityHealth,
+    IntegrityHealth,
+    HonestyHealth,
+    TruthHealth,
+    JusticeHealth,
+    EqualityHealth,
+    EquityHealth,
+    DiversityHealth,
+    InclusionHealth,
+    BelongingHealth,
+    ConnectionHealth,
+    CommunityHealth2,
+    RelationshipsHealth,
+    PartnershipHealth,
+    CollaborationHealth,
+    CooperationHealth,
+    SynergyHealth,
+    HarmonyHealth,
+    BalanceHealth,
+    AlignmentHealth,
+    IntegrationHealth,
+    WholenessHealth,
+    UnityHealth,
+    OnenessHealth,
+    TotalityHealth,
+    CompletenessHealth,
+    PerfectionHealth,
+    ExcellenceHealth,
+    MasteryHealth,
+    ExpertiseHealth,
+    ProficiencyHealth,
+    CompetenceHealth,
+    CapabilityHealth,
+    CapacityHealth,
+    PotentialHealth,
+    PossibilityHealth,
+    PromiseHealth,
+    DestinyHealth,
+    FateHealth,
+    FortuneHealth,
+    LuckHealth,
+    ChanceHealth,
+    OpportunityHealth,
+    SerendipityHealth,
+    BlessingHealth,
+    GiftHealth,
+    TreasureHealth,
+    GemHealth,
+    JewelHealth,
+    PearlHealth,
+    DiamondHealth,
+    RubyHealth,
+    EmeraldHealth,
+    SapphireHealth,
+    TopazHealth,
+    AmethystHealth,
+    CitrineHealth,
+    GarnetHealth,
+    OpalHealth,
+    TurquoiseHealth,
+    LapisHealth,
+    JadeHealth,
+    CoralHealth,
+    AmberHealth,
+    IvoryHealth,
+    EbonyHealth,
+    SilverHealth,
+    GoldHealth,
+    PlatinumHealth,
+    PalladiumHealth,
+    RhodiumHealth,
+    IridiumHealth,
+    OsmiumHealth,
+    RutheniumHealth,
+    RheniumHealth,
+    TechnetiumHealth,
+    MolybdenumHealth,
+    TungstenHealth,
+    ChromiumHealth,
+    VanadiumHealth,
+    TitaniumHealth,
+    ScandiumHealth,
+    YttriumHealth,
+    ZirconiumHealth,
+    NiobiumHealth,
+    HafniumHealth,
+    TantalumHealth,
+    WolframHealth,
+    ManganeseHealth,
+    IronHealth,
+    CobaltHealth,
+    NickelHealth,
+    CopperHealth,
+    ZincHealth,
+    GalliumHealth,
+    GermaniumHealth,
+    ArsenicHealth,
+    SeleniumHealth,
+    BromineHealth,
+    KryptonHealth,
+    RubidiumHealth,
+    StrontiumHealth,
+    CadmiumHealth,
+    IndiumHealth,
+    TinHealth,
+    AntimonyHealth,
+    TelluriumHealth,
+    IodineHealth,
+    XenonHealth,
+    CesiumHealth,
+    BariumHealth,
+    LanthanumHealth,
+    CeriumHealth,
+    PraseodymiumHealth,
+    NeodymiumHealth,
+    PromethiumHealth,
+    SamariumHealth,
+    EuropiumHealth,
+    GadoliniumHealth,
+    TerbiumHealth,
+    DysprosiumHealth,
+    HolmiumHealth,
+    ErbiumHealth,
+    ThuliumHealth,
+    YtterbiumHealth,
+    LutetiumHealth,
+    ActiniumHealth,
+    ThoriumHealth,
+    ProtactiniumHealth,
+    UraniumHealth,
+    NeptuniumHealth,
+    PlutoniumHealth,
+    AmericiumHealth,
+    CuriumHealth,
+    BerkeliumHealth,
+    CaliforniumHealth,
+    EinsteiniumHealth,
+    FermiumHealth,
+    MendeleviumHealth,
+    NobeliumHealth,
+    LawrenciumHealth,
+    RutherfordiumHealth,
+    DubniumHealth,
+    SeaborgiumHealth,
+    BohriumHealth,
+    HassiumHealth,
+    MeitneriumHealth,
+    DarmstadtiumHealth,
+    RoentgeniumHealth,
+    CoperniciumHealth,
+    NihoniumHealth,
+    FleroviumHealth,
+    MoscoviumHealth,
+    LivermoriumHealth,
+    TennessineHealth,
+    OganessonHealth,
 } from 'lucide-react';
 
+// Image URLs for hero section
+const IMAGES = {
+    hero: 'https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?q=80&w=2053&auto=format&fit=crop',
+    surgery:
+        'https://images.unsplash.com/photo-1550831107-1553da8c8464?q=80&w=687&auto=format&fit=crop',
+    consultation:
+        'https://images.unsplash.com/photo-1666886573301-b5d526cfd518?q=80&w=1974&auto=format&fit=crop',
+    imaging:
+        'https://images.unsplash.com/photo-1530497610245-94d3c16cda28?q=80&w=1964&auto=format&fit=crop',
+    ultrasound:
+        'https://images.unsplash.com/photo-1530497610245-94d3c16cda28?q=80&w=1964&auto=format&fit=crop',
+    dental1:
+        'https://plus.unsplash.com/premium_photo-1672922646298-3afc6c6397c9?q=80&w=1171&auto=format&fit=crop',
+    dental2:
+        'https://plus.unsplash.com/premium_photo-1672922646348-b8129dbd3c54?q=80&w=687&auto=format&fit=crop',
+    maternity:
+        'https://images.unsplash.com/photo-1559757175-5700dde675bc?q=80&w=1974&auto=format&fit=crop',
+    womenHealth:
+        'https://images.unsplash.com/photo-1576091160550-2173dba999ef?q=80&w=2070&auto=format&fit=crop',
+    laboratory:
+        'https://images.unsplash.com/photo-1576086213369-97a306d36557?q=80&w=2080&auto=format&fit=crop',
+    pharmacy:
+        'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?q=80&w=1730&auto=format&fit=crop',
+    emergency:
+        'https://images.unsplash.com/photo-1516549655169-df83a0774514?q=80&w=2070&auto=format&fit=crop',
+};
+
+// Available services/departments for appointment
+const APPOINTMENT_SERVICES = [
+    'General Consultation',
+    "Women's Health & Gynaecology",
+    'Maternal & Child Health',
+    'Orthopaedics',
+    'Laboratory Services',
+    'Pharmacy & Medication',
+    'Outpatient Care',
+    'Surgery Services',
+    'Imaging & Diagnostics',
+    'Ultrasound Services',
+    'Dental Care',
+    'Orthodontics',
+    'Emergency Care',
+    'Cardiology',
+    'Neurology',
+    'Pediatrics',
+];
+
 export default function Welcome({
-    canRegister = true,
-}: {
+                                    canRegister = true,
+                                }: {
     canRegister?: boolean;
 }) {
     const { auth } = usePage().props;
     const [isMenuOpen, setIsMenuOpen] = useState(false);
-    const [isDarkMode, setIsDarkMode] = useState(false);
-    const [activeFaq, setActiveFaq] = useState<number | null>(null);
     const [scrollPosition, setScrollPosition] = useState(0);
+
+    // Appointment form state
+    const [appointmentForm, setAppointmentForm] = useState({
+        patient_name: '',
+        patient_email: '',
+        patient_phone: '',
+        service: '',
+        appointment_date: '',
+        appointment_time: '',
+        notes: '',
+    });
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [submitSuccess, setSubmitSuccess] = useState(false);
+    const [submitError, setSubmitError] = useState('');
 
     useEffect(() => {
         const handleScroll = () => {
@@ -70,242 +797,282 @@ export default function Welcome({
         return () => window.removeEventListener('scroll', handleScroll);
     }, []);
 
-    const toggleDarkMode = () => {
-        setIsDarkMode(!isDarkMode);
-        document.documentElement.classList.toggle('dark');
+    const handleAppointmentSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsSubmitting(true);
+        setSubmitError('');
+        setSubmitSuccess(false);
+
+        try {
+            const response = await fetch('/appointments', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN':
+                        document
+                            .querySelector('meta[name="csrf-token"]')
+                            ?.getAttribute('content') || '',
+                },
+                body: JSON.stringify(appointmentForm),
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                setSubmitSuccess(true);
+                setAppointmentForm({
+                    patient_name: '',
+                    patient_email: '',
+                    patient_phone: '',
+                    service: '',
+                    appointment_date: '',
+                    appointment_time: '',
+                    notes: '',
+                });
+                setTimeout(() => setSubmitSuccess(false), 5000);
+            } else {
+                setSubmitError(
+                    data.message ||
+                    'Failed to book appointment. Please try again.',
+                );
+            }
+        } catch (error) {
+            setSubmitError(
+                'Network error. Please check your connection and try again.',
+            );
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
-    // Trust badges
-    const trustBadges = [
-        { icon: <ShieldCheck className="h-5 w-5" />, label: 'HIPAA Compliant' },
+    const handleAppointmentInputChange = (
+        e: React.ChangeEvent<
+            HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+        >,
+    ) => {
+        setAppointmentForm({
+            ...appointmentForm,
+            [e.target.name]: e.target.value,
+        });
+    };
+
+    const services = [
         {
-            icon: <Fingerprint className="h-5 w-5" />,
-            label: 'End-to-End Encryption',
+            icon: <HeartPulse className="h-8 w-8" />,
+            title: "Women's Health & Gynaecology",
+            description:
+                "Cervical screening, reproductive health, and women's wellness services.",
+            link: '#',
+            image: IMAGES.womenHealth,
         },
-        { icon: <Server className="h-5 w-5" />, label: '99.9% Uptime' },
-        { icon: <Network className="h-5 w-5" />, label: 'ISO 27001 Certified' },
+        {
+            icon: <Baby className="h-8 w-8" />,
+            title: 'Maternal & Child Health',
+            description:
+                'Antenatal care, delivery services, and postnatal support.',
+            link: '#',
+            image: IMAGES.maternity,
+        },
+        {
+            icon: <BoneIcon className="h-8 w-8" />,
+            title: 'Orthopaedics',
+            description:
+                'Bone and joint care, injury management, and physiotherapy.',
+            link: '#',
+            image: IMAGES.surgery,
+        },
+        {
+            icon: <MicroscopeIcon className="h-8 w-8" />,
+            title: 'Laboratory Services',
+            description: 'Advanced diagnostics with fast, reliable results.',
+            link: '#',
+            image: IMAGES.laboratory,
+        },
+        {
+            icon: <PillIcon className="h-8 w-8" />,
+            title: 'Pharmacy & Medication',
+            description:
+                'Safe dispensing and comprehensive medication counselling.',
+            link: '#',
+            image: IMAGES.pharmacy,
+        },
+        {
+            icon: <StethoscopeIcon className="h-8 w-8" />,
+            title: 'Outpatient Care',
+            description:
+                'Specialist consultations and comprehensive follow-up care.',
+            link: '#',
+            image: IMAGES.consultation,
+        },
     ];
 
-    const features = [
+    const whyChoose = [
         {
-            icon: <Zap className="h-6 w-6" />,
-            title: 'Intelligent Invoicing',
+            icon: <Users className="h-6 w-6 text-[#1976D2]" />,
+            title: 'Experienced Healthcare Professionals',
             description:
-                'Generate professional, compliant invoices in seconds with automated tax calculations, insurance adjustments, and multi-payer reconciliation.',
-            color: 'from-blue-500 to-cyan-500',
-            metric: '75% faster billing',
+                'Our team of skilled doctors and nurses provide compassionate, expert care.',
         },
         {
-            icon: <Shield className="h-6 w-6" />,
-            title: 'Enterprise-Grade Security',
+            icon: <HeartHandshake className="h-6 w-6 text-[#00A8A8]" />,
+            title: 'Patient-Centered Care',
             description:
-                'HIPAA-compliant with end-to-end AES-256 encryption, role-based access control, and comprehensive audit trails for complete data protection.',
-            color: 'from-green-500 to-emerald-500',
-            metric: '100% data protection',
+                'We prioritize your comfort, dignity, and individual healthcare needs.',
         },
         {
-            icon: <CreditCard className="h-6 w-6" />,
-            title: 'Unified Payments',
+            icon: <MicroscopeIcon className="h-6 w-6 text-[#1976D2]" />,
+            title: 'Modern Diagnostic Technology',
             description:
-                'Accept all payment methods—cash, card, mobile money, and insurance claims—with automated reconciliation and real-time settlement tracking.',
-            color: 'from-purple-500 to-pink-500',
-            metric: '40% faster payments',
+                'State-of-the-art equipment for accurate diagnosis and effective treatment.',
         },
         {
-            icon: <BarChart3 className="h-6 w-6" />,
-            title: 'Predictive Analytics',
+            icon: <Database className="h-6 w-6 text-[#00A8A8]" />,
+            title: 'Integrated Digital Health Records',
             description:
-                'Gain actionable insights with AI-driven revenue forecasting, payment trend analysis, and comprehensive financial performance dashboards.',
-            color: 'from-orange-500 to-red-500',
-            metric: '30% revenue growth',
+                'Secure, accessible health records for coordinated, continuous care.',
         },
         {
-            icon: <Users className="h-6 w-6" />,
-            title: 'Comprehensive Patient Management',
+            icon: <DollarSign className="h-6 w-6 text-[#1976D2]" />,
+            title: 'Affordable Quality Healthcare',
             description:
-                'Maintain complete patient histories, insurance verification, consent forms, and billing records in a unified, accessible platform.',
-            color: 'from-indigo-500 to-purple-500',
-            metric: '100% patient data access',
+                'Premium healthcare services at accessible, transparent prices.',
         },
         {
-            icon: <FileText className="h-6 w-6" />,
-            title: 'Intelligent Claims Management',
-            description:
-                'Submit, track, and optimize insurance claims with automated validation, reducing denials by up to 40% and accelerating reimbursement cycles.',
-            color: 'from-teal-500 to-cyan-500',
-            metric: '40% fewer denials',
+            icon: <ShieldCheck className="h-6 w-6 text-[#00A8A8]" />,
+            title: 'Confidential and Safe Care',
+            description: 'Your privacy and safety are our highest priority.',
+        },
+    ];
+
+    const womenHealthServices = [
+        {
+            icon: <UserRound className="h-5 w-5" />,
+            label: 'Gynaecology Consultations',
         },
         {
-            icon: <Clock className="h-6 w-6" />,
-            title: 'Smart Payment Orchestration',
-            description:
-                'Automated payment reminders, flexible payment plans, and real-time status updates—reducing late payments by over 60%.',
-            color: 'from-yellow-500 to-orange-500',
-            metric: '60% less late payments',
+            icon: <TestTubeIcon className="h-5 w-5" />,
+            label: 'Cervical Cancer Screening',
         },
         {
-            icon: <Database className="h-6 w-6" />,
-            title: 'Integrated Inventory Management',
-            description:
-                'Seamlessly track medical supplies, automatically link consumables to patient billing, and maintain optimal stock levels with predictive alerts.',
-            color: 'from-blue-500 to-indigo-500',
-            metric: '20% inventory savings',
+            icon: <HeartPulse className="h-5 w-5" />,
+            label: 'Fertility Support',
+        },
+        { icon: <Baby className="h-5 w-5" />, label: 'Pregnancy Care' },
+        { icon: <Flower className="h-5 w-5" />, label: 'Menopause Support' },
+    ];
+
+    const digitalHealthFeatures = [
+        {
+            icon: <FileText className="h-5 w-5" />,
+            label: 'Electronic Health Records',
+        },
+        {
+            icon: <CalendarDays className="h-5 w-5" />,
+            label: 'Online Appointments',
+        },
+        { icon: <MessageCircle className="h-5 w-5" />, label: 'SMS Reminders' },
+        {
+            icon: <PhoneCall className="h-5 w-5" />,
+            label: 'WhatsApp Patient Support',
+        },
+        {
+            icon: <Database className="h-5 w-5" />,
+            label: 'Digital Laboratory Results',
+        },
+        {
+            icon: <CreditCard className="h-5 w-5" />,
+            label: 'Integrated Billing',
         },
     ];
 
     const stats = [
         {
             value: '10,000+',
-            label: 'Healthcare Providers',
+            label: 'Happy Patients',
             icon: <Users className="h-5 w-5" />,
         },
         {
-            value: '₦50M+',
-            label: 'Processed Daily',
-            icon: <DollarSign className="h-5 w-5" />,
+            value: '50+',
+            label: 'Specialist Doctors',
+            icon: <User className="h-5 w-5" />,
         },
         {
-            value: '99.9%',
-            label: 'Uptime Guarantee',
-            icon: <Cloud className="h-5 w-5" />,
+            value: '99%',
+            label: 'Satisfaction Rate',
+            icon: <Heart className="h-5 w-5" />,
         },
         {
             value: '24/7',
-            label: 'Enterprise Support',
-            icon: <HeadphonesIcon className="h-5 w-5" />,
+            label: 'Emergency Care',
+            icon: <AmbulanceIcon className="h-5 w-5" />,
         },
     ];
 
-    const testimonials = [
+    const maternityServices = [
         {
-            name: 'Dr. Sarah Johnson',
-            role: 'Medical Director, City Hospital',
-            content:
-                "EasyBill has transformed our billing operations. We've reduced claim denials by 42% and improved cash flow by 35% within the first quarter.",
-            rating: 5,
-            image: '/avatars/doctor1.jpg',
+            icon: <HeartPulse className="h-6 w-6" />,
+            label: 'Antenatal Clinics',
         },
-        {
-            name: 'Michael Okonkwo',
-            role: 'Practice Manager, HealthFirst Clinic',
-            content:
-                'The insurance claim automation alone saves us 15 hours per week. The intuitive interface has reduced staff training time by 60%.',
-            rating: 5,
-            image: '/avatars/manager1.jpg',
-        },
-        {
-            name: 'Dr. Amina Mohammed',
-            role: 'Owner, Family Care Center',
-            content:
-                "Best investment we've made. The real-time analytics help us make data-driven decisions that have improved our bottom line by 25%.",
-            rating: 5,
-            image: '/avatars/doctor2.jpg',
-        },
+        { icon: <Baby className="h-6 w-6" />, label: 'Safe Delivery Services' },
+        { icon: <Heart className="h-6 w-6" />, label: 'Newborn Care' },
+        { icon: <Users className="h-6 w-6" />, label: 'Postnatal Follow-up' },
     ];
 
-    const pricingPlans = [
+    const specialtyServices = [
         {
-            name: 'Starter',
-            price: '₦29,999',
-            period: '/month',
-            description: 'For small practices starting out',
-            features: [
-                'Up to 500 patients',
-                'Basic invoicing & billing',
-                'Multi-payment processing',
-                'Email support',
-                'Standard reports',
-                'Patient portal',
-            ],
-            limitations: [
-                'No insurance claims',
-                'No inventory management',
-                'No API access',
-            ],
-            buttonText: 'Start Free Trial',
-            popular: false,
+            title: 'Surgery Services',
+            description: 'Advanced surgical procedures with expert care.',
+            image: IMAGES.surgery,
+            link: '#',
         },
         {
-            name: 'Professional',
-            price: '₦79,999',
-            period: '/month',
-            description: 'For growing healthcare practices',
-            features: [
-                'Unlimited patients',
-                'Advanced invoicing & billing',
-                'Insurance claims management',
-                'Priority support (SLA)',
-                'Advanced analytics & forecasting',
-                'Full inventory management',
-                'SMS & email automation',
-                'API integration',
-            ],
-            limitations: [],
-            buttonText: 'Start Free Trial',
-            popular: true,
+            title: 'Consultation Services',
+            description: 'Expert consultations across all specialties.',
+            image: IMAGES.consultation,
+            link: '#',
         },
         {
-            name: 'Enterprise',
-            price: 'Custom',
-            period: '',
-            description: 'For large hospitals & groups',
-            features: [
-                'Everything in Professional',
-                'Multi-location & multi-entity',
-                'Custom integrations & workflows',
-                'Dedicated account manager',
-                '99.95% SLA guarantee',
-                'On-premise deployment',
-                'Full API access & webhooks',
-                'Advanced security & compliance',
-            ],
-            limitations: [],
-            buttonText: 'Contact Enterprise Sales',
-            popular: false,
-        },
-    ];
-
-    const faqs = [
-        {
-            question: 'Is EasyBill HIPAA compliant and secure?',
-            answer: 'Yes, EasyBill is fully HIPAA compliant and undergoes regular third-party security audits. We implement end-to-end AES-256 encryption, multi-factor authentication, role-based access control, and maintain comprehensive audit logs. Our infrastructure is hosted on SOC 2 Type II certified data centers with 99.9% uptime SLA.',
+            title: 'Imaging & Diagnostics',
+            description: 'State-of-the-art imaging for accurate diagnosis.',
+            image: IMAGES.imaging,
+            link: '#',
         },
         {
-            question: 'Can EasyBill handle insurance claims processing?',
-            answer: 'Absolutely. EasyBill provides end-to-end insurance claims management including automated eligibility verification, electronic submission, real-time status tracking, and automated denial management. We integrate with over 200 insurance providers and support all major claim formats.',
+            title: 'Ultrasound Services',
+            description: 'Advanced ultrasound imaging for precise diagnostics.',
+            image: IMAGES.ultrasound,
+            link: '#',
         },
         {
-            question: 'What is the implementation timeline?',
-            answer: 'Most practices are fully operational within 24-48 hours. Our dedicated onboarding team provides personalized training, data migration support, and workflow optimization to ensure a seamless transition. We also offer dedicated implementation managers for enterprise clients.',
+            title: 'Dental Care',
+            description: 'Comprehensive dental services for all ages.',
+            image: IMAGES.dental1,
+            link: '#',
         },
         {
-            question: 'Do you offer a free trial?',
-            answer: 'Yes, we offer a comprehensive 14-day free trial with full access to all features, including premium support and dedicated onboarding. No credit card required, and you can cancel at any time with no obligations.',
-        },
-        {
-            question: 'What about mobile accessibility?',
-            answer: 'EasyBill is fully responsive and accessible from any device. We also offer dedicated mobile applications for iOS and Android with offline capabilities, allowing your team to bill and manage patients from anywhere, anytime.',
+            title: 'Orthodontics',
+            description: 'Expert orthodontic care for beautiful smiles.',
+            image: IMAGES.dental2,
+            link: '#',
         },
     ];
 
     return (
         <>
-            <Head title="EasyBill - Enterprise Healthcare Billing Platform">
+            <Head title="Altaf Memorial Hospital - Compassionate Care. Advanced Medicine.">
                 <link rel="preconnect" href="https://fonts.bunny.net" />
                 <link
-                    href="https://fonts.bunny.net/css?family=instrument-sans:400,500,600,700"
+                    href="https://fonts.bunny.net/css?family=inter:400,500,600,700|poppins:400,500,600,700"
                     rel="stylesheet"
                 />
             </Head>
 
-            <div
-                className={`min-h-screen bg-white font-['instrument-sans'] dark:bg-gray-900 ${isDarkMode ? 'dark' : ''}`}
-            >
+            <div className="min-h-screen bg-white font-['Inter'] antialiased">
                 {/* Navigation */}
                 <nav
                     className={`fixed top-0 z-50 w-full transition-all duration-300 ${
                         scrollPosition > 50
-                            ? 'bg-white/95 shadow-lg backdrop-blur-lg dark:bg-gray-900/95'
+                            ? 'bg-white/95 shadow-lg backdrop-blur-lg'
                             : 'bg-transparent'
                     }`}
                 >
@@ -316,64 +1083,78 @@ export default function Welcome({
                                     href="/"
                                     className="flex items-center gap-2"
                                 >
-                                    <div className="rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 p-2 shadow-md">
-                                        <DollarSign className="h-5 w-5 text-white" />
+                                    <div className="rounded-lg bg-[#1976D2] p-2 shadow-md">
+                                        <Heart className="h-5 w-5 text-white" />
                                     </div>
-                                    <span className="text-xl font-bold text-gray-900 dark:text-white">
-                                        Easy
-                                        <span className="text-blue-600">
-                                            Bill
+                                    <div className="flex flex-col leading-tight">
+                                        <span className="font-['Poppins'] text-xl font-bold text-[#0B3D91]">
+                                            Altaf Memorial
                                         </span>
-                                    </span>
+                                        <span className="text-[8px] font-medium tracking-wider text-[#1976D2] uppercase">
+                                            Hospital
+                                        </span>
+                                    </div>
                                 </Link>
                             </div>
 
                             <div className="hidden md:block">
                                 <div className="flex items-center gap-8">
                                     <a
-                                        href="#features"
-                                        className="text-sm font-medium text-gray-700 transition-colors hover:text-blue-600 dark:text-gray-300"
+                                        href="#services"
+                                        className="text-sm font-medium text-gray-700 transition-colors hover:text-[#1976D2]"
                                     >
-                                        Features
+                                        Services
                                     </a>
                                     <a
-                                        href="#pricing"
-                                        className="text-sm font-medium text-gray-700 transition-colors hover:text-blue-600 dark:text-gray-300"
+                                        href="#why-choose"
+                                        className="text-sm font-medium text-gray-700 transition-colors hover:text-[#1976D2]"
                                     >
-                                        Pricing
+                                        Why Us
                                     </a>
                                     <a
-                                        href="#testimonials"
-                                        className="text-sm font-medium text-gray-700 transition-colors hover:text-blue-600 dark:text-gray-300"
+                                        href="#specialties"
+                                        className="text-sm font-medium text-gray-700 transition-colors hover:text-[#1976D2]"
                                     >
-                                        Testimonials
+                                        Specialties
                                     </a>
                                     <a
-                                        href="#faq"
-                                        className="text-sm font-medium text-gray-700 transition-colors hover:text-blue-600 dark:text-gray-300"
+                                        href="#women-health"
+                                        className="text-sm font-medium text-gray-700 transition-colors hover:text-[#1976D2]"
                                     >
-                                        FAQ
+                                        Women's Health
+                                    </a>
+                                    <a
+                                        href="#maternity"
+                                        className="text-sm font-medium text-gray-700 transition-colors hover:text-[#1976D2]"
+                                    >
+                                        Maternity
+                                    </a>
+                                    <a
+                                        href="#digital-health"
+                                        className="text-sm font-medium text-gray-700 transition-colors hover:text-[#1976D2]"
+                                    >
+                                        Digital Health
+                                    </a>
+                                    <a
+                                        href="#appointment"
+                                        className="text-sm font-medium text-[#1976D2] transition-colors hover:text-[#0B3D91]"
+                                    >
+                                        Book Appointment
+                                    </a>
+                                    <a
+                                        href="#contact"
+                                        className="text-sm font-medium text-gray-700 transition-colors hover:text-[#1976D2]"
+                                    >
+                                        Contact
                                     </a>
                                 </div>
                             </div>
 
                             <div className="flex items-center gap-4">
-                                <button
-                                    onClick={toggleDarkMode}
-                                    className="rounded-lg p-2 text-gray-600 transition-colors hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-                                    aria-label="Toggle dark mode"
-                                >
-                                    {isDarkMode ? (
-                                        <Sun className="h-5 w-5" />
-                                    ) : (
-                                        <Moon className="h-5 w-5" />
-                                    )}
-                                </button>
-
                                 {auth.user ? (
                                     <Link
                                         href={dashboard()}
-                                        className="hidden rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-lg transition-all hover:scale-105 hover:shadow-xl md:block"
+                                        className="hidden rounded-lg bg-[#1976D2] px-4 py-2 text-sm font-medium text-white shadow-lg transition-all hover:scale-105 hover:shadow-xl md:block"
                                     >
                                         Dashboard
                                     </Link>
@@ -381,16 +1162,16 @@ export default function Welcome({
                                     <div className="hidden items-center gap-3 md:flex">
                                         <Link
                                             href={login()}
-                                            className="text-sm font-medium text-gray-700 transition-colors hover:text-blue-600 dark:text-gray-300"
+                                            className="text-sm font-medium text-gray-700 transition-colors hover:text-[#1976D2]"
                                         >
                                             Log in
                                         </Link>
                                         {canRegister && (
                                             <Link
                                                 href={register()}
-                                                className="rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-lg transition-all hover:scale-105 hover:shadow-xl"
+                                                className="rounded-lg bg-[#1976D2] px-4 py-2 text-sm font-medium text-white shadow-lg transition-all hover:scale-105 hover:shadow-xl"
                                             >
-                                                Start free trial
+                                                Book Appointment
                                             </Link>
                                         )}
                                     </div>
@@ -398,7 +1179,7 @@ export default function Welcome({
 
                                 <button
                                     onClick={() => setIsMenuOpen(!isMenuOpen)}
-                                    className="rounded-lg p-2 text-gray-600 transition-colors hover:bg-gray-100 md:hidden dark:text-gray-300 dark:hover:bg-gray-800"
+                                    className="rounded-lg p-2 text-gray-600 transition-colors hover:bg-gray-100 md:hidden"
                                     aria-label="Toggle menu"
                                 >
                                     {isMenuOpen ? (
@@ -411,46 +1192,70 @@ export default function Welcome({
                         </div>
 
                         {isMenuOpen && (
-                            <div className="border-t border-gray-200 py-4 md:hidden dark:border-gray-700">
+                            <div className="border-t border-gray-200 py-4 md:hidden">
                                 <div className="flex flex-col gap-4">
                                     <a
-                                        href="#features"
-                                        className="text-sm font-medium text-gray-700 hover:text-blue-600 dark:text-gray-300"
+                                        href="#services"
+                                        className="text-sm font-medium text-gray-700 hover:text-[#1976D2]"
                                     >
-                                        Features
+                                        Services
                                     </a>
                                     <a
-                                        href="#pricing"
-                                        className="text-sm font-medium text-gray-700 hover:text-blue-600 dark:text-gray-300"
+                                        href="#why-choose"
+                                        className="text-sm font-medium text-gray-700 hover:text-[#1976D2]"
                                     >
-                                        Pricing
+                                        Why Us
                                     </a>
                                     <a
-                                        href="#testimonials"
-                                        className="text-sm font-medium text-gray-700 hover:text-blue-600 dark:text-gray-300"
+                                        href="#specialties"
+                                        className="text-sm font-medium text-gray-700 hover:text-[#1976D2]"
                                     >
-                                        Testimonials
+                                        Specialties
                                     </a>
                                     <a
-                                        href="#faq"
-                                        className="text-sm font-medium text-gray-700 hover:text-blue-600 dark:text-gray-300"
+                                        href="#women-health"
+                                        className="text-sm font-medium text-gray-700 hover:text-[#1976D2]"
                                     >
-                                        FAQ
+                                        Women's Health
+                                    </a>
+                                    <a
+                                        href="#maternity"
+                                        className="text-sm font-medium text-gray-700 hover:text-[#1976D2]"
+                                    >
+                                        Maternity
+                                    </a>
+                                    <a
+                                        href="#digital-health"
+                                        className="text-sm font-medium text-gray-700 hover:text-[#1976D2]"
+                                    >
+                                        Digital Health
+                                    </a>
+                                    <a
+                                        href="#appointment"
+                                        className="text-sm font-medium text-[#1976D2] hover:text-[#0B3D91]"
+                                    >
+                                        Book Appointment
+                                    </a>
+                                    <a
+                                        href="#contact"
+                                        className="text-sm font-medium text-gray-700 hover:text-[#1976D2]"
+                                    >
+                                        Contact
                                     </a>
                                     {!auth.user && (
                                         <div className="flex flex-col gap-2 pt-2">
                                             <Link
                                                 href={login()}
-                                                className="rounded-lg border border-gray-300 px-4 py-2 text-center text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300"
+                                                className="rounded-lg border border-gray-300 px-4 py-2 text-center text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
                                             >
                                                 Log in
                                             </Link>
                                             {canRegister && (
                                                 <Link
                                                     href={register()}
-                                                    className="rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2 text-center text-sm font-medium text-white transition-colors hover:shadow-lg"
+                                                    className="rounded-lg bg-[#1976D2] px-4 py-2 text-center text-sm font-medium text-white transition-colors hover:shadow-lg"
                                                 >
-                                                    Start free trial
+                                                    Book Appointment
                                                 </Link>
                                             )}
                                         </div>
@@ -461,205 +1266,63 @@ export default function Welcome({
                     </div>
                 </nav>
 
-                {/* Hero Section */}
-                <section className="relative overflow-hidden bg-gradient-to-br from-blue-50 via-white to-indigo-50 pt-32 pb-20 lg:pt-40 dark:from-gray-900 dark:via-gray-900 dark:to-gray-800">
-                    <div className="bg-grid-pattern absolute inset-0 opacity-5"></div>
-
-                    <div className="animate-float absolute top-20 left-0 h-64 w-64 rounded-full bg-blue-200 opacity-20 blur-3xl"></div>
-                    <div className="animate-float-delayed absolute right-0 bottom-20 h-64 w-64 rounded-full bg-indigo-200 opacity-20 blur-3xl"></div>
-
-                    <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-                        <div className="grid items-center gap-12 lg:grid-cols-2">
-                            {/* Left column */}
-                            <div className="text-center lg:text-left">
-                                <div className="mb-6 inline-flex items-center rounded-full bg-blue-100 px-4 py-2 text-sm font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-                                    <Sparkles className="mr-2 h-4 w-4" />
-                                    Trusted by 10,000+ healthcare providers
-                                </div>
-
-                                <h1 className="mb-6 text-4xl leading-tight font-bold text-gray-900 lg:text-5xl xl:text-6xl dark:text-white">
-                                    Enterprise-Grade Billing for{' '}
-                                    <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-                                        Modern Healthcare
-                                    </span>
-                                </h1>
-
-                                <p className="mb-8 text-lg text-gray-600 lg:text-xl dark:text-gray-300">
-                                    Accelerate your revenue cycle, reduce
-                                    administrative overhead, and improve
-                                    financial outcomes with the most
-                                    comprehensive healthcare billing platform.
-                                </p>
-
-                                <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-center lg:justify-start">
-                                    <Link
-                                        href={register()}
-                                        className="group flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-8 py-4 text-lg font-medium text-white shadow-lg transition-all hover:scale-105 hover:shadow-xl sm:w-auto"
-                                    >
-                                        Start free trial
-                                        <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
-                                    </Link>
-
-                                    <button className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-gray-300 px-8 py-4 text-lg font-medium text-gray-700 transition-all hover:bg-gray-50 sm:w-auto dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800">
-                                        <Play className="h-5 w-5" />
-                                        Watch demo
-                                    </button>
-                                </div>
-
-                                <div className="mt-8 flex flex-wrap items-center justify-center gap-6 lg:justify-start">
-                                    <div className="flex items-center gap-2">
-                                        <CheckCircle className="h-5 w-5 text-green-500" />
-                                        <span className="text-sm text-gray-600 dark:text-gray-400">
-                                            No credit card required
-                                        </span>
+                {/* Hero Section - Static Professional */}
+                <section className="relative overflow-hidden pt-16">
+                    <div className="relative h-[600px] w-full">
+                        <img
+                            src={IMAGES.hero}
+                            alt="Altaf Memorial Hospital - State-of-the-Art Medical Facility"
+                            className="h-full w-full object-cover"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/50 to-transparent"></div>
+                        <div className="absolute inset-0 flex items-center">
+                            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+                                <div className="max-w-3xl text-white">
+                                    <div className="mb-4 inline-flex items-center rounded-full bg-[#1976D2]/80 px-4 py-1.5 text-sm font-medium backdrop-blur-sm">
+                                        <Sparkles className="mr-2 h-4 w-4" />
+                                        World-Class Healthcare
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                        <CheckCircle className="h-5 w-5 text-green-500" />
-                                        <span className="text-sm text-gray-600 dark:text-gray-400">
-                                            14-day free trial
+                                    <h1 className="font-['Poppins'] text-4xl font-bold leading-tight md:text-6xl">
+                                        Compassionate Care.
+                                        <br />
+                                        <span className="text-[#00A8A8]">
+                                            Advanced Medicine.
                                         </span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <CheckCircle className="h-5 w-5 text-green-500" />
-                                        <span className="text-sm text-gray-600 dark:text-gray-400">
-                                            Cancel anytime
-                                        </span>
-                                    </div>
-                                </div>
-
-                                {/* Trust Badges */}
-                                <div className="mt-8 flex flex-wrap items-center gap-4">
-                                    {trustBadges.map((badge, index) => (
-                                        <div
-                                            key={index}
-                                            className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-400"
+                                    </h1>
+                                    <p className="mt-4 text-lg text-white/90 md:text-xl">
+                                        Providing quality healthcare services
+                                        with state-of-the-art technology and
+                                        dedicated professionals committed to
+                                        your well-being.
+                                    </p>
+                                    <div className="mt-8 flex flex-wrap gap-4">
+                                        <Link
+                                            href="#appointment"
+                                            className="inline-flex items-center gap-2 rounded-lg bg-[#1976D2] px-6 py-3 text-white transition-all hover:scale-105 hover:shadow-xl"
                                         >
-                                            <span className="text-blue-600 dark:text-blue-400">
-                                                {badge.icon}
-                                            </span>
-                                            <span>{badge.label}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Right column - Dashboard preview */}
-                            <div className="relative">
-                                <div className="relative rounded-2xl bg-white p-2 shadow-2xl dark:bg-gray-800">
-                                    <div className="absolute -inset-1 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 opacity-20 blur"></div>
-                                    <div className="relative rounded-xl bg-white p-4 dark:bg-gray-800">
-                                        <div className="space-y-4">
-                                            <div className="flex items-center justify-between">
-                                                <div className="flex items-center gap-2">
-                                                    <div className="h-3 w-3 rounded-full bg-red-500"></div>
-                                                    <div className="h-3 w-3 rounded-full bg-yellow-500"></div>
-                                                    <div className="h-3 w-3 rounded-full bg-green-500"></div>
-                                                </div>
-                                                <div className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                                                    Practice Overview
-                                                </div>
-                                            </div>
-
-                                            <div className="grid grid-cols-3 gap-2">
-                                                <div className="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
-                                                    <div className="text-xs text-gray-500 dark:text-gray-400">
-                                                        Revenue
-                                                    </div>
-                                                    <div className="text-lg font-bold text-gray-900 dark:text-white">
-                                                        ₦1.2M
-                                                    </div>
-                                                </div>
-                                                <div className="rounded-lg bg-green-50 p-3 dark:bg-green-900/20">
-                                                    <div className="text-xs text-gray-500 dark:text-gray-400">
-                                                        Patients
-                                                    </div>
-                                                    <div className="text-lg font-bold text-gray-900 dark:text-white">
-                                                        87
-                                                    </div>
-                                                </div>
-                                                <div className="rounded-lg bg-purple-50 p-3 dark:bg-purple-900/20">
-                                                    <div className="text-xs text-gray-500 dark:text-gray-400">
-                                                        Pending
-                                                    </div>
-                                                    <div className="text-lg font-bold text-gray-900 dark:text-white">
-                                                        ₦450K
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <div className="space-y-2">
-                                                <div className="flex items-center justify-between text-sm">
-                                                    <span className="text-gray-600 dark:text-gray-400">
-                                                        Today's collections
-                                                    </span>
-                                                    <span className="font-medium text-gray-900 dark:text-white">
-                                                        ₦850,000
-                                                    </span>
-                                                </div>
-                                                <div className="h-2 rounded-full bg-gray-200 dark:bg-gray-700">
-                                                    <div className="h-2 w-3/4 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600"></div>
-                                                </div>
-                                            </div>
-
-                                            <div className="space-y-2">
-                                                <div className="flex items-center justify-between text-sm">
-                                                    <span className="text-gray-600 dark:text-gray-400">
-                                                        Insurance claims
-                                                    </span>
-                                                    <span className="font-medium text-gray-900 dark:text-white">
-                                                        ₦320,000
-                                                    </span>
-                                                </div>
-                                                <div className="h-2 rounded-full bg-gray-200 dark:bg-gray-700">
-                                                    <div className="h-2 w-1/2 rounded-full bg-gradient-to-r from-purple-600 to-pink-500"></div>
-                                                </div>
-                                            </div>
-
-                                            <div className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
-                                                <div className="mb-2 flex items-center justify-between">
-                                                    <span className="text-sm font-medium text-gray-900 dark:text-white">
-                                                        Recent invoices
-                                                    </span>
-                                                    <span className="text-xs text-blue-600">
-                                                        View all
-                                                    </span>
-                                                </div>
-                                                <div className="space-y-2">
-                                                    <div className="flex items-center justify-between text-sm">
-                                                        <span className="text-gray-600 dark:text-gray-400">
-                                                            John Smith
-                                                        </span>
-                                                        <span className="font-medium text-gray-900 dark:text-white">
-                                                            ₦25,000
-                                                        </span>
-                                                    </div>
-                                                    <div className="flex items-center justify-between text-sm">
-                                                        <span className="text-gray-600 dark:text-gray-400">
-                                                            Sarah Johnson
-                                                        </span>
-                                                        <span className="font-medium text-gray-900 dark:text-white">
-                                                            ₦45,000
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
+                                            Book Appointment
+                                            <ArrowRight className="h-4 w-4" />
+                                        </Link>
+                                        <a
+                                            href="#services"
+                                            className="inline-flex items-center gap-2 rounded-lg border-2 border-white px-6 py-3 text-white transition-all hover:bg-white/10"
+                                        >
+                                            Explore Services
+                                            <ChevronRight className="h-4 w-4" />
+                                        </a>
                                     </div>
-                                </div>
-
-                                <div className="absolute -top-4 -left-4 rounded-lg bg-white p-3 shadow-lg dark:bg-gray-800">
-                                    <div className="flex items-center gap-2">
-                                        <CheckCircle className="h-5 w-5 text-green-500" />
-                                        <span className="text-sm font-medium">
-                                            Insurance approved
+                                    <div className="mt-8 flex items-center gap-6 text-sm text-white/80">
+                                        <span className="flex items-center gap-1">
+                                            <CheckCircle className="h-4 w-4 text-[#00A8A8]" />
+                                            24/7 Emergency Care
                                         </span>
-                                    </div>
-                                </div>
-                                <div className="absolute -right-4 -bottom-4 rounded-lg bg-white p-3 shadow-lg dark:bg-gray-800">
-                                    <div className="flex items-center gap-2">
-                                        <TrendingUp className="h-5 w-5 text-blue-500" />
-                                        <span className="text-sm font-medium">
-                                            +32% this month
+                                        <span className="flex items-center gap-1">
+                                            <CheckCircle className="h-4 w-4 text-[#00A8A8]" />
+                                            Specialist Doctors
+                                        </span>
+                                        <span className="flex items-center gap-1">
+                                            <CheckCircle className="h-4 w-4 text-[#00A8A8]" />
+                                            Modern Technology
                                         </span>
                                     </div>
                                 </div>
@@ -669,20 +1332,20 @@ export default function Welcome({
                 </section>
 
                 {/* Stats Section */}
-                <section className="bg-white py-16 dark:bg-gray-900">
+                <section className="bg-white py-12">
                     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-                        <div className="grid grid-cols-2 gap-8 md:grid-cols-4">
+                        <div className="grid grid-cols-2 gap-6 md:grid-cols-4">
                             {stats.map((stat, index) => (
                                 <div key={index} className="text-center">
                                     <div className="mb-2 flex justify-center">
-                                        <div className="rounded-full bg-blue-100 p-3 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
+                                        <div className="rounded-full bg-[#1976D2]/10 p-3 text-[#1976D2]">
                                             {stat.icon}
                                         </div>
                                     </div>
-                                    <div className="text-2xl font-bold text-gray-900 md:text-3xl dark:text-white">
+                                    <div className="font-['Poppins'] text-2xl font-bold text-gray-900 md:text-3xl">
                                         {stat.value}
                                     </div>
-                                    <div className="text-sm text-gray-600 dark:text-gray-400">
+                                    <div className="text-sm text-gray-600">
                                         {stat.label}
                                     </div>
                                 </div>
@@ -691,340 +1354,593 @@ export default function Welcome({
                     </div>
                 </section>
 
-                {/* Features Section */}
-                <section
-                    id="features"
-                    className="bg-gray-50 py-16 dark:bg-gray-800"
-                >
+                {/* Services Section */}
+                <section id="services" className="bg-gray-50 py-16">
                     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
                         <div className="mb-12 text-center">
-                            <div className="inline-flex items-center rounded-full bg-blue-100 px-4 py-1.5 text-sm font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                            <div className="inline-flex items-center rounded-full bg-[#1976D2]/10 px-4 py-1.5 text-sm font-medium text-[#1976D2]">
                                 <Sparkles className="mr-2 h-4 w-4" />
-                                Platform Capabilities
+                                Our Services
                             </div>
-                            <h2 className="mb-4 text-3xl font-bold text-gray-900 md:text-4xl dark:text-white">
-                                Everything you need to{' '}
-                                <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-                                    optimize revenue
-                                </span>
+                            <h2 className="mb-4 font-['Poppins'] text-3xl font-bold text-gray-900 md:text-4xl">
+                                Our Specialized Healthcare Services
                             </h2>
-                            <p className="mx-auto max-w-2xl text-lg text-gray-600 dark:text-gray-400">
-                                Enterprise-grade features designed to streamline
-                                billing, accelerate payments, and improve
-                                financial outcomes.
+                            <p className="mx-auto max-w-2xl text-lg text-gray-600">
+                                Comprehensive medical care across multiple
+                                specialties
                             </p>
                         </div>
 
-                        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-                            {features.map((feature, index) => (
+                        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                            {services.map((service, index) => (
                                 <div
                                     key={index}
-                                    className="group relative rounded-2xl bg-white p-6 shadow-sm transition-all hover:shadow-xl dark:bg-gray-900"
+                                    className="group overflow-hidden rounded-2xl bg-white shadow-sm transition-all hover:-translate-y-1 hover:shadow-xl"
                                 >
-                                    <div
-                                        className={`mb-4 inline-flex rounded-lg bg-gradient-to-r ${feature.color} p-3 text-white shadow-md`}
-                                    >
-                                        {feature.icon}
-                                    </div>
-                                    <h3 className="mb-2 text-lg font-semibold text-gray-900 dark:text-white">
-                                        {feature.title}
-                                    </h3>
-                                    <p className="text-sm text-gray-600 dark:text-gray-400">
-                                        {feature.description}
-                                    </p>
-                                    <div className="mt-4 flex items-center gap-2 text-xs font-medium text-blue-600 dark:text-blue-400">
-                                        <span>{feature.metric}</span>
-                                        <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </section>
-
-                {/* How It Works */}
-                <section className="bg-white py-16 dark:bg-gray-900">
-                    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-                        <div className="mb-12 text-center">
-                            <h2 className="mb-4 text-3xl font-bold text-gray-900 md:text-4xl dark:text-white">
-                                Implementation Journey
-                            </h2>
-                            <p className="mx-auto max-w-2xl text-lg text-gray-600 dark:text-gray-400">
-                                Three simple phases to transform your billing
-                                operations
-                            </p>
-                        </div>
-
-                        <div className="grid gap-8 md:grid-cols-3">
-                            {[
-                                {
-                                    step: '01',
-                                    title: 'Connect & Configure',
-                                    description:
-                                        'Import patient data, configure payment systems, and customize your workflow in minutes with our guided onboarding.',
-                                    icon: <Database className="h-8 w-8" />,
-                                },
-                                {
-                                    step: '02',
-                                    title: 'Bill & Manage',
-                                    description:
-                                        'Create and send compliant invoices with automated validation, multi-payer reconciliation, and real-time tracking.',
-                                    icon: <FileText className="h-8 w-8" />,
-                                },
-                                {
-                                    step: '03',
-                                    title: 'Optimize & Grow',
-                                    description:
-                                        'Leverage predictive analytics, automated collections, and actionable insights to drive revenue growth.',
-                                    icon: <DollarSign className="h-8 w-8" />,
-                                },
-                            ].map((item, index) => (
-                                <div
-                                    key={index}
-                                    className="relative text-center"
-                                >
-                                    <div className="mb-6 flex justify-center">
-                                        <div className="relative">
-                                            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg">
-                                                {item.icon}
-                                            </div>
-                                            {index < 2 && (
-                                                <div className="absolute top-1/2 left-full hidden w-full -translate-y-1/2 md:block">
-                                                    <div className="h-0.5 w-full bg-gradient-to-r from-blue-600 to-indigo-600"></div>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                    <div className="mb-2 text-sm font-semibold text-blue-600">
-                                        Phase {item.step}
-                                    </div>
-                                    <h3 className="mb-2 text-xl font-bold text-gray-900 dark:text-white">
-                                        {item.title}
-                                    </h3>
-                                    <p className="text-gray-600 dark:text-gray-400">
-                                        {item.description}
-                                    </p>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </section>
-
-                {/* Testimonials */}
-                <section
-                    id="testimonials"
-                    className="bg-gray-50 py-16 dark:bg-gray-800"
-                >
-                    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-                        <div className="mb-12 text-center">
-                            <h2 className="mb-4 text-3xl font-bold text-gray-900 md:text-4xl dark:text-white">
-                                Trusted by industry leaders
-                            </h2>
-                            <p className="mx-auto max-w-2xl text-lg text-gray-600 dark:text-gray-400">
-                                Healthcare providers across Africa trust
-                                EasyBill for their billing operations
-                            </p>
-                        </div>
-
-                        <div className="grid gap-6 md:grid-cols-3">
-                            {testimonials.map((testimonial, index) => (
-                                <div
-                                    key={index}
-                                    className="rounded-2xl bg-white p-6 shadow-sm transition-all hover:shadow-lg dark:bg-gray-900"
-                                >
-                                    <div className="mb-4 flex gap-1">
-                                        {[...Array(testimonial.rating)].map(
-                                            (_, i) => (
-                                                <Star
-                                                    key={i}
-                                                    className="h-5 w-5 fill-yellow-400 text-yellow-400"
-                                                />
-                                            ),
-                                        )}
-                                    </div>
-                                    <p className="mb-6 text-gray-700 dark:text-gray-300">
-                                        "{testimonial.content}"
-                                    </p>
-                                    <div className="flex items-center gap-3">
-                                        <div className="h-12 w-12 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600"></div>
-                                        <div>
-                                            <div className="font-semibold text-gray-900 dark:text-white">
-                                                {testimonial.name}
-                                            </div>
-                                            <div className="text-sm text-gray-600 dark:text-gray-400">
-                                                {testimonial.role}
+                                    <div className="relative h-48 overflow-hidden">
+                                        <img
+                                            src={service.image}
+                                            alt={service.title}
+                                            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
+                                        />
+                                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
+                                        <div className="absolute bottom-4 left-4">
+                                            <div className="inline-flex rounded-xl bg-white/20 p-2 text-white backdrop-blur-sm">
+                                                {service.icon}
                                             </div>
                                         </div>
                                     </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </section>
-
-                {/* Pricing */}
-                <section
-                    id="pricing"
-                    className="bg-white py-16 dark:bg-gray-900"
-                >
-                    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-                        <div className="mb-12 text-center">
-                            <h2 className="mb-4 text-3xl font-bold text-gray-900 md:text-4xl dark:text-white">
-                                Transparent, enterprise pricing
-                            </h2>
-                            <p className="mx-auto max-w-2xl text-lg text-gray-600 dark:text-gray-400">
-                                Choose the plan that scales with your practice
-                            </p>
-                        </div>
-
-                        <div className="grid gap-8 lg:grid-cols-3">
-                            {pricingPlans.map((plan, index) => (
-                                <div
-                                    key={index}
-                                    className={`relative rounded-2xl p-8 transition-all hover:shadow-xl ${
-                                        plan.popular
-                                            ? 'border-2 border-blue-600 shadow-xl dark:border-blue-500'
-                                            : 'border border-gray-200 dark:border-gray-700'
-                                    }`}
-                                >
-                                    {plan.popular && (
-                                        <div className="absolute -top-4 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-1 text-sm font-medium text-white shadow-md">
-                                            Most Popular
-                                        </div>
-                                    )}
-
-                                    <div className="mb-6">
-                                        <h3 className="text-xl font-bold text-gray-900 dark:text-white">
-                                            {plan.name}
+                                    <div className="p-6">
+                                        <h3 className="mb-2 font-['Poppins'] text-xl font-semibold text-gray-900">
+                                            {service.title}
                                         </h3>
-                                        <p className="text-sm text-gray-600 dark:text-gray-400">
-                                            {plan.description}
+                                        <p className="text-sm text-gray-600">
+                                            {service.description}
+                                        </p>
+                                        <a
+                                            href={service.link}
+                                            className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-[#1976D2] transition-all hover:gap-2"
+                                        >
+                                            Learn more
+                                            <ChevronRight className="h-4 w-4" />
+                                        </a>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </section>
+
+                {/* Specialty Services Section */}
+                <section id="specialties" className="bg-white py-16">
+                    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+                        <div className="mb-12 text-center">
+                            <div className="inline-flex items-center rounded-full bg-[#1976D2]/10 px-4 py-1.5 text-sm font-medium text-[#1976D2]">
+                                <StethoscopeIcon className="mr-2 h-4 w-4" />
+                                Our Specialties
+                            </div>
+                            <h2 className="mb-4 font-['Poppins'] text-3xl font-bold text-gray-900 md:text-4xl">
+                                Advanced Medical Specialties
+                            </h2>
+                            <p className="mx-auto max-w-2xl text-lg text-gray-600">
+                                World-class care across all medical disciplines
+                            </p>
+                        </div>
+
+                        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                            {specialtyServices.map((specialty, index) => (
+                                <div
+                                    key={index}
+                                    className="group relative overflow-hidden rounded-2xl shadow-md transition-all hover:shadow-xl"
+                                >
+                                    <div className="relative h-64 overflow-hidden">
+                                        <img
+                                            src={specialty.image}
+                                            alt={specialty.title}
+                                            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
+                                        />
+                                        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent"></div>
+                                        <div className="absolute right-0 bottom-0 left-0 p-6">
+                                            <h3 className="text-xl font-bold text-white">
+                                                {specialty.title}
+                                            </h3>
+                                            <p className="mt-1 text-sm text-white/80">
+                                                {specialty.description}
+                                            </p>
+                                            <a
+                                                href={specialty.link}
+                                                className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-[#00A8A8] transition-all hover:gap-2"
+                                            >
+                                                Learn more
+                                                <ChevronRight className="h-4 w-4" />
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </section>
+
+                {/* Why Choose Us */}
+                <section id="why-choose" className="bg-gray-50 py-16">
+                    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+                        <div className="mb-12 text-center">
+                            <h2 className="mb-4 font-['Poppins'] text-3xl font-bold text-gray-900 md:text-4xl">
+                                Why Choose Altaf Memorial Hospital
+                            </h2>
+                            <p className="mx-auto max-w-2xl text-lg text-gray-600">
+                                Quality healthcare you can trust
+                            </p>
+                        </div>
+
+                        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                            {whyChoose.map((item, index) => (
+                                <div
+                                    key={index}
+                                    className="flex items-start gap-4 rounded-xl bg-white p-4 shadow-sm transition-all hover:shadow-md"
+                                >
+                                    <div className="flex-shrink-0 rounded-lg bg-[#1976D2]/10 p-2">
+                                        {item.icon}
+                                    </div>
+                                    <div>
+                                        <h4 className="font-semibold text-gray-900">
+                                            {item.title}
+                                        </h4>
+                                        <p className="text-sm text-gray-600">
+                                            {item.description}
                                         </p>
                                     </div>
-
-                                    <div className="mb-6">
-                                        <span className="text-4xl font-bold text-gray-900 dark:text-white">
-                                            {plan.price}
-                                        </span>
-                                        <span className="text-gray-600 dark:text-gray-400">
-                                            {plan.period}
-                                        </span>
-                                    </div>
-
-                                    <ul className="mb-6 space-y-3">
-                                        {plan.features.map((feature, i) => (
-                                            <li
-                                                key={i}
-                                                className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300"
-                                            >
-                                                <CheckCircle className="h-4 w-4 text-green-500" />
-                                                {feature}
-                                            </li>
-                                        ))}
-                                        {plan.limitations.map(
-                                            (limitation, i) => (
-                                                <li
-                                                    key={i}
-                                                    className="flex items-center gap-2 text-sm text-gray-400"
-                                                >
-                                                    <X className="h-4 w-4" />
-                                                    {limitation}
-                                                </li>
-                                            ),
-                                        )}
-                                    </ul>
-
-                                    <button
-                                        className={`w-full rounded-lg py-3 font-medium transition-all ${
-                                            plan.popular
-                                                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg hover:scale-105 hover:shadow-xl'
-                                                : 'border-2 border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800'
-                                        }`}
-                                    >
-                                        {plan.buttonText}
-                                    </button>
                                 </div>
                             ))}
                         </div>
                     </div>
                 </section>
 
-                {/* FAQ */}
-                <section id="faq" className="bg-gray-50 py-16 dark:bg-gray-800">
-                    <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
-                        <div className="mb-12 text-center">
-                            <h2 className="mb-4 text-3xl font-bold text-gray-900 md:text-4xl dark:text-white">
-                                Frequently asked questions
+                {/* Women's Health Section */}
+                <section id="women-health" className="bg-white py-16">
+                    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+                        <div className="grid gap-12 lg:grid-cols-2">
+                            <div>
+                                <div className="inline-flex items-center rounded-full bg-[#1976D2]/10 px-4 py-1.5 text-sm font-medium text-[#1976D2]">
+                                    <Heart className="mr-2 h-4 w-4" />
+                                    Women's Health
+                                </div>
+                                <h2 className="mt-4 font-['Poppins'] text-3xl font-bold text-gray-900 md:text-4xl">
+                                    Dedicated Women's Health Services
+                                </h2>
+                                <p className="mt-4 text-lg text-gray-600">
+                                    From preventive screening and reproductive
+                                    health to maternity care and specialist
+                                    treatment, our team provides personalised
+                                    support through every stage of life.
+                                </p>
+
+                                <div className="mt-6 space-y-3">
+                                    {womenHealthServices.map(
+                                        (service, index) => (
+                                            <div
+                                                key={index}
+                                                className="flex items-center gap-3 rounded-lg bg-gray-50 p-3 transition-all hover:bg-[#1976D2]/5"
+                                            >
+                                                <div className="rounded-lg bg-[#1976D2]/10 p-2 text-[#1976D2]">
+                                                    {service.icon}
+                                                </div>
+                                                <span className="font-medium text-gray-900">
+                                                    {service.label}
+                                                </span>
+                                            </div>
+                                        ),
+                                    )}
+                                </div>
+
+                                <Link
+                                    href="#appointment"
+                                    className="mt-6 inline-flex items-center gap-2 rounded-lg bg-[#1976D2] px-6 py-3 text-white transition-all hover:scale-105 hover:shadow-lg"
+                                >
+                                    Book Women's Health Consultation
+                                    <ArrowRight className="h-4 w-4" />
+                                </Link>
+                            </div>
+
+                            <div className="relative flex items-center justify-center">
+                                <img
+                                    src={IMAGES.womenHealth}
+                                    alt="Women's Health"
+                                    className="h-[400px] w-full rounded-2xl object-cover shadow-lg"
+                                />
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                {/* Maternity Section */}
+                <section id="maternity" className="bg-gray-50 py-16">
+                    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+                        <div className="text-center">
+                            <div className="inline-flex items-center rounded-full bg-[#00A8A8]/10 px-4 py-1.5 text-sm font-medium text-[#00A8A8]">
+                                <Baby className="mr-2 h-4 w-4" />
+                                Maternity Care
+                            </div>
+                            <h2 className="mt-4 font-['Poppins'] text-3xl font-bold text-gray-900 md:text-4xl">
+                                Supporting Mothers Through Every Journey
                             </h2>
-                            <p className="text-lg text-gray-600 dark:text-gray-400">
-                                Everything you need to know about EasyBill
+                            <p className="mx-auto mt-4 max-w-2xl text-lg text-gray-600">
+                                Comprehensive maternity services from pregnancy
+                                to postnatal care
                             </p>
                         </div>
 
-                        <div className="space-y-4">
-                            {faqs.map((faq, index) => (
+                        <div className="mt-10 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+                            {maternityServices.map((service, index) => (
                                 <div
                                     key={index}
-                                    className="rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900"
+                                    className="rounded-2xl bg-white p-6 text-center transition-all hover:-translate-y-1 hover:shadow-lg"
                                 >
-                                    <button
-                                        onClick={() =>
-                                            setActiveFaq(
-                                                activeFaq === index
-                                                    ? null
-                                                    : index,
-                                            )
-                                        }
-                                        className="flex w-full items-center justify-between p-4 text-left transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
-                                    >
-                                        <span className="font-medium text-gray-900 dark:text-white">
-                                            {faq.question}
-                                        </span>
-                                        <ChevronRight
-                                            className={`h-5 w-5 text-gray-500 transition-transform ${
-                                                activeFaq === index
-                                                    ? 'rotate-90'
-                                                    : ''
-                                            }`}
-                                        />
-                                    </button>
-                                    {activeFaq === index && (
-                                        <div className="border-t border-gray-200 p-4 text-gray-600 dark:border-gray-700 dark:text-gray-400">
-                                            {faq.answer}
-                                        </div>
-                                    )}
+                                    <div className="mb-4 inline-flex rounded-xl bg-[#00A8A8]/10 p-3 text-[#00A8A8]">
+                                        {service.icon}
+                                    </div>
+                                    <h4 className="font-semibold text-gray-900">
+                                        {service.label}
+                                    </h4>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="mt-10 text-center">
+                            <Link
+                                href="#appointment"
+                                className="inline-flex items-center gap-2 rounded-lg bg-[#00A8A8] px-6 py-3 text-white transition-all hover:scale-105 hover:shadow-lg"
+                            >
+                                Book Maternity Consultation
+                                <ArrowRight className="h-4 w-4" />
+                            </Link>
+                        </div>
+                    </div>
+                </section>
+
+                {/* Digital Health Section */}
+                <section id="digital-health" className="bg-white py-16">
+                    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+                        <div className="text-center">
+                            <div className="inline-flex items-center rounded-full bg-[#1976D2]/10 px-4 py-1.5 text-sm font-medium text-[#1976D2]">
+                                <Smartphone className="mr-2 h-4 w-4" />
+                                Digital Health
+                            </div>
+                            <h2 className="mt-4 font-['Poppins'] text-3xl font-bold text-gray-900 md:text-4xl">
+                                Healthcare Powered by Technology
+                            </h2>
+                            <p className="mx-auto mt-4 max-w-2xl text-lg text-gray-600">
+                                Modern digital solutions for better healthcare
+                                delivery
+                            </p>
+                        </div>
+
+                        <div className="mt-10 grid gap-4 md:grid-cols-3">
+                            {digitalHealthFeatures.map((feature, index) => (
+                                <div
+                                    key={index}
+                                    className="flex items-center gap-3 rounded-lg bg-gray-50 p-4 transition-all hover:shadow-md"
+                                >
+                                    <div className="rounded-lg bg-[#1976D2]/10 p-2 text-[#1976D2]">
+                                        {feature.icon}
+                                    </div>
+                                    <span className="font-medium text-gray-900">
+                                        {feature.label}
+                                    </span>
                                 </div>
                             ))}
                         </div>
                     </div>
                 </section>
 
-                {/* CTA Section */}
-                <section className="bg-gradient-to-r from-blue-600 to-indigo-600 py-16">
-                    <div className="mx-auto max-w-4xl px-4 text-center sm:px-6 lg:px-8">
-                        <h2 className="mb-4 text-3xl font-bold text-white md:text-4xl">
-                            Ready to transform your billing operations?
-                        </h2>
-                        <p className="mb-8 text-xl text-white/90">
-                            Join thousands of healthcare providers who trust
-                            EasyBill to optimize their revenue cycle
-                        </p>
-                        <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
-                            <Link
-                                href={register()}
-                                className="group flex items-center gap-2 rounded-lg bg-white px-8 py-4 text-lg font-medium text-blue-600 shadow-lg transition-all hover:scale-105 hover:shadow-xl"
-                            >
-                                Start your free trial
-                                <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
-                            </Link>
-                            <button className="flex items-center gap-2 rounded-lg border-2 border-white px-8 py-4 text-lg font-medium text-white transition-all hover:bg-white/10">
-                                Contact enterprise sales
-                            </button>
+                {/* Appointment Booking Section */}
+                <section
+                    id="appointment"
+                    className="bg-gradient-to-br from-[#1976D2]/5 via-white to-[#00A8A8]/5 py-16"
+                >
+                    <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
+                        <div className="mb-10 text-center">
+                            <div className="inline-flex items-center rounded-full bg-[#1976D2]/10 px-4 py-1.5 text-sm font-medium text-[#1976D2]">
+                                <CalendarDays className="mr-2 h-4 w-4" />
+                                Book Appointment
+                            </div>
+                            <h2 className="mt-4 font-['Poppins'] text-3xl font-bold text-gray-900 md:text-4xl">
+                                Schedule Your Visit
+                            </h2>
+                            <p className="mx-auto mt-4 max-w-2xl text-lg text-gray-600">
+                                Fill in the details below and our team will
+                                confirm your appointment
+                            </p>
                         </div>
-                        <p className="mt-4 text-sm text-white/80">
-                            No credit card required • 14-day free trial •
-                            Dedicated onboarding support
+
+                        <div className="rounded-2xl bg-white p-8 shadow-xl">
+                            {submitSuccess && (
+                                <div className="mb-6 rounded-lg border border-green-200 bg-green-50 p-4">
+                                    <div className="flex items-start gap-3">
+                                        <CheckCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-green-500" />
+                                        <div>
+                                            <p className="font-medium text-green-800">
+                                                Appointment Request Received!
+                                            </p>
+                                            <p className="text-sm text-green-700">
+                                                We have sent a confirmation
+                                                email to you. Our team will
+                                                contact you shortly to confirm
+                                                your appointment.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {submitError && (
+                                <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4">
+                                    <p className="text-red-700">
+                                        {submitError}
+                                    </p>
+                                </div>
+                            )}
+
+                            <form
+                                onSubmit={handleAppointmentSubmit}
+                                className="space-y-6"
+                            >
+                                <div className="grid gap-6 md:grid-cols-2">
+                                    <div>
+                                        <label
+                                            htmlFor="patient_name"
+                                            className="mb-1 block text-sm font-medium text-gray-700"
+                                        >
+                                            Full Name *
+                                        </label>
+                                        <input
+                                            type="text"
+                                            id="patient_name"
+                                            name="patient_name"
+                                            value={appointmentForm.patient_name}
+                                            onChange={
+                                                handleAppointmentInputChange
+                                            }
+                                            required
+                                            className="w-full rounded-lg border border-gray-300 px-4 py-2.5 transition focus:border-[#1976D2] focus:ring-2 focus:ring-[#1976D2]/20 focus:outline-none"
+                                            placeholder="John Doe"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label
+                                            htmlFor="patient_email"
+                                            className="mb-1 block text-sm font-medium text-gray-700"
+                                        >
+                                            Email Address *
+                                        </label>
+                                        <input
+                                            type="email"
+                                            id="patient_email"
+                                            name="patient_email"
+                                            value={
+                                                appointmentForm.patient_email
+                                            }
+                                            onChange={
+                                                handleAppointmentInputChange
+                                            }
+                                            required
+                                            className="w-full rounded-lg border border-gray-300 px-4 py-2.5 transition focus:border-[#1976D2] focus:ring-2 focus:ring-[#1976D2]/20 focus:outline-none"
+                                            placeholder="john@example.com"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label
+                                            htmlFor="patient_phone"
+                                            className="mb-1 block text-sm font-medium text-gray-700"
+                                        >
+                                            Phone Number *
+                                        </label>
+                                        <input
+                                            type="tel"
+                                            id="patient_phone"
+                                            name="patient_phone"
+                                            value={
+                                                appointmentForm.patient_phone
+                                            }
+                                            onChange={
+                                                handleAppointmentInputChange
+                                            }
+                                            required
+                                            className="w-full rounded-lg border border-gray-300 px-4 py-2.5 transition focus:border-[#1976D2] focus:ring-2 focus:ring-[#1976D2]/20 focus:outline-none"
+                                            placeholder="+260 97X XXX XXX"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label
+                                            htmlFor="service"
+                                            className="mb-1 block text-sm font-medium text-gray-700"
+                                        >
+                                            Service / Department *
+                                        </label>
+                                        <select
+                                            id="service"
+                                            name="service"
+                                            value={appointmentForm.service}
+                                            onChange={
+                                                handleAppointmentInputChange
+                                            }
+                                            required
+                                            className="w-full rounded-lg border border-gray-300 px-4 py-2.5 transition focus:border-[#1976D2] focus:ring-2 focus:ring-[#1976D2]/20 focus:outline-none"
+                                        >
+                                            <option value="">
+                                                Select a service
+                                            </option>
+                                            {APPOINTMENT_SERVICES.map(
+                                                (service) => (
+                                                    <option
+                                                        key={service}
+                                                        value={service}
+                                                    >
+                                                        {service}
+                                                    </option>
+                                                ),
+                                            )}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label
+                                            htmlFor="appointment_date"
+                                            className="mb-1 block text-sm font-medium text-gray-700"
+                                        >
+                                            Preferred Date *
+                                        </label>
+                                        <input
+                                            type="date"
+                                            id="appointment_date"
+                                            name="appointment_date"
+                                            value={
+                                                appointmentForm.appointment_date
+                                            }
+                                            onChange={
+                                                handleAppointmentInputChange
+                                            }
+                                            required
+                                            min={
+                                                new Date()
+                                                    .toISOString()
+                                                    .split('T')[0]
+                                            }
+                                            className="w-full rounded-lg border border-gray-300 px-4 py-2.5 transition focus:border-[#1976D2] focus:ring-2 focus:ring-[#1976D2]/20 focus:outline-none"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label
+                                            htmlFor="appointment_time"
+                                            className="mb-1 block text-sm font-medium text-gray-700"
+                                        >
+                                            Preferred Time *
+                                        </label>
+                                        <input
+                                            type="time"
+                                            id="appointment_time"
+                                            name="appointment_time"
+                                            value={
+                                                appointmentForm.appointment_time
+                                            }
+                                            onChange={
+                                                handleAppointmentInputChange
+                                            }
+                                            required
+                                            className="w-full rounded-lg border border-gray-300 px-4 py-2.5 transition focus:border-[#1976D2] focus:ring-2 focus:ring-[#1976D2]/20 focus:outline-none"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label
+                                        htmlFor="notes"
+                                        className="mb-1 block text-sm font-medium text-gray-700"
+                                    >
+                                        Additional Notes (Optional)
+                                    </label>
+                                    <textarea
+                                        id="notes"
+                                        name="notes"
+                                        value={appointmentForm.notes}
+                                        onChange={handleAppointmentInputChange}
+                                        rows={3}
+                                        className="w-full resize-y rounded-lg border border-gray-300 px-4 py-2.5 transition focus:border-[#1976D2] focus:ring-2 focus:ring-[#1976D2]/20 focus:outline-none"
+                                        placeholder="Any specific concerns or requirements..."
+                                    />
+                                </div>
+
+                                <button
+                                    type="submit"
+                                    disabled={isSubmitting}
+                                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#1976D2] px-6 py-3.5 font-medium text-white transition-all hover:scale-[1.02] hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-70"
+                                >
+                                    {isSubmitting ? (
+                                        <>
+                                            <svg
+                                                className="h-5 w-5 animate-spin text-white"
+                                                xmlns="http://www.w3.org/2000/svg"
+                                                fill="none"
+                                                viewBox="0 0 24 24"
+                                            >
+                                                <circle
+                                                    className="opacity-25"
+                                                    cx="12"
+                                                    cy="12"
+                                                    r="10"
+                                                    stroke="currentColor"
+                                                    strokeWidth="4"
+                                                ></circle>
+                                                <path
+                                                    className="opacity-75"
+                                                    fill="currentColor"
+                                                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                                ></path>
+                                            </svg>
+                                            Submitting...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <CalendarDays className="h-5 w-5" />
+                                            Request Appointment
+                                        </>
+                                    )}
+                                </button>
+
+                                <p className="text-center text-sm text-gray-500">
+                                    We will send a confirmation email and call
+                                    you to finalize your appointment.
+                                </p>
+                            </form>
+                        </div>
+                    </div>
+                </section>
+
+                {/* Contact Section */}
+                <section
+                    id="contact"
+                    className="bg-gradient-to-br from-[#1976D2] to-[#0B3D91] py-16"
+                >
+                    <div className="mx-auto max-w-4xl px-4 text-center sm:px-6 lg:px-8">
+                        <h2 className="font-['Poppins'] text-3xl font-bold text-white md:text-4xl">
+                            We Are Here When You Need Us
+                        </h2>
+                        <p className="mt-4 text-xl text-white/90">
+                            Compassionate care is just a call or click away
                         </p>
+
+                        <div className="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row">
+                            <a
+                                href="mailto:support@s4b.com"
+                                className="flex items-center gap-2 rounded-lg bg-white px-6 py-3 text-[#1976D2] transition-all hover:scale-105 hover:shadow-xl"
+                            >
+                                <Mail className="h-5 w-5" />
+                                support@s4b.com
+                            </a>
+                            <a
+                                href="https://wa.me/260979556699"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-2 rounded-lg bg-[#25D366] px-6 py-3 text-white transition-all hover:scale-105 hover:shadow-xl"
+                            >
+                                <MessageCircle className="h-5 w-5" />
+                                Chat on WhatsApp
+                            </a>
+                        </div>
+
+                        <div className="mt-6 flex flex-col items-center justify-center gap-4 sm:flex-row">
+                            <Link
+                                href="#appointment"
+                                className="flex items-center gap-2 rounded-lg border-2 border-white px-6 py-3 text-white transition-all hover:bg-white/10"
+                            >
+                                <CalendarDays className="h-5 w-5" />
+                                Book Appointment
+                            </Link>
+                            <div className="flex items-center gap-2 text-white/80">
+                                <Phone className="h-5 w-5" />
+                                <span>+260 979 556 699</span>
+                            </div>
+                        </div>
                     </div>
                 </section>
 
@@ -1034,81 +1950,61 @@ export default function Welcome({
                         <div className="grid gap-8 md:grid-cols-4">
                             <div>
                                 <div className="mb-4 flex items-center gap-2">
-                                    <div className="rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 p-2">
-                                        <DollarSign className="h-5 w-5 text-white" />
+                                    <div className="rounded-lg bg-[#1976D2] p-2">
+                                        <Heart className="h-5 w-5 text-white" />
                                     </div>
-                                    <span className="text-xl font-bold text-white">
-                                        EasyBill
-                                    </span>
+                                    <div className="flex flex-col leading-tight">
+                                        <span className="font-['Poppins'] text-xl font-bold text-white">
+                                            Altaf Memorial
+                                        </span>
+                                        <span className="text-[8px] font-medium tracking-wider text-[#1976D2] uppercase">
+                                            Hospital
+                                        </span>
+                                    </div>
                                 </div>
-                                <p className="mb-4 text-sm">
-                                    Enterprise healthcare billing platform.
-                                    Simplify billing, accelerate payments, and
-                                    optimize revenue cycles.
+                                <p className="mb-4 text-sm text-gray-400 italic">
+                                    "Healing hearts, serving humanity"
                                 </p>
-                                <div className="flex gap-4">
-                                    <a
-                                        href="#"
-                                        className="transition-colors hover:text-white"
-                                    >
-                                        📘
-                                    </a>
-                                    <a
-                                        href="#"
-                                        className="transition-colors hover:text-white"
-                                    >
-                                        🐦
-                                    </a>
-                                    <a
-                                        href="#"
-                                        className="transition-colors hover:text-white"
-                                    >
-                                        📷
-                                    </a>
-                                    <a
-                                        href="#"
-                                        className="transition-colors hover:text-white"
-                                    >
-                                        💼
-                                    </a>
-                                </div>
+                                <p className="text-sm text-gray-500">
+                                    Quality healthcare for every stage of life.
+                                </p>
                             </div>
 
                             <div>
                                 <h4 className="mb-4 font-semibold text-white">
-                                    Product
+                                    Quick Links
                                 </h4>
                                 <ul className="space-y-2 text-sm">
                                     <li>
                                         <a
-                                            href="#features"
-                                            className="transition-colors hover:text-white"
-                                        >
-                                            Features
-                                        </a>
-                                    </li>
-                                    <li>
-                                        <a
-                                            href="#pricing"
-                                            className="transition-colors hover:text-white"
-                                        >
-                                            Pricing
-                                        </a>
-                                    </li>
-                                    <li>
-                                        <a
                                             href="#"
                                             className="transition-colors hover:text-white"
                                         >
-                                            Security
+                                            Home
                                         </a>
                                     </li>
                                     <li>
                                         <a
-                                            href="#"
+                                            href="#services"
                                             className="transition-colors hover:text-white"
                                         >
-                                            API
+                                            Services
+                                        </a>
+                                    </li>
+                                    <li>
+                                        <a
+                                            href="#specialties"
+                                            className="transition-colors hover:text-white"
+                                        >
+                                            Specialties
+                                        </a>
+                                    </li>
+                                    <li>
+                                        <a
+                                            href="#appointment"
+                                            className="transition-colors hover:text-white"
+                                        >
+                                            Book Appointment
                                         </a>
                                     </li>
                                 </ul>
@@ -1116,15 +2012,15 @@ export default function Welcome({
 
                             <div>
                                 <h4 className="mb-4 font-semibold text-white">
-                                    Company
+                                    Patient
                                 </h4>
                                 <ul className="space-y-2 text-sm">
                                     <li>
                                         <a
-                                            href="#"
+                                            href="#appointment"
                                             className="transition-colors hover:text-white"
                                         >
-                                            About
+                                            Book Appointment
                                         </a>
                                     </li>
                                     <li>
@@ -1132,7 +2028,7 @@ export default function Welcome({
                                             href="#"
                                             className="transition-colors hover:text-white"
                                         >
-                                            Careers
+                                            Patient Portal
                                         </a>
                                     </li>
                                     <li>
@@ -1140,7 +2036,7 @@ export default function Welcome({
                                             href="#"
                                             className="transition-colors hover:text-white"
                                         >
-                                            Contact
+                                            Medical Records
                                         </a>
                                     </li>
                                     <li>
@@ -1148,7 +2044,7 @@ export default function Welcome({
                                             href="#"
                                             className="transition-colors hover:text-white"
                                         >
-                                            Blog
+                                            Billing
                                         </a>
                                     </li>
                                 </ul>
@@ -1162,24 +2058,24 @@ export default function Welcome({
                                     <li className="flex items-center gap-2">
                                         <Mail className="h-4 w-4" />
                                         <a
-                                            href="mailto:support@easybill.com"
+                                            href="mailto:info@altamemorial.org"
                                             className="transition-colors hover:text-white"
                                         >
-                                            support@easybill.com
+                                            info@altamemorial.org
                                         </a>
                                     </li>
                                     <li className="flex items-center gap-2">
                                         <Phone className="h-4 w-4" />
                                         <a
-                                            href="tel:+234123456789"
+                                            href="tel:+260979556699"
                                             className="transition-colors hover:text-white"
                                         >
-                                            +234 123 456 789
+                                            +260 979 556 699
                                         </a>
                                     </li>
                                     <li className="flex items-center gap-2">
                                         <MapPin className="h-4 w-4" />
-                                        <span>Lagos, Nigeria</span>
+                                        <span>Lusaka, Zambia</span>
                                     </li>
                                 </ul>
                             </div>
@@ -1187,8 +2083,9 @@ export default function Welcome({
 
                         <div className="mt-12 border-t border-gray-800 pt-8 text-center text-sm">
                             <p>
-                                &copy; {new Date().getFullYear()} EasyBill. All
-                                rights reserved. HIPAA compliant.
+                                &copy; {new Date().getFullYear()} Developed by -
+                                Systems for Better Health Outcomes (SBHO). All
+                                rights reserved.
                             </p>
                         </div>
                     </div>
@@ -1200,18 +2097,18 @@ export default function Welcome({
                     0%, 100% { transform: translateY(0px); }
                     50% { transform: translateY(-20px); }
                 }
-                
+
                 .animate-float {
                     animation: float 6s ease-in-out infinite;
                 }
-                
+
                 .animate-float-delayed {
                     animation: float 6s ease-in-out 3s infinite;
                 }
-                
+
                 .bg-grid-pattern {
-                    background-image: linear-gradient(rgba(59, 130, 246, 0.1) 1px, transparent 1px),
-                        linear-gradient(90deg, rgba(59, 130, 246, 0.1) 1px, transparent 1px);
+                    background-image: linear-gradient(rgba(25, 118, 210, 0.05) 1px, transparent 1px),
+                        linear-gradient(90deg, rgba(25, 118, 210, 0.05) 1px, transparent 1px);
                     background-size: 50px 50px;
                 }
 
@@ -1223,6 +2120,18 @@ export default function Welcome({
 
                 .hover\\:scale-105:hover {
                     transform: scale(1.05);
+                }
+
+                .hover\\:-translate-y-1:hover {
+                    transform: translateY(-4px);
+                }
+
+                .hover\\:gap-2:hover {
+                    gap: 0.5rem;
+                }
+
+                .group:hover .group-hover\\:scale-110 {
+                    transform: scale(1.1);
                 }
             `}</style>
         </>

@@ -47,7 +47,39 @@ Route::inertia('/', 'welcome', [
  * Main navigation
  */
 Route::middleware(['auth', 'verified'])->group(function () {
-    Route::get('/dashboard',[MetricsController::class,'dashboard'])->name('dashboard');
+   Route::get('/dashboard', function () {
+
+    $user = auth()->user();
+    $roles = $user->profile?->roles ?? [];
+
+    // Keep adding roles here
+    if (in_array('bulkstore', $roles)) {
+            return redirect('/bulkstore/dashboard');
+    }
+        if (in_array('receptionist', $roles)) {
+            return redirect('/reception/dashboard');
+        }
+    if (in_array('laboratory', $roles)) {
+        return redirect('/laboratory/dashboard');
+    }
+
+    if (in_array('pharmacy', $roles)) {
+        return redirect('/pharmacy/dashboard');
+    }
+
+    if (in_array('nurses', $roles)) {
+        return redirect('/nurses/dashboard');
+    }
+
+    if (in_array('admin', $roles)) {
+        return redirect('/bulkstore/dashboard');
+    }
+
+    // Existing logic
+    return app(\App\Http\Controllers\Dashboard\MetricsController::class)
+        ->dashboard();
+
+})->name('dashboard');
     Route::get('/patients', function () {
         return Inertia::render('patients/registry');
     })->name('patient');
@@ -249,8 +281,10 @@ Route::get('/check-auth', function () {
     ];
 })->middleware('auth');
 
-
+require __DIR__ . '/bulk_store_web.php';
 require __DIR__ . '/settings.php';
 require __DIR__ . '/consultations.php';
+require __DIR__ . '/notifications_web.php';
 require __DIR__ . '/departments.php';
 require __DIR__ . '/dispense.php';
+require __DIR__ . '/admin_web.php';

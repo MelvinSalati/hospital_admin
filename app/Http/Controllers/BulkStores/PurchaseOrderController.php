@@ -5,28 +5,33 @@ namespace App\Http\Controllers\BulkStores;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\BulkStores\StorePurchaseOrderRequest;
 use App\Models\BulkStores\PurchaseOrder;
-use App\Services\BulkStores\StockService;
+use App\Services\Purchases\PurchaseService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-
+use Inertia\Inertia;
 class PurchaseOrderController extends Controller
 {
-    public function __construct(private readonly StockService $stockService) {}
+    protected $purchaseRequisitionService;
+
+ public function __construct(
+
+        PurchaseService $purchaseRequisitionService
+    ) {
+
+        $this->purchaseRequistionService = $purchaseRequisitionService;
+    }
 
     // GET /purchase-orders
     public function index(Request $request): JsonResponse
     {
-        $orders = PurchaseOrder::query()
-            ->with(['supplier', 'bulkStore', 'createdBy'])
-            ->withCount('items')
-            ->when($request->filled('status'),      fn ($q) => $q->ofStatus($request->status))
-            ->when($request->boolean('pending'),     fn ($q) => $q->pending())
-            ->when($request->filled('supplier_id'), fn ($q) => $q->where('supplier_id', $request->supplier_id))
-            ->latest()
-            ->paginate($request->integer('per_page', 15));
-
-        return response()->json($orders);
+          $results = $this->purchaseRequistionService->getRequisitions();
+        return response()->json([
+            'data' => $results
+        ]);
+        // Inertia::render('bulksores/purchaseorder',[
+        //     'pending'  =>  \App\Models\Bulkstores\PurchaseRequisition::all()
+        // ]);
     }
 
     // POST /purchase-orders

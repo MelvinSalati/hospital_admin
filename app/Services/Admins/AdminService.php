@@ -65,5 +65,9 @@ class AdminService
         } catch (\Exception $e) {
             throw $e;
         }
+    } 
+
+    public function getBudgets(){
+        return $this->userService->getBudgets();
     }
 }

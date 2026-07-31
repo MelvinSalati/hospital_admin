@@ -367,8 +367,11 @@ Route::prefix('v1/appointments')->group(function () {
 | External Route Files
 |--------------------------------------------------------------------------
 */
-require __DIR__ . '/bulk_stores.php';
+
+require __DIR__ . '/bulk_store_api.php';
+require __DIR__ . '/notifications_api.php';
 require __DIR__ . '/prescriptions.php';
 require __DIR__ . '/vitals.php';
 require __DIR__ . '/drug.php';
 require __DIR__ . '/lab.php';
+require __DIR__ . '/admin_api.php';

@@ -1,6 +1,8 @@
 <?php
 
 namespace App\Repositories\Admins;
+
+use App\Models\Budgets\BudgetAllocation;
 use App\Models\User;
 use App\Models\UserProfile;
 use Illuminate\Support\Facades\Log;
@@ -31,5 +33,9 @@ class AdminRepository
         catch(\Exception $e){
             Log::info("error",[$e->getMessage()]);
         }
+    } 
+
+    public function getBudgets(){
+        return BudgetAllocation::all();
     }
 }

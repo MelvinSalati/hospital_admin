@@ -1,5 +1,5 @@
-// app-sidebar.tsx
 import { Link } from '@inertiajs/react';
+import { useEffect, useState } from 'react';
 import {
     LayoutGrid,
     Users,
@@ -40,10 +40,21 @@ import {
     ArrowRightCircleIcon,
     Barcode,
     LogOut,
+    ArrowRightLeft,
+    ArrowLeftCircle,
+    PackageMinus,
+    PackageCheck,
+    Boxes,
+    PlusIcon,
+    ClipboardCheck,
+    History,
+    CogIcon,
+    CheckCircle2Icon,
+    UserCircle,
+    FileTextIcon,
 } from 'lucide-react';
 
 import AppLogo from '@/components/app-logo';
-
 import {
     Sidebar,
     SidebarContent,
@@ -53,13 +64,11 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
-
 import type { NavItem } from '@/types';
 import routes from '@/constants/routes';
 import { usePage, router } from '@inertiajs/react';
-import { useEffect, useState } from 'react';
 import { Cog6ToothIcon } from '@heroicons/react/24/outline';
-import { Badge } from '@/components/ui/badge'; // Assuming you have a Badge component
+import { Badge } from '@/components/ui/badge';
 
 // Define navigation items for each role with order counts
 const roleNavItems: Record<string, NavItem[]> = {
@@ -86,56 +95,158 @@ const roleNavItems: Record<string, NavItem[]> = {
         },
     ],
     admin: [
-        { title: 'Dashboard', href: '/admin/dashboard', icon: LayoutGrid },
-        { title: 'Manage Queues', href: '/reception/queues', icon: User2 },
-        { title: 'Manage Users', href: '/admin/users', icon: Users },
-        { title: 'Departments', href: '/departments', icon: Building2 },
-        { title: 'System Settings', href: '/settings', icon: Settings },
-        { title: 'Registry', href: '/reception/registry', icon: Users },
-        { title: 'MCH', href: '/mch', icon: BabyIcon },
-        { title: 'Theater', href: '/theater', icon: Scissors },
-        { title: 'Opthamology', href: '/opthamology', icon: EyeIcon },
-        { title: 'Dental', href: '/dental', icon: Scissors },
         {
-            title: 'Add Patient',
-            href: '/reception/create',
-            icon: UserPlus2Icon,
+            title: 'Dashboard',
+            href: '/admin/dashboard',
+            icon: LayoutGrid,
         },
         {
-            title: 'Appointments',
-            href: '/reception/appointments',
-            icon: Calendar1Icon,
+            title: 'User Management',
+            href: '/admin/manage-users',
+            icon: Users,
+            children: [
+                {
+                    title: 'Users',
+                    href: '/admin/manage-users',
+                },
+                {
+                    title: 'Roles & Permissions',
+                    href: '/admin/roles',
+                },
+            ],
         },
         {
-            title: 'Reception-Payments',
-            href: '/reception/bills',
+            title: 'Human Resources',
+            href: '/admin/hr',
+            icon: UserCircle,
+        },
+        {
+            title: 'Manage Budgets',
+            href: '/admin/budgets',
             icon: DollarSignIcon,
         },
-        { title: 'Reports', href: '/reception', icon: BarChart2 },
         {
-            title: 'Account',
-            href: `../../${routes.web.user.account}`,
-            icon: UserSquare,
-        },
-        {
-            title: 'Consultations',
-            href: '/consultation/queue',
-            icon: Stethoscope,
-        },
-        { title: 'Laboratory', href: '/laboratory', icon: FlaskConical },
-        {
-            title: 'Bulk store - Lab',
-            href: '/laboratory/bulk-store',
+            title: 'Purchase Requistions',
+            href: '/admin/purchase-requisitions',
             icon: BoxesIcon,
         },
-        { title: 'Vitals', href: '/vitals', icon: HeartPulse },
-        { title: 'Admissions', href: '/admissions', icon: UserPlus },
-        { title: 'Nurses Bay', href: '/nurses/queue', icon: ThermometerIcon },
-        { title: 'Patients', href: '/patients', icon: Users },
         {
-            title: 'Account',
-            href: `../../${routes.web.user.account}`,
-            icon: UserSquare,
+            title: 'Purchase Orders',
+            href: '/admin/purchase-orders',
+            icon: FileTextIcon,
+        },
+        {
+            title: 'Inventory Oversight',
+            href: '/admin/inventory',
+            icon: BoxesIcon,
+        },
+        {
+            title: 'Approvals',
+            href: '/admin/approvals',
+            icon: CheckCircle2Icon,
+            children: [
+                {
+                    title: 'Purchase Requisitions',
+                    href: '/admin/approvals/purchase-requisitions',
+                },
+                {
+                    title: 'Purchase Orders',
+                    href: '/admin/approvals/purchase-orders',
+                },
+                {
+                    title: 'Stock Adjustments',
+                    href: '/admin/approvals/stock-adjustments',
+                },
+                {
+                    title: 'Refunds',
+                    href: '/admin/approvals/refunds',
+                },
+            ],
+        },
+        {
+            title: 'Reports',
+            href: '/admin/reports',
+            icon: BarChart3,
+            children: [
+                {
+                    title: 'System Reports',
+                    href: '/admin/reports/system',
+                },
+                {
+                    title: 'Financial Reports',
+                    href: '/admin/reports/financial',
+                },
+                {
+                    title: 'Audit Reports',
+                    href: '/admin/reports/audit',
+                },
+                {
+                    title: 'Usage Analytics',
+                    href: '/admin/reports/analytics',
+                },
+            ],
+        },
+        {
+            title: 'Administration',
+            href: '/admin/administration',
+            icon: Building2,
+            children: [
+                {
+                    title: 'Facilities',
+                    href: '/admin/facilities',
+                },
+                {
+                    title: 'Branches',
+                    href: '/admin/branches',
+                },
+                {
+                    title: 'Services',
+                    href: '/admin/services',
+                },
+                {
+                    title: 'Wards',
+                    href: '/admin/wards',
+                },
+                {
+                    title: 'Insurance Providers',
+                    href: '/admin/insurance',
+                },
+            ],
+        },
+        {
+            title: 'Configurations',
+            href: '/admin/settings',
+            icon: CogIcon,
+            children: [
+                {
+                    title: 'General Settings',
+                    href: '/admin/settings/general',
+                },
+                {
+                    title: 'Billing Settings',
+                    href: '/admin/settings/billing',
+                },
+                {
+                    title: 'Number Sequences',
+                    href: '/admin/settings/sequences',
+                },
+                {
+                    title: 'Notifications',
+                    href: '/admin/settings/notifications',
+                },
+                {
+                    title: 'Integrations',
+                    href: '/admin/settings/integrations',
+                },
+                {
+                    title: 'Backup & Restore',
+                    href: '/admin/settings/backup',
+                },
+                {
+                    title: 'System Logs',
+                    href: '/admin/settings/logs',
+                },
+            ],
         },
     ],
     nurse: [
@@ -196,8 +307,6 @@ const roleNavItems: Record<string, NavItem[]> = {
         { title: 'Queue', href: '/pharmacy', icon: Users },
         { title: 'Products', href: '/pharmacy/order-products', icon: Barcode },
         { title: 'Dispensed', href: '/pharmacy/dispensed', icon: Pill },
-        // { title: 'Products', href: '/pharmacy/logistics', icon: Truck },
-        // { title: 'Suppliers', href: '/pharmacy/suppliers', icon: Truck },
         {
             title: 'Account',
             href: `../../${routes.web.user.account}`,
@@ -206,10 +315,53 @@ const roleNavItems: Record<string, NavItem[]> = {
     ],
     bulkstore: [
         { title: 'Dashboard', href: '/bulkstore/dashboard', icon: LayoutGrid },
-        { title: 'Products', href: '/pharmacy/logistics', icon: Barcode },
-        { title: 'Orders', href: '/bulkstore/orders', icon: Pill },
-        { title: 'Issues', href: '/bulkstore/issues', icon: LogOut },
+        { title: 'Products', href: '/bulkstore/products', icon: Barcode },
+        {
+            title: 'Stock Adjustments',
+            href: '/bulkstore/adjustments',
+            icon: Boxes,
+        },
+        {
+            title: 'Receive Stock',
+            href: '/bulkstore/receive',
+            icon: PackageCheck,
+        },
+        { title: 'Issue Stock', href: '/bulkstore/issues', icon: PackageMinus },
+        { title: 'Returns', href: '/bulkstore/returns', icon: ArrowLeftCircle },
+        {
+            title: 'Transfers',
+            href: '/bulkstore/transfers',
+            icon: ArrowRightLeft,
+        },
+        {
+            title: 'Purchase Orders',
+            href: '/bulkstore/purchase-orders',
+            icon: FileText,
+        },
+        {
+            title: 'Purchase Requisitions',
+            href: '/bulkstore/purchase-requisition',
+            icon: FileText,
+        },
         { title: 'Suppliers', href: '/bulkstore/suppliers', icon: Truck },
+        { title: 'Batch Management', href: '/bulkstore/batches', icon: Boxes },
+        {
+            title: 'Expiry Tracking',
+            href: '/bulkstore/expiry',
+            icon: CalendarClock,
+        },
+        {
+            title: 'Barcode Management',
+            href: '/bulkstore/barcode-manage',
+            icon: Barcode,
+        },
+        { title: 'Reports', href: '/bulkstore/reports', icon: BarChart3 },
+        { title: 'Audit Trail', href: '/bulkstore/audit-trail', icon: History },
+        {
+            title: 'Configurations',
+            href: '/bulkstore/module-settings',
+            icon: Cog6ToothIcon,
+        },
         {
             title: 'Account',
             href: `../../${routes.web.user.account}`,
@@ -217,7 +369,7 @@ const roleNavItems: Record<string, NavItem[]> = {
         },
     ],
     lab_technician: [
-        { title: 'Dashboard', href: 'laboratory/dashboard', icon: LayoutGrid },
+        { title: 'Dashboard', href: '/laboratory/dashboard', icon: LayoutGrid },
         { title: 'Queues', href: '/laboratory', icon: Users },
         {
             title: 'Processed',
@@ -225,21 +377,13 @@ const roleNavItems: Record<string, NavItem[]> = {
             icon: ArrowRightCircleIcon,
         },
         { title: 'Orders', href: '/laboratory/orders', icon: ShoppingBagIcon },
-        {
-            title: 'Logistics',
-            href: '/laboratory/logistics',
-            icon: LayoutGrid,
-        },
+        { title: 'Logistics', href: '/laboratory/logistics', icon: LayoutGrid },
         {
             title: 'Configurations',
-            href: '../../laboratory/manage-tests',
+            href: '/laboratory/manage-tests',
             icon: Cog6ToothIcon,
         },
-        {
-            title: 'Reports',
-            href: '../../laboratory/reports',
-            icon: BarChart3,
-        },
+        { title: 'Reports', href: '/laboratory/reports', icon: BarChart3 },
         {
             title: 'Account',
             href: `../../${routes.web.user.account}`,
@@ -292,11 +436,30 @@ const roleNavItems: Record<string, NavItem[]> = {
 
 const commonNavItems: NavItem[] = [];
 
-// Define which roles should show order badges and for which sections
-const ORDER_BADGE_CONFIG = {
-    bulkstore: { countKey: 'bulkOrders', href: '/bulkstore/orders' },
-    lab_technician: { countKey: 'labOrders', href: '/laboratory/orders' },
-    pharmacist: { countKey: 'pharmacyOrders', href: '/pharmacy/orders' },
+const ORDER_BADGE_CONFIG: Record<string, any> = {
+    bulkstore: {
+        countKey: 'bulkOrders',
+        href: '/bulkstore/orders',
+        titleMapping: {
+            'Purchase Orders': 'bulkOrders',
+            'Receive Stock': 'bulkOrders',
+            'Issue Stock': 'bulkOrders',
+        },
+    },
+    lab_technician: {
+        countKey: 'labOrders',
+        href: '/laboratory/orders',
+        titleMapping: {
+            Orders: 'labOrders',
+        },
+    },
+    pharmacist: {
+        countKey: 'pharmacyOrders',
+        href: '/pharmacy/orders',
+        titleMapping: {
+            Queue: 'pharmacyOrders',
+        },
+    },
     admin: {
         countKey: 'allOrders',
         href: '/admin/orders',
@@ -314,14 +477,22 @@ const ORDER_BADGE_CONFIG = {
     },
 };
 
-export function AppSidebar() {
+interface OrderCounts {
+    bulkOrders: number;
+    labOrders: number;
+    pharmacyOrders: number;
+    allOrders: number;
+}
+
+export default function AppSidebar() {
     const { props } = usePage();
-    const [orderCounts, setOrderCounts] = useState({
+    const [orderCounts, setOrderCounts] = useState<OrderCounts>({
         bulkOrders: 0,
         labOrders: 0,
         pharmacyOrders: 0,
         allOrders: 0,
     });
+    const [isCollapsed, setIsCollapsed] = useState(false);
 
     let userRole =
         props.auth?.user?.profile?.roles ||
@@ -334,7 +505,7 @@ export function AppSidebar() {
 
     const roles = props.auth?.user?.profile?.roles || [];
 
-    // Fetch order counts based on user role
+    // Fetch order counts - wrapped in try/catch to handle 404
     useEffect(() => {
         const fetchOrderCounts = async () => {
             try {
@@ -355,25 +526,32 @@ export function AppSidebar() {
                         pharmacyOrders: data.pharmacyOrders || 0,
                         allOrders: data.allOrders || 0,
                     });
+                } else {
+                    // Silent fail - don't show error for missing API
+                    console.debug('Order counts API not available');
                 }
             } catch (error) {
-                console.error('Error fetching order counts:', error);
+                // Silent fail for missing API
+                console.debug('Order counts API not available');
             }
         };
 
-        // Fetch counts if user has relevant roles
         const relevantRoles = [
             'bulkstore',
             'lab_technician',
             'pharmacist',
             'admin',
             'receptionist',
+            'humanresources',
+            'accountant',
+            '',
         ];
         if (roles.some((role) => relevantRoles.includes(role))) {
             fetchOrderCounts();
         }
     }, [roles]);
 
+    // Role-based redirect
     useEffect(() => {
         if (roles.length === 0) return;
 
@@ -404,40 +582,30 @@ export function AppSidebar() {
         main: navItems.filter(
             (item) =>
                 !item.title.toLowerCase().includes('account') &&
-                !item.title.toLowerCase().includes('settings'),
+                !item.title.toLowerCase().includes('settings') &&
+                !item.title.toLowerCase().includes('configurations'),
         ),
         settings: navItems.filter(
             (item) =>
                 item.title.toLowerCase().includes('account') ||
-                item.title.toLowerCase().includes('settings'),
+                item.title.toLowerCase().includes('settings') ||
+                item.title.toLowerCase().includes('configurations'),
         ),
     };
 
-    // Function to get order count for a specific item
     const getOrderCountForItem = (itemTitle: string) => {
         const config = ORDER_BADGE_CONFIG[userRole as string];
         if (!config) return null;
 
-        // For bulkstore users, show badge on Orders
-        if (userRole === 'bulkstore' && itemTitle === 'Orders') {
-            return orderCounts.bulkOrders;
+        if (config.titleMapping && config.titleMapping[itemTitle]) {
+            const countKey = config.titleMapping[itemTitle];
+            return orderCounts[countKey as keyof OrderCounts];
         }
 
-        // For lab technicians, show badge on Orders
-        if (userRole === 'lab_technician' && itemTitle === 'Orders') {
-            return orderCounts.labOrders;
-        }
-
-        // For pharmacists, show badge on Pharmacy
-        if (userRole === 'pharmacist' && itemTitle === 'Pharmacy') {
-            return orderCounts.pharmacyOrders;
-        }
-
-        // For admin and receptionist, show badges on specific sub-sections
         if (['admin', 'receptionist'].includes(userRole as string)) {
             if (config.subSections && config.subSections[itemTitle]) {
                 const countKey = config.subSections[itemTitle];
-                return orderCounts[countKey as keyof typeof orderCounts];
+                return orderCounts[countKey as keyof OrderCounts];
             }
         }
 
@@ -445,27 +613,26 @@ export function AppSidebar() {
     };
 
     return (
-        <Sidebar collapsible="icon" variant="inset" className="font-poppins">
-            <SidebarHeader>
+        <Sidebar
+            collapsible="icon"
+            variant="inset"
+            className="font-poppins border-r border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900"
+        >
+            <SidebarHeader className="border-b border-gray-200 pb-2 dark:border-gray-700">
                 <SidebarMenu>
                     <SidebarMenuItem>
                         <SidebarMenuButton size="lg" asChild>
-                            <Link
-                                href="/dashboard"
-                                prefetch
-                                className="flex items-center gap-2"
-                            >
-                                <AppLogo />
-                            </Link>
+                            {/* FIXED: Removed nested Link - AppLogo now handles the link */}
+                            <AppLogo />
                         </SidebarMenuButton>
                     </SidebarMenuItem>
                 </SidebarMenu>
             </SidebarHeader>
 
-            <SidebarContent>
-                <div className="space-y-4 p-2">
+            <SidebarContent className="px-2 py-3">
+                <div className="space-y-4">
                     {groupedItems.main.length > 0 && (
-                        <div>
+                        <div className="space-y-1">
                             {groupedItems.main.map((item) => {
                                 const orderCount = getOrderCountForItem(
                                     item.title,
@@ -474,11 +641,11 @@ export function AppSidebar() {
                                     <Link
                                         key={item.title}
                                         href={item.href}
-                                        className="flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm !text-gray-600 !no-underline hover:!bg-gray-600 hover:!text-white hover:!no-underline dark:!text-gray-400 dark:hover:!bg-gray-800"
+                                        className="group flex items-center justify-between rounded-lg px-3 py-2 text-sm font-medium text-gray-700 transition-all hover:bg-blue-50 hover:text-blue-700 dark:text-gray-300 dark:hover:bg-blue-900/30 dark:hover:text-blue-400"
                                     >
                                         <div className="flex items-center gap-3">
                                             {item.icon && (
-                                                <item.icon className="h-4 w-4" />
+                                                <item.icon className="h-4 w-4 text-gray-500 group-hover:text-blue-600 dark:text-gray-400 dark:group-hover:text-blue-400" />
                                             )}
                                             <span>{item.title}</span>
                                         </div>
@@ -486,7 +653,7 @@ export function AppSidebar() {
                                             orderCount > 0 && (
                                                 <Badge
                                                     variant="destructive"
-                                                    className="ml-auto h-5 min-w-[20px] rounded-full px-1.5 text-xs font-medium text-white"
+                                                    className="ml-auto h-5 min-w-[20px] rounded-full bg-red-500 px-1.5 text-xs font-medium text-white hover:bg-red-600"
                                                 >
                                                     {orderCount}
                                                 </Badge>
@@ -501,17 +668,19 @@ export function AppSidebar() {
                         groupedItems.main.length > 0 && (
                             <>
                                 <div className="my-2 border-t border-gray-200 dark:border-gray-700" />
-                                <div>
+                                <div className="space-y-1">
                                     {groupedItems.settings.map((item) => (
                                         <Link
                                             key={item.title}
                                             href={item.href}
-                                            className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm !text-gray-600 !no-underline hover:!bg-gray-600 hover:!text-white hover:!no-underline dark:!text-gray-400 dark:hover:!bg-gray-800"
+                                            className="group flex items-center rounded-lg px-3 py-2 text-sm font-medium text-gray-700 transition-all hover:bg-blue-50 hover:text-blue-700 dark:text-gray-300 dark:hover:bg-blue-900/30 dark:hover:text-blue-400"
                                         >
-                                            {item.icon && (
-                                                <item.icon className="h-4 w-4" />
-                                            )}
-                                            <span>{item.title}</span>
+                                            <div className="flex items-center gap-3">
+                                                {item.icon && (
+                                                    <item.icon className="h-4 w-4 text-gray-500 group-hover:text-blue-600 dark:text-gray-400 dark:group-hover:text-blue-400" />
+                                                )}
+                                                <span>{item.title}</span>
+                                            </div>
                                         </Link>
                                     ))}
                                 </div>
@@ -520,7 +689,27 @@ export function AppSidebar() {
                 </div>
             </SidebarContent>
 
-            <SidebarFooter />
+            <SidebarFooter className="border-t border-gray-200 pt-2 dark:border-gray-700">
+                <div className="flex items-center gap-3 px-3 py-2">
+                    <div className="flex-1">
+                        <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                            {props.auth?.user?.name || 'Guest'}
+                        </p>
+                        <p className="text-[10px] text-gray-400 capitalize dark:text-gray-500">
+                            {userRole || 'No Role'}
+                        </p>
+                    </div>
+                    <button
+                        onClick={() => {
+                            router.post('/logout');
+                        }}
+                        className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+                        title="Logout"
+                    >
+                        <LogOut className="h-4 w-4" />
+                    </button>
+                </div>
+            </SidebarFooter>
         </Sidebar>
     );
 }
