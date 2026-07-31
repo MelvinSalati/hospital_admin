@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { usePage } from '@inertiajs/react';
 import AppLayout from '@/layouts/app-layout';
-import Container from '@/components/Container';
+import Container from '@/components/container';
 import PageHeader from '@/components/PageHeader';
 import Http from '@/utils/Http';
 import { ReusableTable, Column, Action } from '@/components/ReusableTable';
@@ -197,7 +197,7 @@ export default function PurchaseRequisitionPage() {
             });
 
             const response = await Http.get(
-                `/bulk-store/requisitions?${params}`
+                `/bulk-store/requisitions?${params}`,
             );
             const data = response.data;
 
@@ -234,14 +234,15 @@ export default function PurchaseRequisitionPage() {
         }
     };
 
-    const [viewingRequisition, setViewingRequisition] = useState<Requisition | null>(null);
-const [showViewModal, setShowViewModal] = useState(false);
+    const [viewingRequisition, setViewingRequisition] =
+        useState<Requisition | null>(null);
+    const [showViewModal, setShowViewModal] = useState(false);
 
-// Update the handleView function
-const handleView = (requisition: Requisition) => {
-    setViewingRequisition(requisition);
-    setShowViewModal(true);
-};
+    // Update the handleView function
+    const handleView = (requisition: Requisition) => {
+        setViewingRequisition(requisition);
+        setShowViewModal(true);
+    };
     const handleSubmit = async (data: any) => {
         try {
             const response = await Http.post(
@@ -263,8 +264,6 @@ const handleView = (requisition: Requisition) => {
             throw error;
         }
     };
-
-    
 
     const handleEdit = (requisition: Requisition) => {
         setEditingRequisition(requisition);
@@ -347,9 +346,10 @@ const handleView = (requisition: Requisition) => {
                         className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
                             PRIORITY_CONFIG[row.priority]?.color === 'info'
                                 ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
-                                : PRIORITY_CONFIG[row.priority]?.color === 'warning'
-                                ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
-                                : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
+                                : PRIORITY_CONFIG[row.priority]?.color ===
+                                    'warning'
+                                  ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
+                                  : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
                         }`}
                     >
                         <span className="h-1.5 w-1.5 rounded-full bg-current" />
@@ -396,15 +396,21 @@ const handleView = (requisition: Requisition) => {
             format: (value) => {
                 const config = STATUS_CONFIG[value] || STATUS_CONFIG.draft;
                 const colorMap: Record<string, string> = {
-                    default: 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300',
-                    warning: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
-                    success: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
+                    default:
+                        'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300',
+                    warning:
+                        'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
+                    success:
+                        'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
                     error: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
                     info: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
-                    secondary: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',
+                    secondary:
+                        'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',
                 };
                 return (
-                    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${colorMap[config.color]}`}>
+                    <span
+                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${colorMap[config.color]}`}
+                    >
                         {config.label}
                     </span>
                 );
@@ -450,7 +456,7 @@ const handleView = (requisition: Requisition) => {
             label: 'View',
             icon: <Eye className="h-4 w-4" />,
             color: 'primary',
-            onClick: handleView
+            onClick: handleView,
         },
         {
             label: 'Edit',
@@ -478,7 +484,8 @@ const handleView = (requisition: Requisition) => {
             icon: <Trash2 className="h-4 w-4" />,
             color: 'error',
             onClick: (row) => handleDelete(row.id),
-            show: (row) => row.status !== 'converted' && row.status !== 'cancelled',
+            show: (row) =>
+                row.status !== 'converted' && row.status !== 'cancelled',
         },
     ];
 
@@ -492,7 +499,7 @@ const handleView = (requisition: Requisition) => {
     // RENDER
     // ============================================
 
-    console.log(requisitions)
+    console.log(requisitions);
     return (
         <AppLayout
             breadcrumbs={[
@@ -529,7 +536,7 @@ const handleView = (requisition: Requisition) => {
                             size: 'sm',
                             loading: loading,
                         },
-                    ]} 
+                    ]}
                     icon={<FileBox />}
                 />
                 <Container>
@@ -576,15 +583,15 @@ const handleView = (requisition: Requisition) => {
                         preselectedProduct={preselectedProduct}
                         editData={editingRequisition}
                         mode={editingRequisition ? 'edit' : 'create'}
-                    /> 
-                       <RequisitionDetailsModal
-            isOpen={showViewModal}
-            onClose={() => {
-                setShowViewModal(false);
-                setViewingRequisition(null);
-            }}
-            requisition={viewingRequisition}
-        />
+                    />
+                    <RequisitionDetailsModal
+                        isOpen={showViewModal}
+                        onClose={() => {
+                            setShowViewModal(false);
+                            setViewingRequisition(null);
+                        }}
+                        requisition={viewingRequisition}
+                    />
                 </Container>
             </div>
         </AppLayout>
