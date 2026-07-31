@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Head, usePage } from '@inertiajs/react';
 import AppLayout from '@/layouts/app-layout';
-import Container from '@/components/Container';
+import Container from '@/components/container';
 import PageHeader from '@/components/PageHeader';
 import {
     // PageHeader actions
