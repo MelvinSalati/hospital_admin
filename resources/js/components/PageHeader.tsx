@@ -1,5 +1,3 @@
-// components/PageHeader.tsx
-
 import {
     ArrowLeftCircle,
     ChevronLeft,
@@ -138,7 +136,7 @@ export default function PageHeader({
 
     return (
         <div
-            className={`mb-4 rounded-lg bg-white p-3  w-full dark:bg-slate-800 ${className}`}
+            className={`mb-4 w-full rounded-lg bg-white p-3 dark:bg-slate-800 ${className}`}
         >
             {/* Breadcrumbs */}
             {breadcrumbs.length > 0 && (
@@ -170,7 +168,7 @@ export default function PageHeader({
             )}
 
             {/* Header Content */}
-            <div className="flex flex-wrap items-start justify-between gap-4 m-2">
+            <div className="m-2 flex flex-wrap items-start justify-between gap-4">
                 {/* Left side - Back link, Icon, and Title */}
                 <div className="min-w-[200px] flex-1">
                     {backUrl && (
@@ -184,14 +182,12 @@ export default function PageHeader({
                             </Link>
                         </div>
                     )}
-                    
+
                     {/* Title with Icon */}
                     {(title || icon) && (
                         <div className="flex items-center">
                             {icon && (
-                                <span className={iconClassName}>
-                                    {icon}
-                                </span>
+                                <span className={iconClassName}>{icon}</span>
                             )}
                             <div>
                                 {title && (

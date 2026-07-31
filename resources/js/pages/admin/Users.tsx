@@ -1,6 +1,6 @@
 import AppLayout from '@/layouts/app-layout';
-import PageHeader from '@/Components/PageHeader';
-import Container from '@/Components/Container';
+import PageHeader from '@/components/PageHeader';
+import Container from '@/components/container';
 import ReusableTable from '@/components/ReusableTable';
 import { useEffect, useState } from 'react';
 import { Badge, UsersIcon } from 'lucide-react';
