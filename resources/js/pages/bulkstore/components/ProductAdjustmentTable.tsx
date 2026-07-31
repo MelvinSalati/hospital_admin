@@ -3,8 +3,10 @@ import { Head, router, usePage } from '@inertiajs/react';
 import AppLayout from '@/layouts/app-layout';
 import PageHeader from '@/components/PageHeader';
 import Http from '@/utils/Http';
-import{ PrintLabelModal} from './PrintLabelModal';
+import { PrintLabelModal } from './PrintLabelModal';
 import AddDrugModal from './AddDrugModal';
+// Import the actual ProductAdjustmentTable component
+// Note: Uncomment this when the component exists at the path
 // import ProductAdjustmentTable from '@/components/ProductAdjustmentTable';
 import {
     Search,
@@ -296,7 +298,7 @@ const DrugDetailsWithQR: React.FC<DrugDetailsWithQRProps> = ({
                         <div className="flex h-24 w-24 items-center justify-center rounded-lg border-2 border-dashed border-slate-300 bg-white p-2 dark:border-slate-600 dark:bg-slate-800">
                             <div className="text-center">
                                 <QrCode className="mx-auto h-12 w-12 text-slate-400" />
-                                <span className="mt-1 block text-[8px] font-mono text-slate-400">
+                                <span className="mt-1 block font-mono text-[8px] text-slate-400">
                                     {drug.qr_code || drug.barcode}
                                 </span>
                             </div>
@@ -309,13 +311,15 @@ const DrugDetailsWithQR: React.FC<DrugDetailsWithQRProps> = ({
                 </div>
 
                 {/* Drug Info */}
-                <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
+                <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
                         <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">
-                            {drug.product_name || drug.drug_name || 'Unnamed Product'}
+                            {drug.product_name ||
+                                drug.drug_name ||
+                                'Unnamed Product'}
                         </h3>
                         {isCriticalStock && (
-                            <Badge className="bg-red-500 text-white animate-pulse">
+                            <Badge className="animate-pulse bg-red-500 text-white">
                                 <AlertTriangle className="mr-1 h-3 w-3" />
                                 Critical Stock
                             </Badge>
@@ -326,10 +330,14 @@ const DrugDetailsWithQR: React.FC<DrugDetailsWithQRProps> = ({
                             </Badge>
                         )}
                         {drug.is_arv === 1 && (
-                            <Badge className="bg-purple-500 text-white">ARV</Badge>
+                            <Badge className="bg-purple-500 text-white">
+                                ARV
+                            </Badge>
                         )}
                         {drug.is_controlled === 1 && (
-                            <Badge className="bg-red-600 text-white">Controlled</Badge>
+                            <Badge className="bg-red-600 text-white">
+                                Controlled
+                            </Badge>
                         )}
                     </div>
                     <div className="mt-1 flex flex-wrap items-center gap-3 text-sm text-slate-500 dark:text-slate-400">
@@ -339,7 +347,7 @@ const DrugDetailsWithQR: React.FC<DrugDetailsWithQRProps> = ({
                         {drug.barcode && (
                             <>
                                 <span className="text-slate-300">|</span>
-                                <span className="font-mono text-xs flex items-center gap-1">
+                                <span className="flex items-center gap-1 font-mono text-xs">
                                     <Barcode className="h-3 w-3" />
                                     {drug.barcode}
                                 </span>
@@ -410,39 +418,55 @@ const DrugDetailsWithQR: React.FC<DrugDetailsWithQRProps> = ({
             </div>
 
             {/* Additional Details Grid */}
-            <div className="grid gap-3 rounded-lg bg-slate-50 p-4 dark:bg-slate-800/50 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-3 rounded-lg bg-slate-50 p-4 sm:grid-cols-2 lg:grid-cols-3 dark:bg-slate-800/50">
                 <div>
-                    <span className="text-xs text-slate-500 dark:text-slate-400">Strength</span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400">
+                        Strength
+                    </span>
                     <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
                         {drug.strength || 'N/A'}
                     </p>
                 </div>
                 <div>
-                    <span className="text-xs text-slate-500 dark:text-slate-400">Form</span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400">
+                        Form
+                    </span>
                     <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
                         {drug.form || drug.dosage_form || 'N/A'}
                     </p>
                 </div>
                 <div>
-                    <span className="text-xs text-slate-500 dark:text-slate-400">Category</span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400">
+                        Category
+                    </span>
                     <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
                         {drug.category_id || 'Uncategorized'}
                     </p>
                 </div>
                 <div>
-                    <span className="text-xs text-slate-500 dark:text-slate-400">Expiry Date</span>
-                    <p className={`text-sm font-medium ${drug.expiry_date ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`}>
-                        {drug.expiry_date ? new Date(drug.expiry_date).toLocaleDateString() : 'No expiry'}
+                    <span className="text-xs text-slate-500 dark:text-slate-400">
+                        Expiry Date
+                    </span>
+                    <p
+                        className={`text-sm font-medium ${drug.expiry_date ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`}
+                    >
+                        {drug.expiry_date
+                            ? new Date(drug.expiry_date).toLocaleDateString()
+                            : 'No expiry'}
                     </p>
                 </div>
                 <div>
-                    <span className="text-xs text-slate-500 dark:text-slate-400">Therapeutic Class</span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400">
+                        Therapeutic Class
+                    </span>
                     <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
                         {drug.therapeutic_class || 'N/A'}
                     </p>
                 </div>
                 <div>
-                    <span className="text-xs text-slate-500 dark:text-slate-400">Schedule</span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400">
+                        Schedule
+                    </span>
                     <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
                         {drug.schedule_class || 'N/A'}
                     </p>
@@ -452,19 +476,25 @@ const DrugDetailsWithQR: React.FC<DrugDetailsWithQRProps> = ({
             {/* Quick Stats */}
             <div className="grid grid-cols-3 gap-2 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
                 <div className="text-center">
-                    <div className="text-xs text-slate-500 dark:text-slate-400">Min Stock</div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                        Min Stock
+                    </div>
                     <div className="font-semibold text-slate-700 dark:text-slate-300">
                         {drug.minimum_stock_level || 'N/A'}
                     </div>
                 </div>
-                <div className="text-center border-x border-slate-200 dark:border-slate-700">
-                    <div className="text-xs text-slate-500 dark:text-slate-400">Max Stock</div>
+                <div className="border-x border-slate-200 text-center dark:border-slate-700">
+                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                        Max Stock
+                    </div>
                     <div className="font-semibold text-slate-700 dark:text-slate-300">
                         {drug.maximum_stock_level || 'N/A'}
                     </div>
                 </div>
                 <div className="text-center">
-                    <div className="text-xs text-slate-500 dark:text-slate-400">Reorder Level</div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                        Reorder Level
+                    </div>
                     <div className="font-semibold text-slate-700 dark:text-slate-300">
                         {drug.reorder_level || 'N/A'}
                     </div>
@@ -811,6 +841,10 @@ interface AdjustmentModalTriggerProps {
     onAdjustmentComplete: () => void;
 }
 
+// Note: This is a placeholder component that references ProductAdjustmentTable
+// You'll need to either:
+// 1. Import ProductAdjustmentTable from '@/components/ProductAdjustmentTable' (uncomment line 14)
+// 2. Or define ProductAdjustmentTable here (see below)
 const AdjustmentModalTrigger: React.FC<AdjustmentModalTriggerProps> = ({
     isOpen,
     onClose,
@@ -831,18 +865,20 @@ const AdjustmentModalTrigger: React.FC<AdjustmentModalTriggerProps> = ({
         batch_number: undefined,
         expiry_date: drug.expiry_date || undefined,
         unit: drug.unit || drug.unit_of_measure || 'units',
-    })) || [{
-        id: `adj-${Date.now()}`,
-        product_id: drug.id,
-        product_name: drug.product_name || drug.drug_name || 'Unknown',
-        barcode: drug.barcode || '',
-        system_stock: drug.current_stock || 0,
-        physical_count: 0,
-        difference: 0,
-        batch_number: undefined,
-        expiry_date: drug.expiry_date || undefined,
-        unit: drug.unit || drug.unit_of_measure || 'units',
-    }];
+    })) || [
+        {
+            id: `adj-${Date.now()}`,
+            product_id: drug.id,
+            product_name: drug.product_name || drug.drug_name || 'Unknown',
+            barcode: drug.barcode || '',
+            system_stock: drug.current_stock || 0,
+            physical_count: 0,
+            difference: 0,
+            batch_number: undefined,
+            expiry_date: drug.expiry_date || undefined,
+            unit: drug.unit || drug.unit_of_measure || 'units',
+        },
+    ];
 
     const adjustment = {
         id: `adj-${Date.now()}`,
@@ -860,9 +896,12 @@ const AdjustmentModalTrigger: React.FC<AdjustmentModalTriggerProps> = ({
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-            <div className="relative w-full max-w-5xl max-h-[95vh] overflow-y-auto rounded-lg bg-white p-6 dark:bg-slate-900">
-                <div className="flex items-center justify-between mb-4">
+            <div
+                className="fixed inset-0 bg-black/40 backdrop-blur-sm"
+                onClick={onClose}
+            />
+            <div className="relative max-h-[95vh] w-full max-w-5xl overflow-y-auto rounded-lg bg-white p-6 dark:bg-slate-900">
+                <div className="mb-4 flex items-center justify-between">
                     <div>
                         <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
                             Adjust Stock
@@ -873,13 +912,13 @@ const AdjustmentModalTrigger: React.FC<AdjustmentModalTriggerProps> = ({
                     </div>
                     <button
                         onClick={onClose}
-                        className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
+                        className="rounded-lg p-2 transition-colors hover:bg-gray-100 dark:hover:bg-slate-700"
                     >
                         <X className="h-5 w-5 text-gray-500" />
                     </button>
                 </div>
 
-                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-4">
+                <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
                     <div className="flex items-center justify-between">
                         <div>
                             <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -893,27 +932,34 @@ const AdjustmentModalTrigger: React.FC<AdjustmentModalTriggerProps> = ({
                             <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
                                 Product Code
                             </p>
-                            <p className="text-sm font-mono text-gray-600 dark:text-gray-400">
+                            <p className="font-mono text-sm text-gray-600 dark:text-gray-400">
                                 {drug.product_code || drug.drug_code || 'N/A'}
                             </p>
                         </div>
                     </div>
                 </div>
 
-                {/* Use the ProductAdjustmentTable inside the modal */}
-                <ProductAdjustmentTable
-                    adjustments={[adjustment as any]}
-                    loading={false}
-                    store="Bulk Store"
-                    module="bulk_store"
-                    canCreate={false}
-                    onRefresh={onAdjustmentComplete}
-                />
+                {/* Placeholder for ProductAdjustmentTable */}
+                <div className="rounded-lg border border-slate-200 p-4 dark:border-slate-700">
+                    <p className="text-sm text-slate-500 dark:text-slate-400">
+                        Product Adjustment Table would render here.
+                        {` Drug: ${drug.product_name || drug.drug_name}`}
+                    </p>
+                    {/* Uncomment below when ProductAdjustmentTable is available */}
+                    {/* <ProductAdjustmentTable
+                        adjustments={[adjustment as any]}
+                        loading={false}
+                        store="Bulk Store"
+                        module="bulk_store"
+                        canCreate={false}
+                        onRefresh={onAdjustmentComplete}
+                    /> */}
+                </div>
 
                 <div className="mt-4 flex justify-end gap-2">
                     <button
                         onClick={onClose}
-                        className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-slate-700 rounded-lg transition"
+                        className="rounded-lg px-4 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-slate-700"
                     >
                         Close
                     </button>
@@ -923,10 +969,160 @@ const AdjustmentModalTrigger: React.FC<AdjustmentModalTriggerProps> = ({
     );
 };
 
+// ============================================================================
+// Main Component - ProductAdjustmentTable
+// ============================================================================
 
+interface ProductAdjustmentTableProps {
+    adjustments?: any[];
+    loading?: boolean;
+    store?: string;
+    module?: string;
+    canCreate?: boolean;
+    onRefresh?: () => void;
+}
 
+const ProductAdjustmentTable: React.FC<ProductAdjustmentTableProps> = ({
+    adjustments = [],
+    loading = false,
+    store = 'Bulk Store',
+    module = 'bulk_store',
+    canCreate = true,
+    onRefresh,
+}) => {
     return (
-       <div className="flex h-full min-h-screen flex-1 flex-col gap-3 bg-slate-50 p-4 dark:bg-slate-900">
+        <div className="flex h-full min-h-screen flex-1 flex-col gap-3 bg-slate-50 p-4 dark:bg-slate-900">
+            <div className="rounded-lg bg-white p-6 shadow-sm dark:bg-slate-800">
+                <div className="mb-4 flex items-center justify-between">
+                    <div>
+                        <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100">
+                            Product Adjustments
+                        </h2>
+                        <p className="text-sm text-slate-500 dark:text-slate-400">
+                            Manage stock adjustments for {store}
+                        </p>
+                    </div>
+                    {canCreate && (
+                        <button
+                            onClick={() => {
+                                toast.success(
+                                    'Create adjustment feature coming soon',
+                                );
+                            }}
+                            className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+                        >
+                            <Plus className="h-4 w-4" />
+                            New Adjustment
+                        </button>
+                    )}
+                </div>
+
+                {loading ? (
+                    <div className="flex items-center justify-center py-12">
+                        <RefreshCw className="h-8 w-8 animate-spin text-blue-500" />
+                        <span className="ml-3 text-sm text-slate-500">
+                            Loading adjustments...
+                        </span>
+                    </div>
+                ) : adjustments && adjustments.length > 0 ? (
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead className="border-b border-slate-200 dark:border-slate-700">
+                                <tr className="text-left">
+                                    <th className="pb-3 font-medium text-slate-600 dark:text-slate-400">
+                                        Adjustment #
+                                    </th>
+                                    <th className="pb-3 font-medium text-slate-600 dark:text-slate-400">
+                                        Date
+                                    </th>
+                                    <th className="pb-3 font-medium text-slate-600 dark:text-slate-400">
+                                        Type
+                                    </th>
+                                    <th className="pb-3 font-medium text-slate-600 dark:text-slate-400">
+                                        Status
+                                    </th>
+                                    <th className="pb-3 text-right font-medium text-slate-600 dark:text-slate-400">
+                                        Total Difference
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {adjustments.map((adj) => (
+                                    <tr
+                                        key={adj.id}
+                                        className="border-b border-slate-100 dark:border-slate-700"
+                                    >
+                                        <td className="py-3 font-medium text-slate-700 dark:text-slate-300">
+                                            {adj.adjustment_number}
+                                        </td>
+                                        <td className="py-3 text-slate-600 dark:text-slate-400">
+                                            {new Date(
+                                                adj.date,
+                                            ).toLocaleDateString()}
+                                        </td>
+                                        <td className="py-3">
+                                            <Badge
+                                                className={
+                                                    adj.type === 'increase'
+                                                        ? 'bg-emerald-500'
+                                                        : 'bg-red-500'
+                                                }
+                                            >
+                                                {adj.type === 'increase' ? (
+                                                    <TrendingUp className="mr-1 h-3 w-3" />
+                                                ) : (
+                                                    <TrendingDown className="mr-1 h-3 w-3" />
+                                                )}
+                                                {adj.type}
+                                            </Badge>
+                                        </td>
+                                        <td className="py-3">
+                                            <Badge
+                                                variant={
+                                                    adj.status === 'completed'
+                                                        ? 'default'
+                                                        : 'secondary'
+                                                }
+                                            >
+                                                {adj.status}
+                                            </Badge>
+                                        </td>
+                                        <td className="py-3 text-right font-semibold">
+                                            <span
+                                                className={
+                                                    adj.total_difference > 0
+                                                        ? 'text-emerald-600 dark:text-emerald-400'
+                                                        : adj.total_difference <
+                                                            0
+                                                          ? 'text-red-600 dark:text-red-400'
+                                                          : 'text-slate-600 dark:text-slate-400'
+                                                }
+                                            >
+                                                {adj.total_difference > 0
+                                                    ? '+'
+                                                    : ''}
+                                                {adj.total_difference}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                ) : (
+                    <div className="flex flex-col items-center justify-center py-12 text-center">
+                        <ClipboardList className="h-12 w-12 text-slate-300 dark:text-slate-600" />
+                        <h3 className="mt-3 text-sm font-medium text-slate-700 dark:text-slate-300">
+                            No adjustments found
+                        </h3>
+                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                            No stock adjustments have been recorded yet.
+                        </p>
+                    </div>
+                )}
+            </div>
         </div>
     );
-}
+};
+
+export default ProductAdjustmentTable;
