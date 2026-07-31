@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import AppLayout from '@/layouts/app-layout';
 import { Head, router } from '@inertiajs/react';
 import { BreadcrumbItem } from '@/types';
-import Container from '@/components/Container';
+import Container from '@/components/container';
 import PageHeader from '@/components/PageHeader';
 import { ReusableTable, Column, Action } from '@/components/ReusableTable';
 import {

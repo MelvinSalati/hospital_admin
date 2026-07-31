@@ -9,7 +9,7 @@ import React, {
 } from 'react';
 import { Head, usePage } from '@inertiajs/react';
 import AppLayout from '@/layouts/app-layout';
-import Container from '@/components/Container';
+import Container from '@/components/container';
 import PageHeader from '@/components/PageHeader';
 import {
     Plus,
@@ -1152,8 +1152,6 @@ export default function PurchaseRequisition() {
                         title="Purchase Requisitions"
                         subtitle="Manage purchase requisitions and approvals"
                     />
-
-                 
 
                     {/* Table */}
                     <div className="mt-4">

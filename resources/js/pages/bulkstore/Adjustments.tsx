@@ -5,7 +5,7 @@ import { Head } from '@inertiajs/react';
 import { toast } from 'react-hot-toast';
 import AppLayout from '@/layouts/app-layout';
 import PageHeader from '@/components/PageHeader';
-import Container from '@/components/Container';
+import Container from '@/components/container';
 import AdjustStockModal from './components/AdjustStock';
 import {
     Barcode,

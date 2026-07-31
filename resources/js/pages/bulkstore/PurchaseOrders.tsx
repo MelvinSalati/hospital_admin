@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { usePage } from '@inertiajs/react';
 import AppLayout from '@/layouts/app-layout';
 import PageHeader from '@/components/PageHeader';
-import Container from '@/components/Container';
+import Container from '@/components/container';
 import { Button } from '@/components/ui/button';
 import { ReusableTable, Column, Action } from '@/components/ReusableTable';
 import Http from '@/utils/Http';
