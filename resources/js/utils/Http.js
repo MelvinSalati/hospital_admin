@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const Http = axios.create({
-    baseURL: import.meta.env.VITE_API_URL || "http://127.0.0.1:9030/api/v1",
+    baseURL: import.meta.env.VITE_API_URL || "https://altafbilling-production-kyulqt.laravel.cloud/api/v1",
     timeout: 10000,
     headers: {
         "Content-Type": "application/json",
