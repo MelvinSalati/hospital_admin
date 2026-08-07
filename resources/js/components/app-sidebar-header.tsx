@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import type { BreadcrumbItem as BreadcrumbItemType } from '@/types';
-import { Notifications } from './Notifications';
+import { Notifications } from './notifications';
 
 export default function AppSidebarHeader({
     breadcrumbs = [],
