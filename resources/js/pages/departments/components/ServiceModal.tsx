@@ -1,8 +1,8 @@
 // components/departments/ServicesModal.tsx
-import { useState, useEffect } from 'react';
 import { X, Plus, Search, Edit, Trash2, Loader2, Package } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import Notiflix from 'notiflix';
+import { useState, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
 import { serviceAPI } from '@/services/api';
 
 interface Service {

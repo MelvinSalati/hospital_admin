@@ -1,6 +1,5 @@
 // components/pharmacy/AddDrugModal.tsx
 
-import React, { useState, useEffect, useRef } from 'react';
 import {
     X,
     Check,
@@ -23,6 +22,7 @@ import {
     Minus,
     Layers,
 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
 
 // ============================================================================
 // Types

@@ -1,7 +1,7 @@
 // components/dashboard/tables/AppointmentTable.tsx
 import React from 'react';
-import { DataTable } from './DataTable';
 import { Badge } from '../../ui/badge';
+import { DataTable } from './DataTable';
 
 interface Appointment {
     id: string;

@@ -1,7 +1,7 @@
 // components/SectionWrapper.tsx
 
-import React, { useState } from 'react';
 import { ChevronDown, ChevronRight, CheckCircle } from 'lucide-react';
+import React, { useState } from 'react';
 
 interface SectionWrapperProps {
   title: string;

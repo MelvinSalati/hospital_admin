@@ -1,8 +1,8 @@
 // components/register/tabs/ContactTab.tsx
 
+import { Phone, Mail } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Phone, Mail } from 'lucide-react';
 
 interface ContactTabProps {
   data: any;

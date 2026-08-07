@@ -1,8 +1,5 @@
 // pages/nurses/index.tsx
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import AppLayout from '@/layouts/app-layout';
 import { Link, usePage, router } from '@inertiajs/react';
 import {
     ArrowLeft,
@@ -20,6 +17,10 @@ import {
     User,
     CreditCard,
 } from 'lucide-react';
+import Notiflix from 'notiflix';
+import { useState, useMemo } from 'react';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
     Dialog,
     DialogContent,
@@ -28,8 +29,7 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { useState, useMemo } from 'react';
-import Notiflix from 'notiflix';
+import AppLayout from '@/layouts/app-layout';
 import Http from '@/utils/Http';
 
 // ============================================================================

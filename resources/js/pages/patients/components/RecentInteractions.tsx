@@ -1,8 +1,3 @@
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Stethoscope,
   ClipboardList,
@@ -16,9 +11,14 @@ import {
   PlusCircle,
   X
 } from "lucide-react";
-import React, { useState } from "react";
-import Http from "@/utils/Http";
 import Notiflix from "notiflix";
+import React, { useState } from "react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import Http from "@/utils/Http";
 
 // Types based on your actual data structure
 interface ChiefComplaint {

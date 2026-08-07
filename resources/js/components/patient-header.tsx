@@ -1,4 +1,3 @@
-import { useState, useEffect } from 'react';
 import {
     Phone,
     Mail,
@@ -9,6 +8,7 @@ import {
     MapPin,
     HeartPulse,
 } from 'lucide-react';
+import { useState, useEffect } from 'react';
 
 export default function PatientHeader() {
     const [patient, setPatient] = useState(null);

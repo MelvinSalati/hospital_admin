@@ -1,10 +1,10 @@
 // ============================================================
 // InvoiceTable — Filterable, paginated invoice management table
 // ============================================================
-import { useState } from 'react';
 import { Eye, FileText, ChevronLeft, ChevronRight } from 'lucide-react';
-import { InvoiceDetailsModal } from './InvoiceDetailsModal';
+import { useState } from 'react';
 import type { Invoice, PaginatedInvoices } from '../../types';
+import { InvoiceDetailsModal } from './InvoiceDetailsModal';
 
 interface InvoiceTableProps {
     invoices: PaginatedInvoices;

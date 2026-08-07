@@ -1,6 +1,5 @@
 // resources/js/pages/bulkstore/components/modals/RequisitionDetailsModal.tsx
 
-import React, { Fragment, useState } from 'react';
 import {
     Dialog,
     DialogPanel,
@@ -8,6 +7,7 @@ import {
     Transition,
     TransitionChild,
 } from '@headlessui/react';
+import { format } from 'date-fns';
 import {
     X,
     FileText,
@@ -54,7 +54,7 @@ import {
     Syringe,
     Thermometer,
 } from 'lucide-react';
-import { format } from 'date-fns';
+import React, { Fragment, useState } from 'react';
 
 // ============================================
 // TYPES - Updated to match actual API response

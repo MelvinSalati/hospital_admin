@@ -1,7 +1,16 @@
 // pages/patients/components/PreviousOrdersTable.tsx
+import { EyeIcon } from '@heroicons/react/24/outline';
+import Notiflix from 'notiflix';
 import React, { useState } from 'react';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+} from '@/components/ui/dialog';
 import {
     Table,
     TableBody,
@@ -10,16 +19,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
-import {
-    Dialog,
-    DialogContent,
-    DialogHeader,
-    DialogTitle,
-    DialogTrigger,
-} from '@/components/ui/dialog';
 import { ServiceModal } from './ServiceModal';
-import { EyeIcon } from '@heroicons/react/24/outline';
-import Notiflix from 'notiflix';
 
 export interface CartItem {
     cartId: string;

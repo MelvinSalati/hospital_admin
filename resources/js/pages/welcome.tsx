@@ -1,6 +1,4 @@
 import { Head, Link, usePage } from '@inertiajs/react';
-import { dashboard, login, register } from '@/routes';
-import { useState, useEffect } from 'react';
 import {
     ArrowRight,
     CheckCircle,
@@ -718,6 +716,8 @@ import {
     TennessineHealth,
     OganessonHealth,
 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { dashboard, login, register } from '@/routes';
 
 // Image URLs for hero section
 const IMAGES = {

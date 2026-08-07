@@ -1,10 +1,9 @@
 // resources/js/pages/bulkstore/Reports.tsx
 
-import React, { useState } from 'react';
+import { Dialog, Transition } from '@headlessui/react';
 import { Head } from '@inertiajs/react';
-import AppLayout from '@/layouts/app-layout';
-import { BreadcrumbItem } from '@/types';
-import ReusableTable, { Column, Action } from '@/components/ReusableTable';
+import axios from 'axios';
+import { format } from 'date-fns';
 import {
     Package,
     TrendingUp,
@@ -30,11 +29,13 @@ import {
     FileDown,
     Printer,
 } from 'lucide-react';
-import { Dialog, Transition } from '@headlessui/react';
+import React, { useState } from 'react';
 import { toast } from 'react-hot-toast';
-import axios from 'axios';
-import { format } from 'date-fns';
 import PageHeader from '@/components/PageHeader'
+import ReusableTable from '@/components/ReusableTable';
+import type { Column, Action } from '@/components/ReusableTable';
+import AppLayout from '@/layouts/app-layout';
+import type { BreadcrumbItem } from '@/types';
 
 // ============================================
 // TYPES

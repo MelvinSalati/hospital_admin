@@ -1,5 +1,6 @@
+import { Cog6ToothIcon } from '@heroicons/react/24/outline';
 import { Link } from '@inertiajs/react';
-import { useEffect, useState } from 'react';
+import { usePage, router } from '@inertiajs/react';
 import {
     LayoutGrid,
     Users,
@@ -53,8 +54,10 @@ import {
     UserCircle,
     FileTextIcon,
 } from 'lucide-react';
+import { useEffect, useState } from 'react';
 
 import AppLogo from '@/components/app-logo';
+import { Badge } from '@/components/ui/badge';
 import {
     Sidebar,
     SidebarContent,
@@ -64,11 +67,8 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
-import type { NavItem } from '@/types';
 import routes from '@/constants/routes';
-import { usePage, router } from '@inertiajs/react';
-import { Cog6ToothIcon } from '@heroicons/react/24/outline';
-import { Badge } from '@/components/ui/badge';
+import type { NavItem } from '@/types';
 
 // Define navigation items for each role with order counts
 const roleNavItems: Record<string, NavItem[]> = {
@@ -325,6 +325,11 @@ const roleNavItems: Record<string, NavItem[]> = {
             title: 'Receive Stock',
             href: '/bulkstore/receive',
             icon: PackageCheck,
+        },
+        {
+            title: 'Stock Pricing',
+            href: '/bulkstore/stock-pricing',
+            icon: DollarSignIcon,
         },
         { title: 'Issue Stock', href: '/bulkstore/issues', icon: PackageMinus },
         { title: 'Returns', href: '/bulkstore/returns', icon: ArrowLeftCircle },

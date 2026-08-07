@@ -1,26 +1,18 @@
-import { useState } from "react";
 import {usePage} from "@inertiajs/react";
+import axios from "axios";
+import { format } from "date-fns";
 import {
   Pill, Syringe, Microscope, Clock, CheckCircle, XCircle,
   AlertCircle, Calendar, User, Stethoscope, FileText,
   Download, Printer, Eye, Plus, Trash2, Edit,
   StethoscopeIcon
 } from "lucide-react";
-import { format } from "date-fns";
+import { useState } from "react";
 import { toast } from "sonner";
-import axios from "axios";
 
 // Components
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
 import {
   Card,
   CardContent,
@@ -28,8 +20,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -38,13 +38,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import {
   Table,
   TableBody,
   TableCell,
@@ -52,6 +45,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 
 // Types
 interface PrescribedDrug {

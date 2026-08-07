@@ -1,11 +1,11 @@
 import { Head, router, usePage } from '@inertiajs/react';
 import { Users, CalendarClock, CircleDollarSign, ReceiptText } from 'lucide-react';
-import AppLayout from '@/layouts/app-layout';
 import { StatCard } from '@/components/dashboard/cards/StatCard';
-import { PaymentMethodsChart } from '@/components/dashboard/charts/PaymentMethodsChart';
-import { AgeDistributionChart } from '@/components/dashboard/charts/AgeDistributionChart';
-import { InvoiceTable } from '@/components/dashboard/tables/InvoiceTable';
+import AppLayout from '@/layouts/app-layout';
 import type { DashboardProps } from '@/types/dashboard';
+import { AgeDistributionChart } from '@/components/dashboard/charts/AgeDistributionChart';
+import { PaymentMethodsChart } from '@/components/dashboard/charts/PaymentMethodsChart';
+import { InvoiceTable } from '@/components/dashboard/tables/InvoiceTable';
 
 const breadcrumbs = [
     { title: 'Dashboard', href: '/dashboard' },

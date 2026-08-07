@@ -1,9 +1,9 @@
 // components/app-logo.tsx
 
-import React from 'react';
 import { Link } from '@inertiajs/react';
 import { motion } from 'framer-motion';
 import { HeartPulse, Hospital, Syringe, Activity } from 'lucide-react';
+import React from 'react';
 
 interface AppLogoProps {
     href?: string;

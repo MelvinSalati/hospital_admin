@@ -1,6 +1,7 @@
 // components/modals/PurchaseRequisition.tsx
 
-import React, { useState, useEffect, useRef } from 'react';
+import {usePage} from '@inertiajs/react'
+import axios from 'axios';
 import {
     X,
     Package,
@@ -12,9 +13,8 @@ import {
     RefreshCw,
     Search,
 } from 'lucide-react';
-import axios from 'axios';
+import React, { useState, useEffect, useRef } from 'react';
 import { toast } from 'react-hot-toast';
-import {usePage} from '@inertiajs/react'
 
 // ============================================
 // TYPES

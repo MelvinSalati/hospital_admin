@@ -1,6 +1,6 @@
 // components/dashboard/cards/QuickActions.tsx
-import React from 'react';
 import { Link } from '@inertiajs/react';
+import React from 'react';
 import { DashboardCard } from './DashboardCard';
 
 interface QuickAction {

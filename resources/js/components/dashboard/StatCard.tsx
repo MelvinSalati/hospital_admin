@@ -1,8 +1,8 @@
 // ============================================================
 // StatCard — Summary metric card (Ultra Compact)
 // ============================================================
-import React from 'react';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import React from 'react';
 import type { TrendData } from '../../types';
 
 interface StatCardProps {

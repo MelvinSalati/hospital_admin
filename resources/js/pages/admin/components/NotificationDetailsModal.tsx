@@ -1,6 +1,5 @@
 // resources/js/pages/Notifications/components/NotificationDetailsModal.tsx
 
-import React, { Fragment, useMemo, useState } from 'react';
 import {
     Dialog,
     DialogPanel,
@@ -8,6 +7,7 @@ import {
     Transition,
     TransitionChild,
 } from '@headlessui/react';
+import { format } from 'date-fns';
 import { 
     X, 
     Check, 
@@ -28,7 +28,7 @@ import {
      User,
     Check as CheckIcon
 } from 'lucide-react';
-import { format } from 'date-fns';
+import React, { Fragment, useMemo, useState } from 'react';
 
 // ============================================
 // TYPES

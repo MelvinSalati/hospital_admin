@@ -1,8 +1,5 @@
 // pages/departments.tsx
-import { useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
-import AppLayout from '@/layouts/app-layout';
-import { Button } from '@/components/ui/button';
 import {
     Plus,
     Search,
@@ -15,6 +12,9 @@ import {
     Building2,
 } from 'lucide-react';
 import Notiflix from 'notiflix';
+import { useState } from 'react';
+import { Button } from '@/components/ui/button';
+import AppLayout from '@/layouts/app-layout';
 import { departmentAPI } from '@/services/api'
 import { DepartmentModal } from './components/DepartmentModal';
 import { ServicesModal } from './components/ServiceModal';

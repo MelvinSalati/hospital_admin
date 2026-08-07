@@ -1,13 +1,13 @@
 // components/ConsultationTabs.tsx
 
-import { useState, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
+import { router,usePage } from '@inertiajs/react';
 import { 
   Save, Loader2, CheckCircle, AlertCircle, ChevronRight, ChevronLeft,
   Activity, AlertTriangle, Heart, Pill, ClipboardList, 
   Microscope, Camera, FileText, BookOpen, X, Plus, Calendar, Clock, User, Stethoscope
 } from 'lucide-react';
-import { router,usePage } from '@inertiajs/react';
+import { useState, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
 
 // import LabOrdersSection from './LaboOrderSection';
 // Types

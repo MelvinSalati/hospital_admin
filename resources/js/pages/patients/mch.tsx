@@ -1,13 +1,14 @@
 // pages/patients/MCH.tsx
+import { usePage, router } from '@inertiajs/react';
+import Notiflix from 'notiflix';
+import { useState } from 'react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import PatientLayout from '@/layouts/patients/PatientLayout';
-import PreviousOrdersTable, {
+import Http from '@/utils/Http';
+import type {
     CartItem,
 } from './components/PreviousOrdersTable';
-import { usePage, router } from '@inertiajs/react';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useState } from 'react';
-import Http from '@/utils/Http';
-import Notiflix from 'notiflix';
+import PreviousOrdersTable from './components/PreviousOrdersTable';
 // ─── Page props coming from the Laravel controller ────────────────────────────
 interface MCHProps {
     patientId: string;

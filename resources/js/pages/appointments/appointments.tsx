@@ -1,6 +1,4 @@
-import AppLayout from '@/layouts/app-layout';
-import Http from '@/utils/Http';
-import Notiflix from 'notiflix';
+import { usePage } from '@inertiajs/react';
 import {
     Search,
     Calendar,
@@ -11,8 +9,10 @@ import {
     Loader2,
     PlayCircle,
 } from 'lucide-react';
+import Notiflix from 'notiflix';
 import { useEffect, useState } from 'react';
-import { usePage } from '@inertiajs/react';
+import AppLayout from '@/layouts/app-layout';
+import Http from '@/utils/Http';
 
 interface Appointment {
     id: number;

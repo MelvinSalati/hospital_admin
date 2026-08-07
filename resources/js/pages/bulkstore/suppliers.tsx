@@ -1,10 +1,9 @@
 // resources/js/pages/bulkstore/Suppliers.tsx
 
-import React, { useState, useEffect } from 'react';
+import { Dialog, Transition } from '@headlessui/react';
 import { Head, router, usePage } from '@inertiajs/react';
-import AppLayout from '@/layouts/app-layout';
-import PageHeader from '@/components/PageHeader';
-import { ReusableTable, Column, Action } from '@/components/ReusableTable';
+import axios from 'axios';
+import { format } from 'date-fns';
 import {
     Plus,
     Edit,
@@ -29,10 +28,12 @@ import {
     UserCheck,
     Eye,
 } from 'lucide-react';
-import { Dialog, Transition } from '@headlessui/react';
+import React, { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
-import axios from 'axios';
-import { format } from 'date-fns';
+import PageHeader from '@/components/PageHeader';
+import { ReusableTable } from '@/components/ReusableTable';
+import type { Column, Action } from '@/components/ReusableTable';
+import AppLayout from '@/layouts/app-layout';
 
 // ============================================================================
 // Types

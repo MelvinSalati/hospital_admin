@@ -1,6 +1,6 @@
 // components/dashboard/cards/ActivityTimeline.tsx
-import React from 'react';
 import { Clock, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
+import React from 'react';
 import { DashboardCard } from './DashboardCard';
 
 interface ActivityItem {

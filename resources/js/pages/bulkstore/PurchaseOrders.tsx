@@ -1,14 +1,6 @@
 // resources/js/pages/bulkstore/PurchaseOrder.tsx
 
-import React, { useState, useEffect, useCallback } from 'react';
 import { usePage } from '@inertiajs/react';
-import AppLayout from '@/layouts/app-layout';
-import PageHeader from '@/components/PageHeader';
-import Container from '@/components/container';
-import { Button } from '@/components/ui/button';
-import { ReusableTable, Column, Action } from '@/components/ReusableTable';
-import Http from '@/utils/Http';
-import ApprovalModal from './components/modals/ApprovalModal';
 import {
     Plus,
     RefreshCw,
@@ -33,7 +25,16 @@ import {
     DollarSign,
     Key,
 } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { toast } from 'react-hot-toast';
+import Container from '@/components/container';
+import PageHeader from '@/components/PageHeader';
+import type { Column, Action } from '@/components/ReusableTable';
+import { ReusableTable } from '@/components/ReusableTable';
+import { Button } from '@/components/ui/button';
+import AppLayout from '@/layouts/app-layout';
+import Http from '@/utils/Http';
+import ApprovalModal from './components/modals/ApprovalModal';
 
 // ============================================
 // TYPES

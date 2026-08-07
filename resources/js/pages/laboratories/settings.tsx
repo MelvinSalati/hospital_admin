@@ -1,9 +1,5 @@
 // pages/laboratory/settings.tsx
-import { useState, useEffect, useMemo } from 'react';
 import { usePage, router } from '@inertiajs/react';
-import AppLayout from '@/layouts/app-layout';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import {
     Plus,
     Search,
@@ -50,6 +46,10 @@ import {
     Shield,
 } from 'lucide-react';
 import Notiflix from 'notiflix';
+import { useState, useEffect, useMemo } from 'react';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import AppLayout from '@/layouts/app-layout';
 import Http from '@/utils/Http';
 
 // ─── Types ────────────────────────────────────────────────────────────────────

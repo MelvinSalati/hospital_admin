@@ -1,10 +1,10 @@
 import { usePage } from '@inertiajs/react';
+import { Barcode } from 'lucide-react';
+import Notiflix from 'notiflix';
 import { useState } from 'react';
+import { Button } from '@/components/ui/button';
 import routes from '@/constants/routes';
 import Http from '@/utils/Http';
-import Notiflix from 'notiflix';
-import { Button } from '@/components/ui/button';
-import { Barcode } from 'lucide-react';
 
 export default function AddLabProduct() {
     const { props } = usePage();

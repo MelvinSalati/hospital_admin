@@ -1,9 +1,9 @@
 // components/ChiefComplaints.tsx
 
-import React, { useState } from 'react';
 import { Plus, X, AlertCircle } from 'lucide-react';
+import React, { useState } from 'react';
+import type { ChiefComplaint } from '../types/consultation.types';
 import { SectionWrapper } from './SectionWrapper';
-import { ChiefComplaint } from '../types/consultation.types';
 
 interface ChiefComplaintsProps {
   value: ChiefComplaint[];

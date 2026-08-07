@@ -1,6 +1,10 @@
-import { useState } from 'react';
 import { useForm } from '@inertiajs/react';
+import { format } from 'date-fns';
+import { CalendarIcon, Loader2, UserPlus } from 'lucide-react';
+import Notiflix from 'notiflix';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Calendar } from '@/components/ui/calendar';
 import {
   Dialog,
   DialogContent,
@@ -11,15 +15,11 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Calendar } from '@/components/ui/calendar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { format } from 'date-fns';
-import { CalendarIcon, Loader2, UserPlus } from 'lucide-react';
-import Notiflix from 'notiflix';
-import Http from '@/utils/Http';
 import routes from '@/constants/routes';
+import Http from '@/utils/Http';
 
 interface AdmitPatientFormData {
   patient_id: string;

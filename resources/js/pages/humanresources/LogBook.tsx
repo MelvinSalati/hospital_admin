@@ -1,8 +1,4 @@
-import React, { useState, useEffect } from 'react';
 import { Head, usePage } from '@inertiajs/react';
-import AppLayout from "@/layouts/app-layout";
-import Container from '@/components/container';
-import PageHeader from '@/components/PageHeader';
 import { 
     Plus, 
     Eye, 
@@ -22,9 +18,14 @@ import {
     Calendar,
     Activity
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { ReusableTable, Column, Action } from '@/components/ReusableTable';
+import React, { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
+import Container from '@/components/container';
+import PageHeader from '@/components/PageHeader';
+import type { Column, Action } from '@/components/ReusableTable';
+import { ReusableTable } from '@/components/ReusableTable';
+import { Button } from '@/components/ui/button';
+import AppLayout from "@/layouts/app-layout";
 import Http from '@/utils/Http';
 
 // ============================================

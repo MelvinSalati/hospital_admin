@@ -1,8 +1,8 @@
 // ============================================================
 // InvoiceDetailsModal — Scrollable invoice detail overlay
 // ============================================================
-import { useEffect } from 'react';
 import { X, FileText, User, Calendar, CreditCard } from 'lucide-react';
+import { useEffect } from 'react';
 import type { Invoice } from '../../types';
 
 interface InvoiceDetailsModalProps {

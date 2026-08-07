@@ -1,17 +1,7 @@
 // pages/bulkstore/PurchaseRequisition.tsx
 
-import React, { useState, useEffect, useMemo } from 'react';
 import { usePage } from '@inertiajs/react';
-import AppLayout from '@/layouts/app-layout';
-import Container from '@/components/container';
-import PageHeader from '@/components/PageHeader';
-import Http from '@/utils/Http';
-import { ReusableTable, Column, Action } from '@/components/ReusableTable';
 import { FileBox } from 'lucide-react';
-
-import RequisitionDetailsModal from './components/modals/RequisitionDetailsModal';
-
-import PurchaseRequisitionModal from './components/modals/PurchaseRequisition';
 import {
     Plus,
     RefreshCw,
@@ -24,6 +14,17 @@ import {
     Clock,
     Package,
 } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import Container from '@/components/container';
+import PageHeader from '@/components/PageHeader';
+import type { Column, Action } from '@/components/ReusableTable';
+import { ReusableTable } from '@/components/ReusableTable';
+import AppLayout from '@/layouts/app-layout';
+import Http from '@/utils/Http';
+
+import PurchaseRequisitionModal from './components/modals/PurchaseRequisition';
+import RequisitionDetailsModal from './components/modals/RequisitionDetailsModal';
+
 
 // ============================================
 // TYPES

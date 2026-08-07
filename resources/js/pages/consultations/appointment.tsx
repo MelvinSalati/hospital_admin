@@ -1,7 +1,5 @@
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import AppLayout from '@/layouts/app-layout'
 import { Link, usePage } from '@inertiajs/react'
+import { format } from 'date-fns'
 import {
     ArrowLeft,
     Calendar,
@@ -26,6 +24,10 @@ import {
     ChevronLeft,
     ChevronRight
 } from 'lucide-react'
+import { useState } from 'react'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
     Dialog,
     DialogContent,
@@ -33,11 +35,8 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog'
-import { useState } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import {
     Select,
     SelectContent,
@@ -45,7 +44,8 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select'
-import { format } from 'date-fns'
+import { Textarea } from '@/components/ui/textarea'
+import AppLayout from '@/layouts/app-layout'
 
 interface Appointment {
     id: number

@@ -1,5 +1,5 @@
 // components/payments/AddPaymentMethodModal.tsx
-import { useState } from 'react';
+import { router } from '@inertiajs/react';
 import {
     X,
     Shield,
@@ -9,8 +9,8 @@ import {
     Plus,
     Loader2,
 } from 'lucide-react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { router } from '@inertiajs/react';
 
 interface AddPaymentMethodModalProps {
     isOpen: boolean;

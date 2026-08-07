@@ -1,10 +1,9 @@
 // resources/js/pages/bulkstore/Batches.tsx
 
-import React, { useState, useEffect } from 'react';
+import { Dialog, Transition } from '@headlessui/react';
 import { Head, usePage } from '@inertiajs/react';
-import AppLayout from '@/layouts/app-layout';
-import { BreadcrumbItem } from '@/types';
-import { ReusableTable, Column, Action } from '@/components/ReusableTable';
+import axios from 'axios';
+import { format } from 'date-fns';
 import {
     Package,
     Plus,
@@ -32,10 +31,12 @@ import {
     AlertTriangle,
     Loader2,
 } from 'lucide-react';
-import { Dialog, Transition } from '@headlessui/react';
+import React, { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
-import axios from 'axios';
-import { format } from 'date-fns';
+import type { Column, Action } from '@/components/ReusableTable';
+import { ReusableTable } from '@/components/ReusableTable';
+import AppLayout from '@/layouts/app-layout';
+import type { BreadcrumbItem } from '@/types';
 
 // ============================================
 // TYPES

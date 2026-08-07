@@ -1,6 +1,6 @@
 // components/dashboard/cards/DashboardCard.tsx
-import React from 'react';
 import { Link } from '@inertiajs/react';
+import React from 'react';
 
 interface DashboardCardProps {
     title: string;

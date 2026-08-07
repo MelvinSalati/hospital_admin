@@ -1,5 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Button } from '@/components/ui/button';
+import { router } from '@inertiajs/react';
 import { 
   X, Plus, Trash2, Search, CheckCircle, AlertCircle,
   ChevronDown, ChevronUp, FileText, Calendar, Clock, User,
@@ -8,7 +7,8 @@ import {
   AlertTriangle, Stethoscope,
   StethoscopeIcon
 } from 'lucide-react';
-import { router } from '@inertiajs/react';
+import { useState, useEffect, useCallback } from 'react';
+import { Button } from '@/components/ui/button';
 import useDrugs from '@/global/useDrugs'
 import useLabOrders from "@/global/useLabOrders"
 

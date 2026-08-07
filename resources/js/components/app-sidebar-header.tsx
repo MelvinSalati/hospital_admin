@@ -1,7 +1,11 @@
 // resources/js/components/AppSidebarHeader.tsx
+import { usePage, router } from '@inertiajs/react';
+import {
+    User,
+    LogOut,
+} from 'lucide-react';
 import { Breadcrumbs } from '@/components/breadcrumbs';
-import { SidebarTrigger } from '@/components/ui/sidebar';
-import type { BreadcrumbItem as BreadcrumbItemType } from '@/types';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -10,12 +14,8 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import {
-    User,
-    LogOut,
-} from 'lucide-react';
-import { usePage, router } from '@inertiajs/react';
+import { SidebarTrigger } from '@/components/ui/sidebar';
+import type { BreadcrumbItem as BreadcrumbItemType } from '@/types';
 import { Notifications } from './Notifications';
 
 export default function AppSidebarHeader({

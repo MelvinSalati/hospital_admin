@@ -1,6 +1,5 @@
 // components/pharmacy/PrintLabelModal.tsx
 
-import React, { useState, useRef } from 'react';
 import {
     X,
     Printer,
@@ -17,6 +16,7 @@ import {
     Layers,
     Clock,
 } from 'lucide-react';
+import React, { useState, useRef } from 'react';
 
 interface PrintLabelModalProps {
     isOpen: boolean;

@@ -1,9 +1,7 @@
 // resources/js/pages/bulkstore/Settings.tsx
 
-import React, { useState, useEffect, useMemo } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
-import AppLayout from '@/layouts/app-layout';
-import PageHeader from '@/components/PageHeader';
+import axios from 'axios';
 import {
     Settings as SettingsIcon,
     Bell,
@@ -35,8 +33,10 @@ import {
     Search,
     X,
 } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { toast } from 'react-hot-toast';
-import axios from 'axios';
+import PageHeader from '@/components/PageHeader';
+import AppLayout from '@/layouts/app-layout';
 
 // ============================================
 // TYPES

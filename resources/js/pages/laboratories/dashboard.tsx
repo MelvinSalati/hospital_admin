@@ -5,11 +5,11 @@ import {
     CircleDollarSign,
     ReceiptText,
 } from 'lucide-react';
-import AppLayout from '@/layouts/app-layout';
-import { StatCard } from '@/components/dashboard/cards/StatCard';
-import { PaymentMethodsChart } from '@/components/dashboard/PaymentMethodsChart';
 import { AgeDistributionChart } from '@/components/dashboard/AgeDistributionChart';
+import { StatCard } from '@/components/dashboard/cards/StatCard';
 import { InvoiceTable } from '@/components/dashboard/InvoiceTable';
+import { PaymentMethodsChart } from '@/components/dashboard/PaymentMethodsChart';
+import AppLayout from '@/layouts/app-layout';
 import type { DashboardProps } from '@/types/dashboard';
 
 const breadcrumbs = [

@@ -1,10 +1,10 @@
 // resources/js/pages/Notifications/Index.tsx
-import { useState } from 'react';
 import { usePage, router } from '@inertiajs/react';
 import { Bell, Package, CheckCircle2, AlertCircle, Calendar, MessageCircle } from 'lucide-react';
+import { useState } from 'react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 
 export default function NotificationsIndex() {
     const { notifications } = usePage().props as any;

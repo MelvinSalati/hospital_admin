@@ -1,12 +1,6 @@
 // pages/pharmacies/logistics.tsx
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
-import AppLayout from '@/layouts/app-layout';
-import PageHeader from '@/components/PageHeader';
-import Http from '@/utils/Http';
-import { PrintLabelModal } from './components/PrintLabelModal';
-import AddDrugModal from './components/AddDrugModal';
 import {
     Search,
     Barcode,
@@ -55,14 +49,20 @@ import {
     Settings,
     Activity,
 } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'react-hot-toast';
+import PageHeader from '@/components/PageHeader';
 import { Badge } from '@/components/ui/badge';
+import AppLayout from '@/layouts/app-layout';
+import Http from '@/utils/Http';
+import AddDrugModal from './components/AddDrugModal';
+import { PrintLabelModal } from './components/PrintLabelModal';
 
 // ============================================================================
 // Types - Updated to match your API response
 // ============================================================================
 
-interface Drug {
+interface Product {
     id: number;
     product_uuid: string | null;
     description: string | null;
@@ -72,23 +72,24 @@ interface Drug {
     strength: string | null;
     unit: string | null;
     form: string | null;
-    quantity: string | number;
+    quantity?: string | number;
     expiry_date: string | null;
-    transaction_type: string;
-    from_deparment_id: number | null;
-    to_department_id: number | null;
+    transaction_type?: string;
+    from_deparment_id?: number | null;
+    to_department_id?: number | null;
     supplier_id: number | null;
     created_by: string | null;
     created_by_department: number | null;
     created_at: string;
     updated_at: string;
-    // Additional fields that might be returned
+    barcode: string | null;
+    product_description: string | null;
+    // Additional fields
     current_stock?: number;
     drug_code?: string;
     drug_name?: string;
     generic_name?: string | null;
     brand_name?: string | null;
-    barcode?: string | null;
     qr_code?: string | null;
     service_id?: number | null;
     therapeutic_class?: string | null;
@@ -112,10 +113,10 @@ interface Drug {
     allow_negative_stock?: number;
     is_active?: number;
     discontinued?: number;
-    transactions?: DrugTransaction[];
+    transactions?: ProductTransaction[];
 }
 
-interface DrugTransaction {
+interface ProductTransaction {
     id: number;
     product_uuid: string | null;
     description: string | null;
@@ -253,21 +254,23 @@ const Accordion: React.FC<AccordionProps> = ({
     </div>
 );
 
-interface DrugDetailsContentProps {
-    drug: Drug;
+interface ProductDetailsContentProps {
+    product: Product;
 }
 
-const DrugDetailsContent: React.FC<DrugDetailsContentProps> = ({ drug }) => {
-    // Calculate total stock from all transactions
+const ProductDetailsContent: React.FC<ProductDetailsContentProps> = ({
+    product,
+}) => {
+    // Calculate total stock from transactions if available
     const totalStock =
-        drug.transactions?.reduce((sum, t) => {
+        product.transactions?.reduce((sum, t) => {
             const qty =
                 typeof t.quantity === 'string'
                     ? parseFloat(t.quantity)
                     : t.quantity;
             return sum + qty;
         }, 0) ||
-        parseFloat(drug.quantity as string) ||
+        parseFloat(product.quantity as string) ||
         0;
 
     return (
@@ -278,26 +281,26 @@ const DrugDetailsContent: React.FC<DrugDetailsContentProps> = ({ drug }) => {
                         Product Name:
                     </span>
                     <span className="text-slate-800 dark:text-slate-200">
-                        {drug.product_name || drug.drug_name || 'N/A'}
+                        {product.product_name || 'N/A'}
                     </span>
                 </div>
-                {drug.description && (
+                {product.description && (
                     <div className="flex items-center gap-2 text-sm">
                         <span className="font-medium text-slate-600 dark:text-slate-400">
                             Description:
                         </span>
                         <span className="text-slate-800 dark:text-slate-200">
-                            {drug.description}
+                            {product.description}
                         </span>
                     </div>
                 )}
-                {drug.generic_name && (
+                {product.product_description && (
                     <div className="flex items-center gap-2 text-sm">
                         <span className="font-medium text-slate-600 dark:text-slate-400">
-                            Generic:
+                            Product Description:
                         </span>
                         <span className="text-slate-800 dark:text-slate-200">
-                            {drug.generic_name}
+                            {product.product_description}
                         </span>
                     </div>
                 )}
@@ -308,16 +311,16 @@ const DrugDetailsContent: React.FC<DrugDetailsContentProps> = ({ drug }) => {
                         Code:
                     </span>
                     <span className="font-mono text-xs text-slate-800 dark:text-slate-200">
-                        {drug.product_code || drug.drug_code || 'N/A'}
+                        {product.product_code || 'N/A'}
                     </span>
                 </div>
-                {drug.barcode && (
+                {product.barcode && (
                     <div className="flex items-center gap-2 text-sm">
                         <span className="font-medium text-slate-600 dark:text-slate-400">
                             Barcode:
                         </span>
                         <span className="font-mono text-xs text-slate-800 dark:text-slate-200">
-                            {drug.barcode}
+                            {product.barcode}
                         </span>
                     </div>
                 )}
@@ -329,18 +332,18 @@ const DrugDetailsContent: React.FC<DrugDetailsContentProps> = ({ drug }) => {
                         {totalStock}
                     </span>
                     <span className="text-xs text-slate-500">
-                        {drug.unit || drug.unit_of_measure || 'units'}
+                        {product.unit || 'units'}
                     </span>
                 </div>
             </div>
             <div className="space-y-1.5">
-                {drug.strength && (
+                {product.strength && (
                     <div className="flex items-center gap-2 text-sm">
                         <span className="font-medium text-slate-600 dark:text-slate-400">
                             Strength:
                         </span>
                         <span className="text-slate-800 dark:text-slate-200">
-                            {drug.strength}
+                            {product.strength}
                         </span>
                     </div>
                 )}
@@ -349,16 +352,16 @@ const DrugDetailsContent: React.FC<DrugDetailsContentProps> = ({ drug }) => {
                         Form:
                     </span>
                     <span className="text-slate-800 dark:text-slate-200">
-                        {drug.form || drug.dosage_form || 'N/A'}
+                        {product.form || 'N/A'}
                     </span>
                 </div>
-                {drug.expiry_date && (
+                {product.expiry_date && (
                     <div className="flex items-center gap-2 text-sm">
                         <span className="font-medium text-slate-600 dark:text-slate-400">
                             Expiry:
                         </span>
                         <span className="text-amber-600 dark:text-amber-400">
-                            {new Date(drug.expiry_date).toLocaleDateString()}
+                            {new Date(product.expiry_date).toLocaleDateString()}
                         </span>
                     </div>
                 )}
@@ -368,7 +371,7 @@ const DrugDetailsContent: React.FC<DrugDetailsContentProps> = ({ drug }) => {
 };
 
 interface TransactionHistoryProps {
-    transactions: DrugTransaction[];
+    transactions: ProductTransaction[];
 }
 
 const TransactionHistory: React.FC<TransactionHistoryProps> = ({
@@ -685,14 +688,14 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({
 };
 
 // ============================================================================
-// Search Results Component
+// Search Results Component - Updated for {status: 'success', product: Array(1)}
 // ============================================================================
 
 interface SearchResultsProps {
-    results: Drug[];
+    results: Product[];
     isLoading: boolean;
     searchQuery: string;
-    onSelectDrug: (drug: Drug) => void;
+    onSelectProduct: (product: Product) => void;
     onAddProduct: () => void;
     onClear: () => void;
 }
@@ -701,7 +704,7 @@ const SearchResults: React.FC<SearchResultsProps> = ({
     results,
     isLoading,
     searchQuery,
-    onSelectDrug,
+    onSelectProduct,
     onAddProduct,
     onClear,
 }) => {
@@ -761,81 +764,61 @@ const SearchResults: React.FC<SearchResultsProps> = ({
 
     return (
         <div className="space-y-1.5">
-            {results.map((drug) => {
-                // Calculate total stock for display
-                const totalStock =
-                    drug.transactions?.reduce((sum, t) => {
-                        const qty =
-                            typeof t.quantity === 'string'
-                                ? parseFloat(t.quantity)
-                                : t.quantity;
-                        return sum + qty;
-                    }, 0) ||
-                    parseFloat(drug.quantity as string) ||
-                    0;
-
-                return (
-                    <button
-                        key={drug.id}
-                        onClick={() => onSelectDrug(drug)}
-                        className="w-full rounded-lg border border-slate-200 p-3 text-left transition-colors hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
-                    >
-                        <div className="flex items-center justify-between">
-                            <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-2">
-                                    <span className="font-medium text-slate-800 dark:text-slate-100">
-                                        {drug.product_name ||
-                                            drug.drug_name ||
-                                            'Unnamed Product'}
-                                    </span>
+            {results.map((product) => (
+                <button
+                    key={product.id}
+                    onClick={() => onSelectProduct(product)}
+                    className="w-full rounded-lg border border-slate-200 p-3 text-left transition-colors hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                >
+                    <div className="flex items-center justify-between">
+                        <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                                <span className="font-medium text-slate-800 dark:text-slate-100">
+                                    {product.product_name || 'Unnamed Product'}
+                                </span>
+                                <Badge
+                                    variant="outline"
+                                    className="text-[10px]"
+                                >
+                                    {product.product_code || 'N/A'}
+                                </Badge>
+                                {product.barcode && (
                                     <Badge
                                         variant="outline"
-                                        className="text-[10px]"
+                                        className="bg-blue-50 text-[10px] dark:bg-blue-900/20"
                                     >
-                                        {drug.product_code ||
-                                            drug.drug_code ||
-                                            'N/A'}
+                                        <Barcode className="mr-1 h-3 w-3" />
+                                        {product.barcode}
                                     </Badge>
-                                    {drug.barcode && (
-                                        <Badge
-                                            variant="outline"
-                                            className="bg-blue-50 text-[10px] dark:bg-blue-900/20"
-                                        >
-                                            <Barcode className="mr-1 h-3 w-3" />
-                                            {drug.barcode}
-                                        </Badge>
-                                    )}
-                                </div>
-                                <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                                    {drug.description && (
-                                        <span>{drug.description}</span>
-                                    )}
-                                    {drug.strength && (
-                                        <span className="flex items-center gap-0.5">
-                                            <Package className="h-3 w-3" />
-                                            {drug.strength}
-                                        </span>
-                                    )}
-                                    {drug.form && <span>{drug.form}</span>}
-                                    {drug.unit && (
-                                        <span>Unit: {drug.unit}</span>
-                                    )}
-                                </div>
+                                )}
                             </div>
-                            <div className="ml-4 flex flex-col items-end">
-                                <div className="text-sm font-bold text-slate-800 dark:text-slate-100">
-                                    {totalStock}
-                                </div>
-                                <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                                    {drug.unit ||
-                                        drug.unit_of_measure ||
-                                        'units'}
-                                </div>
+                            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                                {product.description && (
+                                    <span>{product.description}</span>
+                                )}
+                                {product.strength && (
+                                    <span className="flex items-center gap-0.5">
+                                        <Package className="h-3 w-3" />
+                                        {product.strength}
+                                    </span>
+                                )}
+                                {product.form && <span>{product.form}</span>}
+                                {product.unit && (
+                                    <span>Unit: {product.unit}</span>
+                                )}
                             </div>
                         </div>
-                    </button>
-                );
-            })}
+                        <div className="ml-4 flex flex-col items-end">
+                            <div className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                                {product.quantity || 0}
+                            </div>
+                            <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                                {product.unit || 'units'}
+                            </div>
+                        </div>
+                    </div>
+                </button>
+            ))}
         </div>
     );
 };
@@ -848,13 +831,12 @@ export default function Logistics() {
     const { suppliers = [] } = usePage<LogisticsProps>().props;
     const [searchQuery, setSearchQuery] = useState('');
     const [isLoading, setIsLoading] = useState(false);
-    const [selectedDrug, setSelectedDrug] = useState<Drug | null>(null);
-    const [drugs, setDrugs] = useState<Drug[]>([]);
-    const [transactions, setTransactions] = useState<DrugTransaction[]>([]);
+    const [selectedProduct, setSelectedProduct] = useState<Product | null>(
+        null,
+    );
+    const [products, setProducts] = useState<Product[]>([]);
+    const [transactions, setTransactions] = useState<ProductTransaction[]>([]);
     const [isAddDrugModalOpen, setIsAddDrugModalOpen] = useState(false);
-    const [countModalOpen, setCountModalOpen] = useState(false);
-    const [receiveModalOpen, setReceiveModalOpen] = useState(false);
-    const [issueModalOpen, setIssueModalOpen] = useState(false);
     const [printLabelModalOpen, setPrintLabelModalOpen] = useState(false);
     const [showResults, setShowResults] = useState(false);
     const [isScanning, setIsScanning] = useState(true);
@@ -864,13 +846,13 @@ export default function Logistics() {
     const scanInputRef = useRef<HTMLInputElement>(null);
 
     // ============================================================================
-    // Core Search Function - Updated to handle your API response
+    // Core Search Function - Updated for {status: 'success', product: Array(1)}
     // ============================================================================
 
     const performSearch = useCallback(async (query: string) => {
         if (!query.trim()) {
-            setDrugs([]);
-            setSelectedDrug(null);
+            setProducts([]);
+            setSelectedProduct(null);
             setShowResults(false);
             return;
         }
@@ -883,51 +865,23 @@ export default function Logistics() {
                 `/bulk-store/product/search/${encodeURIComponent(query)}`,
             );
 
-            console.log('API Response:', response.data); // Debug log
+            console.log('API Response:', response.data);
 
-            // Check if we got an array of transactions (your current API response)
-            if (Array.isArray(response.data)) {
-                const transactions = response.data as DrugTransaction[];
+            // Handle the response format: {status: 'success', product: Array(1)}
+            if (response.data && response.data.status === 'success') {
+                const productData = response.data.product;
 
-                if (transactions.length > 0) {
-                    // Group transactions by product
-                    const firstTransaction = transactions[0];
+                if (Array.isArray(productData) && productData.length > 0) {
+                    // Set the products
+                    setProducts(productData);
 
-                    // Create a drug object from the first transaction
-                    const drug: Drug = {
-                        id: firstTransaction.id,
-                        product_uuid: firstTransaction.product_uuid,
-                        description: firstTransaction.description,
-                        product_name: firstTransaction.product_name,
-                        product_code: firstTransaction.product_code,
-                        category_id: firstTransaction.category_id,
-                        strength: firstTransaction.strength,
-                        unit: firstTransaction.unit,
-                        form: firstTransaction.form,
-                        quantity: firstTransaction.quantity,
-                        expiry_date: firstTransaction.expiry_date,
-                        transaction_type: firstTransaction.transaction_type,
-                        from_deparment_id: firstTransaction.from_deparment_id,
-                        to_department_id: firstTransaction.to_department_id,
-                        supplier_id: firstTransaction.supplier_id,
-                        created_by: firstTransaction.created_by,
-                        created_by_department:
-                            firstTransaction.created_by_department,
-                        created_at: firstTransaction.created_at,
-                        updated_at: firstTransaction.updated_at,
-                        transactions: transactions, // Store all transactions
-                        current_stock: transactions.reduce((sum, t) => {
-                            const qty =
-                                typeof t.quantity === 'string'
-                                    ? parseFloat(t.quantity)
-                                    : t.quantity;
-                            return sum + qty;
-                        }, 0),
-                    };
+                    // Set the first product as selected
+                    const firstProduct = productData[0];
+                    setSelectedProduct(firstProduct);
 
-                    setDrugs([drug]);
-                    setSelectedDrug(drug);
-                    setTransactions(transactions);
+                    // Set transactions if available (you may need to fetch transactions separately)
+                    setTransactions(firstProduct.transactions || []);
+
                     setDrugInfoOpen(true);
                     setTransactionsOpen(true);
                     setShowResults(false);
@@ -941,19 +895,20 @@ export default function Logistics() {
                         return newScans.slice(0, 10);
                     });
                 } else {
-                    setDrugs([]);
-                    setSelectedDrug(null);
+                    setProducts([]);
+                    setSelectedProduct(null);
                     setTransactions([]);
-                    toast.error('No products found with this barcode');
+                    toast.error('No products found');
                 }
             }
-            // Handle the expected format with success flag
-            else if (response.data.success) {
-                const data = response.data.drug;
+            // Fallback: If response has success flag and data directly
+            else if (response.data && response.data.success) {
+                const data = response.data.data || response.data.product;
                 if (data) {
-                    setDrugs([data]);
-                    setSelectedDrug(data);
-                    setTransactions(data.transactions || []);
+                    const productArray = Array.isArray(data) ? data : [data];
+                    setProducts(productArray);
+                    setSelectedProduct(productArray[0]);
+                    setTransactions(productArray[0]?.transactions || []);
                     setDrugInfoOpen(true);
                     setTransactionsOpen(true);
                     setShowResults(false);
@@ -966,8 +921,8 @@ export default function Logistics() {
                         return newScans.slice(0, 10);
                     });
                 } else {
-                    setDrugs([]);
-                    setSelectedDrug(null);
+                    setProducts([]);
+                    setSelectedProduct(null);
                     setTransactions([]);
                     toast.error('Product not found');
                 }
@@ -975,15 +930,15 @@ export default function Logistics() {
             // Handle other response formats
             else {
                 console.warn('Unexpected response format:', response.data);
-                setDrugs([]);
-                setSelectedDrug(null);
+                setProducts([]);
+                setSelectedProduct(null);
                 setTransactions([]);
                 toast.error('Unexpected response format');
             }
         } catch (error: any) {
             console.error('Search error:', error);
-            setDrugs([]);
-            setSelectedDrug(null);
+            setProducts([]);
+            setSelectedProduct(null);
             setTransactions([]);
             toast.error(
                 error.response?.data?.message || 'Failed to search product',
@@ -994,36 +949,36 @@ export default function Logistics() {
     }, []);
 
     // ============================================================================
-    // Navigation Handlers - Navigate to specific routes
+    // Navigation Handlers
     // ============================================================================
 
-    const navigateToReceive = (drug: Drug) => {
-        const uuid = drug.product_uuid || drug.id;
+    const navigateToReceive = (product: Product) => {
+        const uuid = product.product_uuid || product.id;
         router.visit(`/bulkstore/receive/product/${uuid}`);
     };
 
-    const navigateToAdjustment = (drug: Drug) => {
-        const uuid = drug.product_uuid || drug.id;
+    const navigateToAdjustment = (product: Product) => {
+        const uuid = product.product_uuid || product.id;
         router.visit(`/bulkstore/adjustment/${uuid}`);
     };
 
-    const navigateToStockStatus = (drug: Drug) => {
-        const uuid = drug.product_uuid || drug.id;
+    const navigateToStockStatus = (product: Product) => {
+        const uuid = product.product_uuid || product.id;
         router.visit(`/bulkstore/stock-status/${uuid}`);
     };
 
-    const navigateToIssue = (drug: Drug) => {
-        const uuid = drug.product_uuid || drug.id;
+    const navigateToIssue = (product: Product) => {
+        const uuid = product.product_uuid || product.id;
         router.visit(`/bulkstore/issue/${uuid}`);
     };
 
-    const navigateToPhysicalCount = (drug: Drug) => {
-        const uuid = drug.product_uuid || drug.id;
+    const navigateToPhysicalCount = (product: Product) => {
+        const uuid = product.product_uuid || product.id;
         router.visit(`/bulkstore/physical-count/${uuid}`);
     };
 
-    const navigateToTransactionHistory = (drug: Drug) => {
-        const uuid = drug.product_uuid || drug.id;
+    const navigateToTransactionHistory = (product: Product) => {
+        const uuid = product.product_uuid || product.id;
         router.visit(`/bulkstore/transactions/${uuid}`);
     };
 
@@ -1061,10 +1016,10 @@ export default function Logistics() {
         }, 300);
     };
 
-    const handleSelectDrug = (drug: Drug) => {
-        setSelectedDrug(drug);
-        setTransactions(drug.transactions || []);
-        setDrugs([drug]);
+    const handleSelectProduct = (product: Product) => {
+        setSelectedProduct(product);
+        setTransactions(product.transactions || []);
+        setProducts([product]);
         setShowResults(false);
         setDrugInfoOpen(true);
         setTransactionsOpen(true);
@@ -1077,8 +1032,8 @@ export default function Logistics() {
 
     const handleClearSearch = () => {
         setSearchQuery('');
-        setDrugs([]);
-        setSelectedDrug(null);
+        setProducts([]);
+        setSelectedProduct(null);
         setShowResults(false);
     };
 
@@ -1110,19 +1065,16 @@ export default function Logistics() {
     const handlePrintLabel = (data: PrintLabelData) => {
         const printWindow = window.open('', '_blank');
         if (printWindow) {
-            const drugName =
-                selectedDrug?.product_name ||
-                selectedDrug?.drug_name ||
-                'Unknown Product';
-            const drugCode =
-                selectedDrug?.product_code || selectedDrug?.drug_code || 'N/A';
-            const barcode = selectedDrug?.barcode || drugCode;
+            const productName =
+                selectedProduct?.product_name || 'Unknown Product';
+            const productCode = selectedProduct?.product_code || 'N/A';
+            const barcode = selectedProduct?.barcode || productCode;
 
             printWindow.document.write(`
                 <!DOCTYPE html>
                 <html>
                 <head>
-                    <title>Pharmacy Label - ${drugName}</title>
+                    <title>Pharmacy Label - ${productName}</title>
                     <style>
                         body { font-family: Arial, sans-serif; padding: 40px; }
                         .label { border: 2px solid #333; padding: 20px; width: 300px; margin: 0 auto; text-align: center; }
@@ -1153,14 +1105,14 @@ export default function Logistics() {
                             .map(
                                 () => `
                             <div class="label">
-                                <div class="drug-name">${drugName}</div>
-                                <div class="drug-code">${drugCode}</div>
+                                <div class="drug-name">${productName}</div>
+                                <div class="drug-code">${productCode}</div>
                                 ${data.includeBarcode ? `<div class="barcode">${barcode}</div>` : ''}
-                                <div class="info">Strength: ${selectedDrug?.strength || 'N/A'}</div>
-                                <div class="info">Form: ${selectedDrug?.form || selectedDrug?.dosage_form || 'N/A'}</div>
-                                <div class="info">Pack: ${selectedDrug?.unit || selectedDrug?.unit_of_measure || 'N/A'}</div>
-                                ${data.includePrice && selectedDrug?.selling_price ? `<div class="info">Price: ZMW ${selectedDrug.selling_price.toFixed(2)}</div>` : ''}
-                                ${data.includeExpiry && selectedDrug?.expiry_date ? `<div class="info" style="color:#dc2626;">Expiry: ${new Date(selectedDrug.expiry_date).toLocaleDateString()}</div>` : ''}
+                                <div class="info">Strength: ${selectedProduct?.strength || 'N/A'}</div>
+                                <div class="info">Form: ${selectedProduct?.form || 'N/A'}</div>
+                                <div class="info">Pack: ${selectedProduct?.unit || 'N/A'}</div>
+                                ${data.includePrice && selectedProduct?.selling_price ? `<div class="info">Price: ZMW ${selectedProduct.selling_price.toFixed(2)}</div>` : ''}
+                                ${data.includeExpiry && selectedProduct?.expiry_date ? `<div class="info" style="color:#dc2626;">Expiry: ${new Date(selectedProduct.expiry_date).toLocaleDateString()}</div>` : ''}
                                 <div class="quantity">Qty: ${data.quantity}</div>
                                 ${data.notes ? `<div class="info" style="font-style:italic;">${data.notes}</div>` : ''}
                                 <div class="footer">Printed: ${new Date().toLocaleString()}</div>
@@ -1234,22 +1186,6 @@ export default function Logistics() {
                 <PageHeader
                     title="Product Management"
                     subtitle="Scan barcodes to quickly find and manage products"
-                    actions={
-                        [<div className="flex items-center gap-2">
-                            <Badge variant="outline" className="text-xs">
-                                <kbd className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] dark:bg-slate-700">
-                                    Ctrl+Shift+S
-                                </kbd>{' '}
-                                Toggle Scanner
-                            </Badge>
-                            <Badge variant="outline" className="text-xs">
-                                <kbd className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] dark:bg-slate-700">
-                                    Ctrl+Shift+N
-                                </kbd>{' '}
-                                New Product
-                            </Badge>
-                        </div>]
-                    }
                 />
 
                 {/* Barcode Scanner Section */}
@@ -1312,10 +1248,10 @@ export default function Logistics() {
                         <div className="absolute top-full right-0 left-0 z-20 mt-1 max-h-[400px] overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-800">
                             <div className="p-3">
                                 <SearchResults
-                                    results={drugs}
+                                    results={products}
                                     isLoading={isLoading}
                                     searchQuery={searchQuery}
-                                    onSelectDrug={handleSelectDrug}
+                                    onSelectProduct={handleSelectProduct}
                                     onAddProduct={handleAddProduct}
                                     onClear={handleClearSearch}
                                 />
@@ -1324,30 +1260,32 @@ export default function Logistics() {
                     )}
                 </div>
 
-                {/* Selected Drug Details */}
-                {selectedDrug && !showResults && (
+                {/* Selected Product Details */}
+                {selectedProduct && !showResults && (
                     <div className="space-y-3">
-                        {/* Drug Info Accordion */}
+                        {/* Product Info Accordion */}
                         <Accordion
                             open={drugInfoOpen}
                             onToggle={() => setDrugInfoOpen(!drugInfoOpen)}
-                            title="Drug Information"
+                            title="Product Information"
                             icon={<Package className="h-4 w-4" />}
                         >
-                            <DrugDetailsContent drug={selectedDrug} />
+                            <ProductDetailsContent product={selectedProduct} />
                         </Accordion>
 
                         {/* Action Buttons - Navigation to routes */}
                         <div className="flex flex-wrap gap-2">
                             <button
-                                onClick={() => navigateToReceive(selectedDrug)}
+                                onClick={() =>
+                                    navigateToReceive(selectedProduct)
+                                }
                                 className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-700"
                             >
                                 <ArrowLeft className="h-3.5 w-3.5" />
                                 Receive
                             </button>
                             <button
-                                onClick={() => navigateToIssue(selectedDrug)}
+                                onClick={() => navigateToIssue(selectedProduct)}
                                 className="flex items-center gap-1.5 rounded-lg bg-orange-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-orange-700"
                             >
                                 <ArrowRight className="h-3.5 w-3.5" />
@@ -1355,7 +1293,7 @@ export default function Logistics() {
                             </button>
                             <button
                                 onClick={() =>
-                                    navigateToPhysicalCount(selectedDrug)
+                                    navigateToPhysicalCount(selectedProduct)
                                 }
                                 className="flex items-center gap-1.5 rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-purple-700"
                             >
@@ -1364,7 +1302,7 @@ export default function Logistics() {
                             </button>
                             <button
                                 onClick={() =>
-                                    navigateToAdjustment(selectedDrug)
+                                    navigateToAdjustment(selectedProduct)
                                 }
                                 className="flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-amber-700"
                             >
@@ -1373,7 +1311,7 @@ export default function Logistics() {
                             </button>
                             <button
                                 onClick={() =>
-                                    navigateToStockStatus(selectedDrug)
+                                    navigateToStockStatus(selectedProduct)
                                 }
                                 className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-700"
                             >
@@ -1382,7 +1320,9 @@ export default function Logistics() {
                             </button>
                             <button
                                 onClick={() =>
-                                    navigateToTransactionHistory(selectedDrug)
+                                    navigateToTransactionHistory(
+                                        selectedProduct,
+                                    )
                                 }
                                 className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-indigo-700"
                             >
@@ -1425,7 +1365,7 @@ export default function Logistics() {
             <PrintLabelModal
                 isOpen={printLabelModalOpen}
                 onClose={() => setPrintLabelModalOpen(false)}
-                drug={selectedDrug}
+                drug={selectedProduct}
                 onPrint={handlePrintLabel}
             />
         </AppLayout>

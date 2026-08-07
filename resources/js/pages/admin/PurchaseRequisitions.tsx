@@ -1,16 +1,7 @@
 // resources/js/pages/bulkstore/PurchaseRequisition.tsx
 
-import React, {
-    useState,
-    useEffect,
-    useCallback,
-    useMemo,
-    useRef,
-} from 'react';
 import { Head, usePage } from '@inertiajs/react';
-import AppLayout from '@/layouts/app-layout';
-import Container from '@/components/container';
-import PageHeader from '@/components/PageHeader';
+import JsBarcode from 'jsbarcode';
 import {
     Plus,
     Download,
@@ -46,22 +37,32 @@ import {
     Check,
     AlertCircle,
 } from 'lucide-react';
+import React, {
+    useState,
+    useEffect,
+    useCallback,
+    useMemo,
+    useRef,
+} from 'react';
+import { toast } from 'react-hot-toast';
+import Container from '@/components/container';
+import ViewPurchaseOrderModal from '@/components/modals/ViewPurchaseOrderModal';
+import PageHeader from '@/components/PageHeader';
 
 // UI Components
-import { Button } from '@/components/ui/button';
-import { ReusableTable, Column, Action } from '@/components/ReusableTable';
-import { toast } from 'react-hot-toast';
-import Http from '@/utils/Http';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
+import type { Column, Action } from '@/components/ReusableTable';
+import { ReusableTable } from '@/components/ReusableTable';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { Progress } from '@/components/ui/progress';
+import AppLayout from '@/layouts/app-layout';
+import Http from '@/utils/Http';
 
 // Import JsBarcode for barcode generation
-import JsBarcode from 'jsbarcode';
 
 // Import the ViewPurchaseOrderModal component
-import ViewPurchaseOrderModal from '@/components/modals/ViewPurchaseOrderModal';
 
 // ============================================
 // TYPES

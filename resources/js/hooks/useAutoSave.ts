@@ -1,7 +1,7 @@
 // hooks/useAutoSave.ts
 
 import { useEffect, useRef } from 'react';
-import { ConsultationFormData } from '../types/consultation.types';
+import type { ConsultationFormData } from '../types/consultation.types';
 
 export const useAutoSave = (
   data: ConsultationFormData,

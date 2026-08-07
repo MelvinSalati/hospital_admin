@@ -1,12 +1,12 @@
 // pages/patients/appointments.tsx (or .page.tsx depending on setup)
 
-import PageHeader from '@/components/PageHeader';
-import PatientLayout from '@/layouts/patients/PatientLayout';
 import { usePage } from '@inertiajs/react';
-import BookAppointment from './components/BookAppointment';
-import AppointmentsTable from './components/AppointmentsTable';
-import { Button } from '@/components/ui/button';
 import { useState } from 'react';
+import PageHeader from '@/components/PageHeader';
+import { Button } from '@/components/ui/button';
+import PatientLayout from '@/layouts/patients/PatientLayout';
+import AppointmentsTable from './components/AppointmentsTable';
+import BookAppointment from './components/BookAppointment';
 // Define tab configuration — now as a React component (reusable)
 
 export default function PatientsAppointments() {

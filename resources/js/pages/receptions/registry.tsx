@@ -1,8 +1,6 @@
 // pages/patients/registry.tsx
 
-import { useState } from 'react';
 import { Link } from '@inertiajs/react';
-import AppLayout from '@/layouts/app-layout';
 import {
     Search,
     Phone,
@@ -26,8 +24,10 @@ import {
     Plus,
     Printer,
 } from 'lucide-react';
-import Http from '@/utils/Http';
 import Notiflix from 'notiflix';
+import { useState } from 'react';
+import AppLayout from '@/layouts/app-layout';
+import Http from '@/utils/Http';
 
 // ============================================================================
 // Types

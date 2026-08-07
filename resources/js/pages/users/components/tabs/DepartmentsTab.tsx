@@ -1,7 +1,5 @@
 // pages/components/tabs/DepartmentsTab.tsx
 
-import { useState, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
 import { usePage, router } from '@inertiajs/react';
 import {
   Plus,
@@ -15,6 +13,8 @@ import {
   CheckCircle
 } from 'lucide-react';
 import Notiflix from 'notiflix';
+import { useState, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
 
 interface Department {
   id: number;

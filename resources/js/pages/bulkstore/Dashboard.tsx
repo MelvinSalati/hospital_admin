@@ -1,7 +1,5 @@
 // Pages/BulkStore/Dashboard.tsx
-import AppLayout from '@/layouts/app-layout';
 import { Head } from '@inertiajs/react';
-import { BreadcrumbItem } from '@/types';
 import {
     Package,
     DollarSign,
@@ -25,14 +23,7 @@ import {
     Download,
     Filter,
 } from 'lucide-react';
-import {
-    Card,
-    CardContent,
-    CardDescription,
-    CardFooter,
-    CardHeader,
-    CardTitle,
-} from '@/components/ui/card';
+import { useState } from 'react';
 import {
     Bar,
     BarChart,
@@ -46,7 +37,16 @@ import {
     Cell,
 } from 'recharts';
 import { Badge } from '@/components/ui/badge';
-import { useState } from 'react';
+import {
+    Card,
+    CardContent,
+    CardDescription,
+    CardFooter,
+    CardHeader,
+    CardTitle,
+} from '@/components/ui/card';
+import AppLayout from '@/layouts/app-layout';
+import type { BreadcrumbItem } from '@/types';
 
 // ============================================
 // TYPES

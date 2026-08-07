@@ -1,25 +1,5 @@
-import { useState, useEffect } from 'react'
-import PatientLayout from "@/layouts/patients/PatientLayout"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Card, CardContent } from "@/components/ui/card"
-import {
-    Breadcrumb,
-    BreadcrumbItem,
-    BreadcrumbLink,
-    BreadcrumbList,
-    BreadcrumbPage,
-    BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb"
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogHeader,
-    DialogTitle,
-    DialogTrigger,
-} from "@/components/ui/dialog"
+import { usePage, router } from '@inertiajs/react'
+import axios from 'axios'
 import { format } from 'date-fns'
 import {
     Heart,
@@ -44,9 +24,29 @@ import {
     ChevronsLeft,
     ChevronsRight
 } from 'lucide-react'
-import axios from 'axios'
-import { usePage, router } from '@inertiajs/react'
+import { useState, useEffect } from 'react'
 import { toast } from 'react-hot-toast'
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import {
+    Breadcrumb,
+    BreadcrumbItem,
+    BreadcrumbLink,
+    BreadcrumbList,
+    BreadcrumbPage,
+    BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import PatientLayout from "@/layouts/patients/PatientLayout"
 
 export default function Vitals({ vitals: initialVitals = [], averages: initialAverages = {} }) {
     // Get patientId from props (Inertia方式)

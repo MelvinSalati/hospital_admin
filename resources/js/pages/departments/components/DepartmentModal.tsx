@@ -1,8 +1,8 @@
 // components/departments/DepartmentModal.tsx
-import { useState, useEffect } from 'react';
 import { X, Loader2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import Notiflix from 'notiflix';
+import { useState, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
 import { departmentAPI } from '@/services/api';
 
 interface DepartmentModalProps {

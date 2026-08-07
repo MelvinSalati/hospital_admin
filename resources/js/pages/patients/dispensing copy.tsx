@@ -1,5 +1,3 @@
-import { useState } from 'react';
-import PatientLayout from '@/layouts/patients/PatientLayout';
 import { usePage, Link, router } from '@inertiajs/react';
 import {
     X,
@@ -24,9 +22,11 @@ import {
     FileText,
     Printer,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { dispensationAPI } from '@/services/api';
 import Notiflix from 'notiflix';
+import { useState } from 'react';
+import { Button } from '@/components/ui/button';
+import PatientLayout from '@/layouts/patients/PatientLayout';
+import { dispensationAPI } from '@/services/api';
 
 export default function Dispensation() {
     const { dispensations } = usePage().props;
@@ -221,7 +221,7 @@ export default function Dispensation() {
         }
 
         const maxQuantity = item.original_quantity;
-        let quantity = Math.max(0, Math.min(maxQuantity, newQuantity));
+        const quantity = Math.max(0, Math.min(maxQuantity, newQuantity));
 
         updatedItems[itemIndex] = {
             ...item,

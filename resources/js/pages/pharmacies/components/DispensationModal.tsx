@@ -1,4 +1,3 @@
-import React, { useEffect, useRef } from 'react';
 import {
     X,
     Package,
@@ -24,6 +23,7 @@ import {
     AlertCircle,
     ArrowRight,
 } from 'lucide-react';
+import React, { useEffect, useRef } from 'react';
 
 // ============================================================================
 // Types

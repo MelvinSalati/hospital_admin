@@ -1,5 +1,4 @@
 import { Link, usePage } from '@inertiajs/react';
-import { useEffect, useState } from 'react';
 import {
     Users,
     UserPlus,
@@ -28,8 +27,16 @@ import {
     Scissors,
     Eye,
 } from 'lucide-react';
+import { useEffect, useState } from 'react';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
     Sidebar,
     SidebarContent,
@@ -40,13 +47,6 @@ import {
     SidebarMenuItem,
     SidebarGroup,
 } from '@/components/ui/sidebar';
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Badge } from '@/components/ui/badge';
 
 import type { NavItem } from '@/types';
 import AppLogo from './app-logo';

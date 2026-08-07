@@ -1,9 +1,6 @@
 // pages/patients/bills.tsx
 
-import PatientLayout from '@/layouts/patients/PatientLayout';
 import { usePage, router } from '@inertiajs/react';
-import { Button } from '@/components/ui/button';
-import { useState, useEffect } from 'react';
 import {
     FileText,
     AlertCircle,
@@ -29,6 +26,9 @@ import {
     Banknote,
     RefreshCw,
 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import PatientLayout from '@/layouts/patients/PatientLayout';
 
 // ============================================================================
 // Types

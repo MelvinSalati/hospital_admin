@@ -1,6 +1,6 @@
+import { Search, Plus, X, Microscope } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Search, Plus, X, Microscope } from 'lucide-react';
 import useLabOrders from '@/global/useLabOrders';
 
 const LabOrdersSection = ({ data = [], onChange }: any) => {

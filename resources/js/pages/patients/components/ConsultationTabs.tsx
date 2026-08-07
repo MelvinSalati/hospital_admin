@@ -1,5 +1,4 @@
-import { useState, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
+import { router } from '@inertiajs/react';
 import {
   Save, 
   Loader2, 
@@ -23,11 +22,12 @@ import {
   User, 
   Stethoscope
 } from 'lucide-react';
-import { router } from '@inertiajs/react';
-import LabOrdersSection from '../LabOrdersSection';
-import Http from '@/utils/Http';
-import routes from '@/constants/routes';
 import Notiflix from 'notiflix'
+import { useState, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import routes from '@/constants/routes';
+import Http from '@/utils/Http';
+import LabOrdersSection from '../LabOrdersSection';
 
 // Types
 interface ConsultationFormData {

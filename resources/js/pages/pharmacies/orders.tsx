@@ -1,9 +1,6 @@
 // pages/Pharmacy/Orders.tsx
 
-import React, { useState, useMemo } from 'react';
 import { usePage } from '@inertiajs/react';
-import AppLayout from '@/layouts/app-layout';
-import Http from '@/utils/Http';
 import {
     Search,
     Package,
@@ -18,7 +15,10 @@ import {
     ChevronRight,
     ChevronDown,
 } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
 import { toast } from 'react-hot-toast';
+import AppLayout from '@/layouts/app-layout';
+import Http from '@/utils/Http';
 
 // Types
 interface Product {

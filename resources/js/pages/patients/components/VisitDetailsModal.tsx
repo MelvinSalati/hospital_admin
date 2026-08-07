@@ -1,7 +1,4 @@
 // components/VisitDetailsModal.tsx
-import React from 'react';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import {
     X,
     Calendar,
@@ -18,6 +15,9 @@ import {
     User,
     Stethoscope,
 } from 'lucide-react';
+import React from 'react';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 
 interface AntenatalVisit {
     id: number;

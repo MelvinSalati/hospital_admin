@@ -1,6 +1,7 @@
-import { useState, useMemo, useEffect } from 'react';
+import { Link, usePage, router } from '@inertiajs/react';
+import type {
+    User} from 'lucide-react';
 import {
-    User,
     Droplets,
     Baby,
     ChevronRight,
@@ -34,12 +35,12 @@ import {
     Banknote,
 } from 'lucide-react';
 import Notiflix from 'notiflix';
-import PatientLayout from '@/layouts/patients/PatientLayout';
-import PatientTabs from './components/PatientTabs';
+import { useState, useMemo, useEffect } from 'react';
+import { toast } from 'sonner';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import {
     Dialog,
     DialogContent,
@@ -56,9 +57,9 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
+import PatientLayout from '@/layouts/patients/PatientLayout';
 import Http from '@/utils/Http';
-import { toast } from 'sonner';
-import { Link, usePage, router } from '@inertiajs/react';
+import PatientTabs from './components/PatientTabs';
 
 interface Department {
     id: number;

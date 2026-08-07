@@ -1,8 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
 import { Head, usePage } from '@inertiajs/react';
-import AppLayout from '@/layouts/app-layout';
-import Container from '@/components/container';
-import PageHeader from '@/components/PageHeader';
 import {
     Plus,
     Download,
@@ -22,12 +18,17 @@ import {
     Tag,
     Building,
 } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
 
 // UI Components
-import { Button } from '@/components/ui/button';
-import { ReusableTable, Column, Action } from '@/components/ReusableTable';
 import { toast } from 'react-hot-toast';
-import Http from '@/utils/Http';
+import Container from '@/components/container';
+import PageHeader from '@/components/PageHeader';
+import { ReusableTable } from '@/components/ReusableTable';
+import type { Column, Action } from '@/components/ReusableTable';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
     Dialog,
     DialogContent,
@@ -37,9 +38,9 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import AppLayout from '@/layouts/app-layout';
+import Http from '@/utils/Http';
 
 // ============================================
 // TYPES

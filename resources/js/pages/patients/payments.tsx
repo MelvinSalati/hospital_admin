@@ -1,7 +1,7 @@
 // pages/patients/Payments.tsx
+import { usePage } from '@inertiajs/react';
 import PatientLayout from '@/layouts/patients/PatientLayout';
 import { PaymentsPage } from './components/payments';
-import { usePage } from '@inertiajs/react';
 
 export default function Payments() {
     const invoice = usePage().props;

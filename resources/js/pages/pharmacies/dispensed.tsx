@@ -1,9 +1,9 @@
 // pages/pharmacies/dispensed.tsx
 
-import AppLayout from '@/layouts/app-layout';
-import PageHeader from '@/components/PageHeader';
-import DispensedDrugsTable from './components/DispensedDrugsTable';
 import { usePage } from '@inertiajs/react';
+import PageHeader from '@/components/PageHeader';
+import AppLayout from '@/layouts/app-layout';
+import DispensedDrugsTable from './components/DispensedDrugsTable';
 
 interface DispensedDrug {
     id: string;

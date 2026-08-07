@@ -5,6 +5,7 @@ namespace App\Http\Controllers\BulkStores;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\BulkStores\StorePurchaseOrderRequest;
 use App\Models\BulkStores\PurchaseOrder;
+use App\Models\BulkStores\PurchaseRequisition;
 use App\Services\Purchases\PurchaseService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -32,7 +33,17 @@ class PurchaseOrderController extends Controller
         // Inertia::render('bulksores/purchaseorder',[
         //     'pending'  =>  \App\Models\Bulkstores\PurchaseRequisition::all()
         // ]);
-    }
+    } 
+
+    public function approvedPurchaseRequesition(Request $request): JsonResponse
+    {
+        $results = PurchaseRequisition::with(['items.product', 'supplier'])
+            ->where('status', 'approved')
+            ->get();
+        return response()->json([
+            'data' => $results
+        ]);
+    }   
 
     // POST /purchase-orders
     public function store(StorePurchaseOrderRequest $request): JsonResponse

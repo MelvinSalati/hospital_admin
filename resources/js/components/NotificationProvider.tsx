@@ -1,9 +1,10 @@
 // resources/js/components/NotificationProvider.tsx
-import { ReactNode, useEffect } from 'react';
 import { usePage } from '@inertiajs/react';
-import { useEcho } from '@/components/context/EchoContext';
-import { toast } from 'react-hot-toast';
 import { router } from '@inertiajs/react';
+import type { ReactNode} from 'react';
+import { useEffect } from 'react';
+import { toast } from 'react-hot-toast';
+import { useEcho } from '@/components/context/EchoContext';
 
 interface NotificationProviderProps {
     children: ReactNode;

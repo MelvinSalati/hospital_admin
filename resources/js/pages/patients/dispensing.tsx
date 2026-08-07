@@ -1,17 +1,17 @@
-import { useState } from 'react';
-import PatientLayout from '@/layouts/patients/PatientLayout';
 import { usePage, router } from '@inertiajs/react';
-import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
 import Notiflix from 'notiflix';
+import { useState } from 'react';
+import { Button } from '@/components/ui/button';
+import PatientLayout from '@/layouts/patients/PatientLayout';
 import { dispensationAPI } from '@/services/api';
 
 // Import components
+import ConfirmModal from './components/ConfirmModal';
 import DispensationFilters from './components/DispensationFilters';
 import DispensationTable from './components/DispensationTable';
-import ViewItemsModal from './components/ViewItemsModal';
 import DispenseModal from './components/DispenseModal';
-import ConfirmModal from './components/ConfirmModal';
+import ViewItemsModal from './components/ViewItemsModal';
 
 // DEV MODE - Set to true to force all items as paid
 const DEV_MODE = true;

@@ -1,12 +1,6 @@
 // pages/pharmacies/logistics.tsx
 
-import React, { useState, useEffect, useRef } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
-import AppLayout from '@/layouts/app-layout';
-import PageHeader from '@/components/PageHeader';
-import Http from '@/utils/Http';
-import { PrintLabelModal } from './components/PrintLabelModal';
-import AddDrugModal from './components/AddDrugModal';
 import {
     Search,
     Barcode,
@@ -48,7 +42,13 @@ import {
     Upload,
     Download as DownloadIcon,
 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
 import { toast } from 'react-hot-toast';
+import PageHeader from '@/components/PageHeader';
+import AppLayout from '@/layouts/app-layout';
+import Http from '@/utils/Http';
+import AddDrugModal from './components/AddDrugModal';
+import { PrintLabelModal } from './components/PrintLabelModal';
 
 // ============================================================================
 // Types

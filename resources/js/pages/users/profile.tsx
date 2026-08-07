@@ -1,10 +1,10 @@
-import AppLayout from '@/layouts/app-layout';
-import { Button } from '@/components/ui/button';
-import { useState, useRef } from 'react';
 import { 
     User, Key, Mail, Upload, Save, Phone, AtSign, 
     X, Plus, Trash2, Edit2, Check, AlertCircle 
 } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { Button } from '@/components/ui/button';
+import AppLayout from '@/layouts/app-layout';
 
 interface Contact {
     id: string;

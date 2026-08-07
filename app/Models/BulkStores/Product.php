@@ -1,5 +1,4 @@
 <?php
-// app/Models/Product.php
 
 namespace App\Models\BulkStores;
 

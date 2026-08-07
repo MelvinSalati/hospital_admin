@@ -1,7 +1,6 @@
 // resources/js/components/modals/ViewPurchaseOrderModal.tsx
 
-import React, { useState, useEffect, useRef } from 'react';
-import { Button } from '@/components/ui/button';
+import JsBarcode from 'jsbarcode';
 import {
     X,
     Printer,
@@ -24,8 +23,9 @@ import {
     Maximize2,
     Minimize2,
 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
 import { toast } from 'react-hot-toast';
-import JsBarcode from 'jsbarcode';
+import { Button } from '@/components/ui/button';
 
 interface PurchaseOrderItem {
     id: number;
@@ -136,11 +136,13 @@ export default function ViewPurchaseOrderModal({
     const printContentRef = useRef<HTMLDivElement>(null);
 
     const companyDetails = {
-        name: purchaseOrder?.company_name || 'EasyBill Solutions',
-        address: purchaseOrder?.company_address || 'Plot 123, Lusaka, Zambia',
-        phone: purchaseOrder?.company_phone || '+260 211 123 456',
-        email: purchaseOrder?.company_email || 'info@easybill.com',
-        website: purchaseOrder?.company_website || 'www.easybill.com',
+        name: purchaseOrder?.company_name || 'Altaf Memorial Hospital',
+        address:
+            purchaseOrder?.company_address ||
+            'Pererenyatwa RD, Chipata, Zambia',
+        phone: purchaseOrder?.company_phone || '+260776798007',
+        email: purchaseOrder?.company_email || 'info@altaf.com',
+        website: purchaseOrder?.company_website || 'www.altaf.com',
     };
 
     const formatCurrency = (amount: number) => {

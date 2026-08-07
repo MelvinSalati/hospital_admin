@@ -1,7 +1,8 @@
 // resources/js/components/EchoProvider.tsx
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import Echo from 'laravel-echo';
 import Pusher from 'pusher-js';
+import type { ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 
 // Make Pusher available globally
 if (typeof window !== 'undefined') {

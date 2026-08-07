@@ -1,7 +1,7 @@
 // components/SearchableSelect.tsx
 
-import React, { useState, useRef, useEffect } from 'react';
 import { Search, ChevronDown, X } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
 
 interface Option {
     value: string | number;

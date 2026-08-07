@@ -1,8 +1,8 @@
-import { useState } from 'react';
 import { Package, Plus, X } from 'lucide-react';
 import Notiflix from 'notiflix';
-import Http from '@/utils/Http';
+import { useState } from 'react';
 import routes from '@/constants/routes';
+import Http from '@/utils/Http';
 
 interface ReceiveStockProps {
     productId?: number;

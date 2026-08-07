@@ -1,6 +1,5 @@
 // components/payments/InvoicesTable.tsx
 
-import { useState } from 'react';
 import {
     Search,
     Eye,
@@ -11,6 +10,7 @@ import {
     CheckCircle,
     XCircle,
 } from 'lucide-react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import StatusBadge from './StatusBadge';
 

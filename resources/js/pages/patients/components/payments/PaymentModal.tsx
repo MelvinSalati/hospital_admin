@@ -1,6 +1,6 @@
 // components/payments/CheckoutModal.tsx
 
-import { useState, useEffect } from 'react';
+import { router, usePage } from '@inertiajs/react';
 import {
     X,
     Banknote,
@@ -24,10 +24,10 @@ import {
     UserCircle,
     DollarSign,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { router, usePage } from '@inertiajs/react';
-import Http from '@/utils/Http';
 import Notiflix from 'notiflix';
+import { useState, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import Http from '@/utils/Http';
 
 // ============================================================================
 // Types

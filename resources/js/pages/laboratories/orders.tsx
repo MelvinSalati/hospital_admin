@@ -1,9 +1,6 @@
 // pages/laboratory/orders.tsx
-import { useState, useEffect, useMemo } from 'react';
 import { usePage, router } from '@inertiajs/react';
-import AppLayout from '@/layouts/app-layout';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import axios from 'axios';
 import {
     Plus,
     Search,
@@ -38,8 +35,11 @@ import {
     ArrowUpDown,
     Loader2,
 } from 'lucide-react';
-import axios from 'axios';
 import Notiflix from 'notiflix';
+import { useState, useEffect, useMemo } from 'react';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import AppLayout from '@/layouts/app-layout';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

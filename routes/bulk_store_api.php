@@ -3,7 +3,9 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Purchases\RequisitionController;
 use App\Http\Controllers\BulkStores\BulkStoreSettingController;
-
+use App\Http\Controllers\BulkStores\PurchaseRequisitionController;
+use App\Http\Controllers\BulkStores\PurchaseOrderController;
+use App\Http\Controllers\BulkStores\StockPricingController;
 Route::prefix('v1/bulk-store')->group(function () {
     // Existing routes
     Route::get('/product/search/{barcode}', [\App\Http\Controllers\BulkStores\ProductController::class, 'searchProduct']);
@@ -22,6 +24,19 @@ Route::prefix('v1/bulk-store')->group(function () {
     Route::delete('/requisition/{id}', [RequisitionController::class, 'deleteRequisition']);
     Route::post('/requisition/{id}/approve', [RequisitionController::class, 'approveRequisition']);
     Route::post('/requisition/{id}/reject', [RequisitionController::class, 'rejectRequisition']);
+    //show items to be received 
+    Route::get('/purchase-requisitions/approved', [PurchaseOrderController::class, 'approvedPurchaseRequesition'])->name('purchase-requisition');
+    Route::post('/receiving', [\App\Http\Controllers\BulkStores\ReceivingController::class, 'receiveProduct']);
+    Route::post('/returns',[\App\Http\Controllers\BulkStores\ReturningController::class,'returnProduct']);
+
+    // GET - Return history with filters
+    Route::get('/returns/history', [\App\Http\Controllers\BulkStores\ReturningController::class, 'getReturnHistory']);
+
+    /**
+     * Stock Pricing 
+     */
+    Route::get('/products/all', [StockPricingController::class, 'getProducts']);
+
 })->middleware(['auth','verified']);
 
 

@@ -1,6 +1,5 @@
 // pages/nurses/dashboard.tsx
 
-import AppLayout from '@/layouts/app-layout';
 import { Head, usePage } from '@inertiajs/react';
 import {
     Users,
@@ -28,6 +27,7 @@ import {
 } from 'lucide-react';
 // import { StatCard } from '@/components/dashboard/cards/StatCard';
 import { useState } from 'react';
+import AppLayout from '@/layouts/app-layout';
 
 // ============================================================================
 // Types

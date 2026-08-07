@@ -1,9 +1,9 @@
-import StatsCard from '@/components/StatsCard';
+import { usePage } from '@inertiajs/react';
 import { Users, UserPlus, ClipboardCheck } from 'lucide-react';
 import PageHeader from '@/components/PageHeader';
-import AppLayout from '@/layouts/app-layout';
 import PatientTable from '@/components/PatientTable';
-import { usePage } from '@inertiajs/react';
+import StatsCard from '@/components/StatsCard';
+import AppLayout from '@/layouts/app-layout';
 export default function OpthamologyDepartment() {
     const { stats, queue } = usePage<any>().props;
     console.log(stats, queue);

@@ -1,6 +1,5 @@
 // components/modals/AddProductModal.tsx
 
-import React, { useState, useEffect, useRef } from 'react';
 import {
     X,
     Check,
@@ -50,6 +49,7 @@ import {
     Pill as PillIcon,
     Syringe as SyringeIcon,
 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
 import { toast } from 'react-hot-toast';
 import Http from '@/utils/Http';
 

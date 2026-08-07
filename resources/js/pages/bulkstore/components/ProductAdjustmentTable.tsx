@@ -1,13 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
-import AppLayout from '@/layouts/app-layout';
-import PageHeader from '@/components/PageHeader';
-import Http from '@/utils/Http';
-import { PrintLabelModal } from './PrintLabelModal';
-import AddDrugModal from './AddDrugModal';
-// Import the actual ProductAdjustmentTable component
-// Note: Uncomment this when the component exists at the path
-// import ProductAdjustmentTable from '@/components/ProductAdjustmentTable';
 import {
     Search,
     Barcode,
@@ -57,8 +48,17 @@ import {
     Activity,
     QrCode,
 } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'react-hot-toast';
+import PageHeader from '@/components/PageHeader';
 import { Badge } from '@/components/ui/badge';
+import AppLayout from '@/layouts/app-layout';
+import Http from '@/utils/Http';
+import AddDrugModal from './AddDrugModal';
+import { PrintLabelModal } from './PrintLabelModal';
+// Import the actual ProductAdjustmentTable component
+// Note: Uncomment this when the component exists at the path
+// import ProductAdjustmentTable from '@/components/ProductAdjustmentTable';
 
 // ============================================================================
 // Types - Updated to match your API response

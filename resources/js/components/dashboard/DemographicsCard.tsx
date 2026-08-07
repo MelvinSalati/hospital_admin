@@ -1,5 +1,5 @@
-import React from 'react';
 import { Users, Venus, Mars, Baby } from 'lucide-react';
+import React from 'react';
 
 interface AgeGroup {
     group: string;

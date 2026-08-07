@@ -1,9 +1,9 @@
-import AppLayout from '@/layouts/app-layout';
-import PageHeader from '@/components/PageHeader';
-import Container from '@/components/container';
-import ReusableTable from '@/components/ReusableTable';
-import { useEffect, useState } from 'react';
 import { Badge, UsersIcon } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import Container from '@/components/container';
+import PageHeader from '@/components/PageHeader';
+import ReusableTable from '@/components/ReusableTable';
+import AppLayout from '@/layouts/app-layout';
 import Http from '@/utils/Http';
 export default function Users() {
     const [usersAll, setUsersAll] = useState([]);

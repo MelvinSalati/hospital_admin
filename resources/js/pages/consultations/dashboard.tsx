@@ -1,4 +1,3 @@
-import React, { useState, useEffect } from 'react';
 import { Head, Link, usePage } from '@inertiajs/react';
 import {
   Activity, ArrowUpRight, ArrowDownRight, RefreshCw,
@@ -9,20 +8,21 @@ import {
   Calendar, FileText, Beaker, Camera, ClipboardList,
   Package, BarChart3, UserPlus
 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import {
+  LineChart, Line, BarChart, Bar, PieChart as RePieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area
+} from 'recharts';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
-import {
-  LineChart, Line, BarChart, Bar, PieChart as RePieChart, Pie, Cell,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area
-} from 'recharts';
 import AppLayout from '@/layouts/app-layout';
 
 // ─── Types ────────────────────────────────────────────────────────────────────

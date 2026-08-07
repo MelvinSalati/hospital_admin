@@ -1,3 +1,4 @@
+import { Link } from '@inertiajs/react';
 import {
     ArrowLeftCircle,
     ChevronLeft,
@@ -7,8 +8,7 @@ import {
     Printer,
     Filter,
 } from 'lucide-react';
-import { Link } from '@inertiajs/react';
-import { ReactNode } from 'react';
+import type { ReactNode } from 'react';
 
 interface ActionButton {
     label: string;

@@ -1,11 +1,11 @@
 // components/register/tabs/ProfessionalTab.tsx
 
-import { useState, useEffect, useMemo } from 'react';
-import { Label } from '@/components/ui/label';
-import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Upload, X, FileText, Image, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
 import { usePage } from '@inertiajs/react';
+import { Upload, X, FileText, Image, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface ProfessionalTabProps {
     data: any;

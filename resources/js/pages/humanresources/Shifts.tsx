@@ -1,8 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
 import { Head, usePage } from '@inertiajs/react';
-import AppLayout from "@/layouts/app-layout";
-import Container from '@/components/container';
-import PageHeader from '@/components/PageHeader';
 import { 
     Plus, 
     Eye, 
@@ -42,10 +38,19 @@ import {
     Building2,
     Layers
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { ReusableTable, Column, Action } from '@/components/ReusableTable';
+import React, { useState, useEffect, useCallback } from 'react';
 import { toast } from 'react-hot-toast';
-import Http from '@/utils/Http';
+import Container from '@/components/container';
+import PageHeader from '@/components/PageHeader';
+import type { Column, Action } from '@/components/ReusableTable';
+import { ReusableTable } from '@/components/ReusableTable';
+import { Button } from '@/components/ui/button';
+import {
+    Card,
+    CardContent,
+    CardHeader,
+    CardTitle,
+} from '@/components/ui/card';
 import {
     Dialog,
     DialogContent,
@@ -54,7 +59,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
-import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
     Select,
@@ -63,13 +68,9 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
-import {
-    Card,
-    CardContent,
-    CardHeader,
-    CardTitle,
-} from '@/components/ui/card';
+import { Textarea } from '@/components/ui/textarea';
+import AppLayout from "@/layouts/app-layout";
+import Http from '@/utils/Http';
 
 // ============================================
 // TYPES

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\AdminController;
 use App\Http\Controllers\BulkStores\ProductController;
 use App\Http\Controllers\BulkStores\PurchaseRequisitionController;
 use Illuminate\Support\Facades\Route;
@@ -39,6 +40,7 @@ Route::middleware(['auth', 'verified'])
         Route::inertia('/stock', 'bulkstore/Stock')->name('stock');
         Route::inertia('/batches', 'bulkstore/Batches')->name('batches');
         Route::inertia('/expiry', 'bulkstore/Expiry')->name('expiry');
+        Route::inertia('/stock-pricing', 'bulkstore/StockPricing')->name('stock-pricing');
 
         /*
         |---------------------------------------------------------------------------
@@ -47,6 +49,8 @@ Route::middleware(['auth', 'verified'])
         |*/
 
         Route::get('/purchase-requisition',[PurchaseRequisitionController::class, 'purchaseRequesition'])->name('purchase-requisition');
+    Route::get('/purchase-requisitions/approved', [PurchaseRequisitionController::class, 'approvedPurchaseRequesition'])->name('purchase-requisition');
+        Route::get('/purchase-orders/', [AdminController::class, 'getPurchaseRequisitions']);
         Route::inertia('/purchase-requisition/{requisitionId}', 'bulkstore/PurchaseRequisitionView')->name('purchase.view');
 
         /*
@@ -74,8 +78,9 @@ Route::middleware(['auth', 'verified'])
 
         Route::inertia('/purchase-orders/{purchaseOrder}', 'bulkstore/PurchaseOrderView')
             ->name('purchase-orders.show');
-
-        /*
+    // POST - Return products
+    Route::post('/returns', [\App\Http\Controllers\BulkStores\ReturningController::class, 'returnProduct']);
+ /*
         |--------------------------------------------------------------------------
         | Suppliers
         |--------------------------------------------------------------------------

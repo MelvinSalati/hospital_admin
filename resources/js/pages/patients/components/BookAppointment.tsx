@@ -1,10 +1,10 @@
+import { usePage } from '@inertiajs/react';
+import Notiflix from 'notiflix';
+import { use, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import routes from '@/constants/routes';
 import Http from '@/utils/Http';
-import { usePage } from '@inertiajs/react';
-import { use, useState } from 'react';
-import Notiflix from 'notiflix';
 
 export default function BookAppointment({ appointmentId }) {
     const { doctors, patientId, departments } = usePage().props as any;

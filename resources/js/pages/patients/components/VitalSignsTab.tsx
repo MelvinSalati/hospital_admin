@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { usePage } from '@inertiajs/react';
 import { 
   Activity, 
   Thermometer, 
@@ -15,10 +15,10 @@ import {
   Save,
   Loader2
 } from 'lucide-react';
+import Notiflix from 'notiflix';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import Http from '@/utils/Http';
-import Notiflix from 'notiflix';
-import { usePage } from '@inertiajs/react';
 
 // Type definitions
 interface VitalSignsRecord {

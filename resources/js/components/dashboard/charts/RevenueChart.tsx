@@ -15,8 +15,8 @@ import {
     ResponsiveContainer,
     ComposedChart
 } from 'recharts';
-import { BaseChart } from './BaseChart';
 import type { RevenueTrendData } from '@/types/dashboard';
+import { BaseChart } from './BaseChart';
 
 interface RevenueChartProps {
     data: RevenueTrendData[];

@@ -1,6 +1,3 @@
-import React, { useState, useEffect } from 'react';
-import PatientLayout from "@/layouts/patients/PatientLayout";
-import { Button } from '@/components/ui/button';
 import { usePage, Link } from '@inertiajs/react';
 import {
     X,
@@ -17,6 +14,9 @@ import {
     ChevronDown,
     ChevronLeftIcon,
 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import PatientLayout from "@/layouts/patients/PatientLayout";
 import Http from '@/utils/Http';
 
 // ─── Constants ────────────────────────────────────────────────────────────────

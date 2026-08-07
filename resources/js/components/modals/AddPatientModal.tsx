@@ -1,9 +1,9 @@
 // resources/js/components/modals/AddPatientModal.tsx
-import { useState, useEffect } from 'react';
 import { useForm } from '@inertiajs/react';
 import axios from 'axios';
-import { toast } from 'react-hot-toast';
 import Notiflix from 'notiflix'
+import { useState, useEffect } from 'react';
+import { toast } from 'react-hot-toast';
 interface PatientFormData {
     // Personal Information
     patient_number: string;

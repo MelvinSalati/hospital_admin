@@ -31,10 +31,7 @@ class StockMovement extends Model
         'notes',
         'performed_by',
         'approved_by',
-        'approved_at',
-        'audit_log_id',     // Link to audit log
-        'ip_address',
-        'user_agent',
+        'approved_at', 
     ];
 
     protected $casts = [
@@ -65,13 +62,7 @@ class StockMovement extends Model
                 $model->movement_uuid = (string) Str::uuid();
             }
 
-            // Capture IP and user agent for audit
-            if (empty($model->ip_address) && request()) {
-                $model->ip_address = request()->ip();
-            }
-            if (empty($model->user_agent) && request()) {
-                $model->user_agent = request()->userAgent();
-            }
+           
         });
     }
 

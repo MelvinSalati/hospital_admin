@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect } from 'react';
 import { router, usePage } from '@inertiajs/react';
+import { useEffect } from 'react';
 
 import { AppContent } from '@/components/app-content';
 import { AppShell } from '@/components/app-shell';
-import { PatientSidebar } from '@/components/patient-sidebar';
-import { AppSidebarHeader } from '@/components/app-sidebar-header';
+import AppSidebarHeader from '@/components/app-sidebar-header';
 import PatientHeader from '@/components/patient-header';
+import { PatientSidebar } from '@/components/patient-sidebar';
 import type { AppLayoutProps } from '@/types';
 
 // ✅ Define PageProps including patient

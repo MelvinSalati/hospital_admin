@@ -1,9 +1,9 @@
+import { usePage } from '@inertiajs/react';
+import React, { useState } from 'react';
 import PageHeader from '@/components/PageHeader';
 import { Button } from '@/components/ui/button';
 import queuePage from '@/constants/queuePage';
 import AppLayout from '@/layouts/app-layout';
-import { usePage } from '@inertiajs/react';
-import React, { useState } from 'react';
 import ActiveInQueue from './components/ActiveInQueue';
 
 interface QueueItem {

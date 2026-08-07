@@ -1,3 +1,4 @@
+import Notiflix from 'notiflix';
 import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
@@ -7,9 +8,8 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 
-import Notiflix from 'notiflix';
-import Http from '@/utils/Http';
 import routes from '@/constants/routes';
+import Http from '@/utils/Http';
 import BookAppointment from './BookAppointment';
 
 interface AppointmentProps {

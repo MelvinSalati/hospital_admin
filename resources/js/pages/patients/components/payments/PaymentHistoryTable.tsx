@@ -1,9 +1,9 @@
 // components/payments/PaymentHistoryTable.tsx
-import { useState } from 'react';
 import { Search, Eye, Receipt } from 'lucide-react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import StatusBadge from './StatusBadge';
 import PaymentMethodBadge from './PaymentMethodBadge';
+import StatusBadge from './StatusBadge';
 
 interface Payment {
     id: string;

@@ -1,5 +1,5 @@
-import React from 'react';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import React from 'react';
 
 interface StatCardProps {
     title: string;

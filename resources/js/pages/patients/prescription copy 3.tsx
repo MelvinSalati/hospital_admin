@@ -1,6 +1,3 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import PatientLayout from '@/layouts/patients/PatientLayout';
-import { Button } from '@/components/ui/button';
 import { usePage, Link } from '@inertiajs/react';
 import {
     X,
@@ -17,6 +14,9 @@ import {
     ChevronDown,
     ChevronLeftIcon,
 } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { Button } from '@/components/ui/button';
+import PatientLayout from '@/layouts/patients/PatientLayout';
 import Http from '@/utils/Http';
 // Note: We'll need to modify DrugAdministrationTab to accept services prop
 import DrugAdministrationTab from './components/DrugAdministrationTab';
@@ -976,7 +976,7 @@ const AddPrescriptionModal = ({
                                                                         ) as PricingScheme[]
                                                                     ).map(
                                                                         (s) => {
-                                                                            let priceVal =
+                                                                            const priceVal =
                                                                                 s ===
                                                                                     scheme &&
                                                                                 service.price !==

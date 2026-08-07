@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { Link } from "@inertiajs/react";
 import {
     User, Droplets, Baby, ChevronRight, X, Phone, Mail,
     MapPin, Calendar, Hash, AlertCircle, UserCheck2, Clock,
@@ -10,12 +10,13 @@ import {
     Search, Filter, Users, XCircle
 } from "lucide-react";
 import Notiflix from "notiflix";
-import PatientLayout from "@/layouts/patients/PatientLayout";
-import PatientTabs from "./components/PatientTabs";
+import { useState, useMemo } from "react";
+import { toast } from "sonner";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
     Dialog,
     DialogContent,
@@ -25,6 +26,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
     Select,
     SelectContent,
@@ -32,12 +34,10 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import Http from "@/utils/Http";
 import useDepartments from "@/global/useDepartments"; // Import the hook
-import { toast } from "sonner";
-import { Link } from "@inertiajs/react";
+import PatientLayout from "@/layouts/patients/PatientLayout";
+import Http from "@/utils/Http";
+import PatientTabs from "./components/PatientTabs";
 
 export default function Patient({ patient }) {
     const [activeTab, setActiveTab] = useState("overview");

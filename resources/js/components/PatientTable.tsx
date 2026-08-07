@@ -1,6 +1,5 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
 import {
     Search,
     ChevronLeft,
@@ -10,7 +9,15 @@ import {
     MoreHorizontal,
     Users,
 } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import {
     Table,
@@ -20,13 +27,6 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Badge } from '@/components/ui/badge';
 
 // Example helper functions (customize as needed)
 const getPriorityIcon = (priority?: string) => {

@@ -1,8 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
 import { Head, usePage } from '@inertiajs/react';
-import AppLayout from "@/layouts/app-layout";
-import Container from '@/components/container';
-import PageHeader from '@/components/PageHeader';
 import { 
     Plus, 
     Users, 
@@ -34,14 +30,8 @@ import {
     Mail,
     Phone
 } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { toast } from 'react-hot-toast';
-import Http from '@/utils/Http';
-import {
-    Card,
-    CardContent,
-    CardHeader,
-    CardTitle,
-} from '@/components/ui/card';
 import {
     LineChart,
     Line,
@@ -57,6 +47,16 @@ import {
     Pie,
     Cell
 } from 'recharts';
+import Container from '@/components/container';
+import PageHeader from '@/components/PageHeader';
+import {
+    Card,
+    CardContent,
+    CardHeader,
+    CardTitle,
+} from '@/components/ui/card';
+import AppLayout from "@/layouts/app-layout";
+import Http from '@/utils/Http';
 
 // ============================================
 // TYPES

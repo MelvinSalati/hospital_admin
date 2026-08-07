@@ -1,6 +1,4 @@
-import { useState, useEffect } from 'react';
-import PatientLayout from '@/layouts/patients/PatientLayout';
-import { Button } from '@/components/ui/button';
+import { Link, usePage, router } from '@inertiajs/react';
 import {
     ChevronLeftIcon,
     Activity,
@@ -8,7 +6,9 @@ import {
     LayoutGrid,
     MicroscopeIcon,
 } from 'lucide-react';
-import { Link, usePage, router } from '@inertiajs/react';
+import { useState, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import PatientLayout from '@/layouts/patients/PatientLayout';
 import ConsultationTabs from './components/ConsultationTabs';
 import RecentInteractions from './components/RecentInteractions';
 

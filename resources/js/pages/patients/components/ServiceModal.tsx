@@ -1,5 +1,4 @@
 // components/ServiceModal.tsx
-import { useState, useEffect, useCallback } from 'react';
 import {
     X,
     Search,
@@ -11,6 +10,7 @@ import {
     Tag,
 } from 'lucide-react';
 import Notiflix from 'notiflix';
+import { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 
 // ─── Types ────────────────────────────────────────────────────────────────────

@@ -1,10 +1,7 @@
 // resources/js/pages/admin/Notifications.tsx
 
-import React, { useState, useEffect } from 'react';
 import { router } from '@inertiajs/react';
-import AppLayout from '@/layouts/app-layout';
-import PageHeader from '@/components/PageHeader';
-import { ReusableTable, Column, Action } from '@/components/ReusableTable';
+import { usePage } from '@inertiajs/react';
 import { 
     Bell, 
     Eye, 
@@ -21,10 +18,14 @@ import {
     MessageCircle,
     Calendar as CalendarIcon
 } from 'lucide-react';
-import Http from '@/utils/Http';
+import React, { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
+import PageHeader from '@/components/PageHeader';
+import type { Column, Action } from '@/components/ReusableTable';
+import { ReusableTable } from '@/components/ReusableTable';
+import AppLayout from '@/layouts/app-layout';
+import Http from '@/utils/Http';
 import NotificationDetailsModal from './components/NotificationDetailsModal';
-import { usePage } from '@inertiajs/react';
 
 // ============================================
 // TYPES

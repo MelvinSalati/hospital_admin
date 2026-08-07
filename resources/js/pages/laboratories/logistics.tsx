@@ -1,8 +1,6 @@
 // pages/laboratory/logistics.tsx
-import { useState, useEffect, useMemo } from 'react';
 import { usePage, router } from '@inertiajs/react';
-import AppLayout from '@/layouts/app-layout';
-import { Button } from '@/components/ui/button';
+import axios from 'axios';
 import {
     Plus,
     Search,
@@ -26,8 +24,10 @@ import {
     TrendingUp,
     TrendingDown,
 } from 'lucide-react';
-import axios from 'axios';
 import Notiflix from 'notiflix';
+import { useState, useEffect, useMemo } from 'react';
+import { Button } from '@/components/ui/button';
+import AppLayout from '@/layouts/app-layout';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

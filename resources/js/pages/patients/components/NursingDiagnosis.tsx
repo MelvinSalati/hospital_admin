@@ -1,15 +1,15 @@
-import { useState, useEffect, Fragment } from 'react';
-import { Button } from '@/components/ui/button';
+import { usePage } from '@inertiajs/react';
 import {
   Plus, Edit, Trash2, Eye, CheckCircle, X, Loader2,
   AlertCircle, ChevronDown, ChevronRight, Stethoscope,
   Activity, Target, Calendar, User, Clock, Save as SaveIcon,
   FileText, ClipboardList
 } from 'lucide-react';
-import { usePage } from '@inertiajs/react';
-import Http from '@/utils/Http';
-import routes from '@/constants/routes';
 import Notiflix from 'notiflix';
+import { useState, useEffect, Fragment } from 'react';
+import { Button } from '@/components/ui/button';
+import routes from '@/constants/routes';
+import Http from '@/utils/Http';
 
 interface NursingDiagnosis {
   id: number;

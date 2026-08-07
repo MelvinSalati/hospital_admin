@@ -1,10 +1,9 @@
 // resources/js/pages/bulkstore/Issue.tsx
 
-import React, { useState, useEffect } from 'react';
+import { Dialog, Transition } from '@headlessui/react';
 import { Head, usePage } from '@inertiajs/react';
-import AppLayout from '@/layouts/app-layout';
-import { BreadcrumbItem } from '@/types';
-import ReusableTable, { Column, Action } from '@/components/ReusableTable';
+import axios from 'axios';
+import { format } from 'date-fns';
 import {
     Eye,
     CheckCircle,
@@ -30,10 +29,12 @@ import {
     Hash,
     AlertCircle,
 } from 'lucide-react';
-import { Dialog, Transition } from '@headlessui/react';
-import axios from 'axios';
+import React, { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
-import { format } from 'date-fns';
+import type { Column, Action } from '@/components/ReusableTable';
+import ReusableTable from '@/components/ReusableTable';
+import AppLayout from '@/layouts/app-layout';
+import type { BreadcrumbItem } from '@/types';
 
 // ============================================
 // TYPES

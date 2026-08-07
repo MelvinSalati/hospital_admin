@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
 import { ArrowLeftRight, X } from 'lucide-react';
 import Notiflix from 'notiflix';
-import Http from '@/utils/Http';
+import { useState, useEffect } from 'react';
 import routes from '@/constants/routes';
+import Http from '@/utils/Http';
 
 interface Pharmacy {
     id: number;

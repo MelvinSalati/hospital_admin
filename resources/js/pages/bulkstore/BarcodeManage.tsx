@@ -1,12 +1,7 @@
 // resources/js/pages/bulkstore/StockCounts.tsx
 
-import React, { useState, useEffect, useRef } from 'react';
-import AppLayout from '@/layouts/app-layout';
 import { Head, router } from '@inertiajs/react';
-import { BreadcrumbItem } from '@/types';
-import Container from '@/components/container';
-import PageHeader from '@/components/PageHeader';
-import { ReusableTable, Column, Action } from '@/components/ReusableTable';
+import JsBarcode from 'jsbarcode';
 import {
     QrCode,
     Barcode,
@@ -36,10 +31,16 @@ import {
     Plus,
     AlertCircle,
 } from 'lucide-react';
-import { toast } from 'react-hot-toast';
-import Http from '@/utils/Http';
-import JsBarcode from 'jsbarcode';
 import QRCode from 'qrcode';
+import React, { useState, useEffect, useRef } from 'react';
+import { toast } from 'react-hot-toast';
+import Container from '@/components/container';
+import PageHeader from '@/components/PageHeader';
+import type { Column, Action } from '@/components/ReusableTable';
+import { ReusableTable } from '@/components/ReusableTable';
+import AppLayout from '@/layouts/app-layout';
+import type { BreadcrumbItem } from '@/types';
+import Http from '@/utils/Http';
 import AddProductModal from './components/modals/AddProduct';
 
 // ============================================

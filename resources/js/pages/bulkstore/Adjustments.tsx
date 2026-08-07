@@ -1,12 +1,6 @@
 // resources/js/pages/bulkstore/Adjustments.tsx
 
-import React, { useState } from 'react';
 import { Head } from '@inertiajs/react';
-import { toast } from 'react-hot-toast';
-import AppLayout from '@/layouts/app-layout';
-import PageHeader from '@/components/PageHeader';
-import Container from '@/components/container';
-import AdjustStockModal from './components/AdjustStock';
 import {
     Barcode,
     Eye,
@@ -19,7 +13,14 @@ import {
     Plus,
     SlidersHorizontal,
 } from 'lucide-react';
-import ReusableTable, { Column, Action } from '@/components/ReusableTable';
+import React, { useState } from 'react';
+import { toast } from 'react-hot-toast';
+import Container from '@/components/container';
+import PageHeader from '@/components/PageHeader';
+import type { Column, Action } from '@/components/ReusableTable';
+import ReusableTable from '@/components/ReusableTable';
+import AppLayout from '@/layouts/app-layout';
+import AdjustStockModal from './components/AdjustStock';
 import { sampleAdjustments } from './sampleData';
 
 // Define the Adjustment type

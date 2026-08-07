@@ -1,6 +1,5 @@
 // components/GlobalTable/GlobalTable.tsx
 
-import React, { useState, useEffect, useMemo } from 'react';
 import {
     ChevronLeft,
     ChevronRight,
@@ -17,6 +16,7 @@ import {
     Download,
     Printer,
 } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
 
 // ============================================
 // TYPES

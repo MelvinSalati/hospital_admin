@@ -1,6 +1,3 @@
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import AppLayout from '@/layouts/app-layout';
 import { Link, usePage } from '@inertiajs/react';
 import {
     ArrowLeftCircle,
@@ -16,6 +13,10 @@ import {
     ArrowLeft,
     MicroscopeIcon,
 } from 'lucide-react';
+import { useState } from 'react';
+import PageHeader from '@/components/PageHeader';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
     Dialog,
     DialogContent,
@@ -25,8 +26,7 @@ import {
     DialogTitle,
     DialogTrigger,
 } from '@/components/ui/dialog';
-import { useState } from 'react';
-import PageHeader from '@/components/PageHeader';
+import AppLayout from '@/layouts/app-layout';
 
 export default function Nurses() {
     const tabs = [

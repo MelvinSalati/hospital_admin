@@ -1,9 +1,5 @@
 // pages/patients/Laboratory.tsx
-import PatientLayout from '@/layouts/patients/PatientLayout';
 import { usePage, router } from '@inertiajs/react';
-import { Button } from '@/components/ui/button';
-import { useState, useEffect } from 'react';
-import Http from '@/utils/Http';
 import {
     AlertCircle,
     Plus,
@@ -15,7 +11,10 @@ import {
     ShoppingCart,
     Search,
 } from 'lucide-react';
+import Notiflix from 'notiflix';
+import { useState, useEffect } from 'react';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
     Table,
     TableBody,
@@ -24,7 +23,8 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
-import Notiflix from 'notiflix';
+import PatientLayout from '@/layouts/patients/PatientLayout';
+import Http from '@/utils/Http';
 
 // ─── Page props coming from the Laravel controller ────────────────────────────
 interface LaboratoryProps {

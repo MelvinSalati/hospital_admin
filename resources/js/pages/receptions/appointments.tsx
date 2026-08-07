@@ -1,7 +1,7 @@
+import { usePage } from '@inertiajs/react';
 import { AppointmentTable } from '@/components/dashboard/tables/AppointmentTable';
 import PageHeader from '@/components/PageHeader';
 import AppLayout from '@/layouts/app-layout';
-import { usePage } from '@inertiajs/react';
 import AppointmentsTable from './components/AppointmentsTable';
 
 const breadcrumbs = [

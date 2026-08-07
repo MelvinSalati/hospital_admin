@@ -1,6 +1,8 @@
 // components/modals/AdjustStockModal.tsx
 
-import { useState, useEffect, useRef, Fragment } from 'react';
+import { Dialog, Transition } from '@headlessui/react';
+import {usePage} from '@inertiajs/react'
+import { format } from 'date-fns';
 import {
     SlidersHorizontal,
     X,
@@ -21,12 +23,10 @@ import {
     Shield,
     Clock as ClockIcon,
 } from 'lucide-react';
-import { Dialog, Transition } from '@headlessui/react';
 import Notiflix from 'notiflix';
-import Http from '@/utils/Http';
+import { useState, useEffect, useRef, Fragment } from 'react';
 import routes from '@/constants/routes';
-import { format } from 'date-fns';
-import {usePage} from '@inertiajs/react'
+import Http from '@/utils/Http';
 // ============================================
 // TYPES
 // ============================================

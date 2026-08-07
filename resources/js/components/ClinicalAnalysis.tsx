@@ -1,9 +1,9 @@
 // components/consultation/components/ClinicalAnalysis.tsx
 
-import React, { useState } from 'react';
 import { Plus, X, Activity } from 'lucide-react';
+import React, { useState } from 'react';
+import type { SymptomAnalysis } from '../types/consultation.types';
 import { SectionWrapper } from './SectionWrapper';
-import { SymptomAnalysis } from '../types/consultation.types';
 
 const systems = [
   'Cardiovascular',

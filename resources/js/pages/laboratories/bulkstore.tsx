@@ -1,13 +1,9 @@
-import { Button } from '@/components/ui/button';
-import AppLayout from '@/layouts/app-layout';
 import { Link, usePage } from '@inertiajs/react';
 import { BoxesIcon, BoxIcon, ChevronLeftIcon } from 'lucide-react';
-import { href } from 'react-router-dom';
 import { useState } from 'react';
+import { href } from 'react-router-dom';
 import AddLabProduct from '@/components/forms/laboratories/addProducts';
-import Stock from './components/stock';
-import StockAlerts from './components/stock';
-import { Spinner } from '@/components/ui/spinner';
+import { Button } from '@/components/ui/button';
 import {
     Dialog,
     DialogContent,
@@ -17,6 +13,10 @@ import {
     DialogTitle,
     DialogTrigger,
 } from '@/components/ui/dialog';
+import { Spinner } from '@/components/ui/spinner';
+import AppLayout from '@/layouts/app-layout';
+import Stock from './components/stock';
+import StockAlerts from './components/stock';
 const breadCrumbs = [
     {
         title: 'Laboratory',

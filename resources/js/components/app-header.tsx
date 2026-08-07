@@ -1,16 +1,5 @@
-import { Breadcrumbs } from '@/components/breadcrumbs';
-import { SidebarTrigger } from '@/components/ui/sidebar';
-import type { BreadcrumbItem as BreadcrumbItemType } from '@/types';
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuLabel,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
+import { usePage, Link, router } from '@inertiajs/react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
     Bell,
     User,
@@ -21,8 +10,19 @@ import {
     ChevronDown,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { usePage, Link, router } from '@inertiajs/react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { Breadcrumbs } from '@/components/breadcrumbs';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Button } from '@/components/ui/button';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { SidebarTrigger } from '@/components/ui/sidebar';
+import type { BreadcrumbItem as BreadcrumbItemType } from '@/types';
 
 // Mock notifications - replace with real data from your backend
 const mockNotifications = [

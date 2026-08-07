@@ -1,6 +1,5 @@
 // components/dispensed/DispensedDrugsTable.tsx
 
-import React, { useState } from 'react';
 import {
     Search,
     ChevronLeft,
@@ -13,6 +12,7 @@ import {
     User,
     Calendar,
 } from 'lucide-react';
+import React, { useState } from 'react';
 import DispensationDetailModal from './DispensationModal';
 
 // ============================================================================

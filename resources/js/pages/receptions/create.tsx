@@ -1,9 +1,5 @@
 // pages/reception/create.tsx
-import AppLayout from '@/layouts/app-layout';
 import { Head, useForm, usePage } from '@inertiajs/react';
-import { useState } from 'react';
-import Http from '@/utils/Http';
-import Notiflix from 'notiflix'
 import {
     User,
     Phone,
@@ -37,6 +33,10 @@ import {
     Camera,
     Loader2
 } from 'lucide-react';
+import Notiflix from 'notiflix'
+import { useState } from 'react';
+import AppLayout from '@/layouts/app-layout';
+import Http from '@/utils/Http';
 
 interface FormData {
     // Personal Information

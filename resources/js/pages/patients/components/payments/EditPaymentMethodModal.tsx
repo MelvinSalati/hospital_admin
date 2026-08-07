@@ -1,8 +1,8 @@
 // components/payments/EditPaymentMethodModal.tsx
-import { useState } from 'react';
-import { X, Loader2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { router } from '@inertiajs/react';
+import { X, Loader2 } from 'lucide-react';
+import { useState } from 'react';
+import { Button } from '@/components/ui/button';
 
 interface EditPaymentMethodModalProps {
     isOpen: boolean;

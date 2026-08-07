@@ -1,8 +1,6 @@
 // resources/js/components/Notifications.tsx
 
-import { useState, useEffect, useRef } from 'react';
 import { usePage, router } from '@inertiajs/react';
-import { useEcho } from './EchoProvider';
 import { 
     Bell, 
     Package, 
@@ -19,12 +17,14 @@ import {
     Clock,
     ArrowRight
 } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useEcho } from './EchoProvider';
 
 // Types
 interface Notification {

@@ -1,7 +1,8 @@
 // context/ConsultationContext.tsx
 
-import React, { createContext, useContext, useReducer, ReactNode, useCallback } from 'react';
-import { ConsultationFormData, SectionName, ValidationError } from '../types/consultation.types';
+import type { ReactNode} from 'react';
+import React, { createContext, useContext, useReducer, useCallback } from 'react';
+import type { ConsultationFormData, SectionName, ValidationError } from '../types/consultation.types';
 
 type ConsultationAction = 
   | { type: 'UPDATE_FIELD'; section: SectionName; data: any }

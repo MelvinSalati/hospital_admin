@@ -1,9 +1,6 @@
 // pages/pharmacy/suppliers.tsx
 
-import React, { useState, useEffect } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
-import AppLayout from '@/layouts/app-layout';
-import PageHeader from '@/components/PageHeader';
 import {
     Search,
     Plus,
@@ -25,6 +22,9 @@ import {
     CreditCard,
     FileText,
 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import PageHeader from '@/components/PageHeader';
+import AppLayout from '@/layouts/app-layout';
 
 // ============================================================================
 // Types

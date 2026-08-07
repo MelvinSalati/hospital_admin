@@ -1,5 +1,5 @@
 // resources/js/components/AppWrapper.tsx
-import { ReactNode } from 'react';
+import type { ReactNode } from 'react';
 // import { NotificationProvider } from './NotificationProvider';
 import { Toaster } from 'react-hot-toast';
 

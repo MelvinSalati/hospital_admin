@@ -1,31 +1,31 @@
-import { useState } from "react";
+import { router, usePage } from "@inertiajs/react";
+import { format } from "date-fns";
 import { 
   Plus, Eye, CheckCircle, ArrowRight, Stethoscope, ToggleRightIcon,
   PillIcon, Scissors, MicroscopeIcon, ActivityIcon, X, AlertTriangle,
   Scan,
   ChevronLeft
 } from "lucide-react";
-import { format } from "date-fns";
-import { router, usePage } from "@inertiajs/react";
+import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
+import PageHeader from "@/components/PageHeader";
 import { Badge } from "@/components/ui/badge";
-import PatientLayout from "@/layouts/patients/PatientLayout";
-import AdmissionModal from "./components/AdmissionModal";
+import { Button } from "@/components/ui/button";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-
-import DrugAdministrationTab from "./components/DrugAdministrationTab";
-import VitalSignsTab from "./components/VitalSignsTab";
-import LabOrders from "./components/LabOrders";
-import Procedures from "./Procedures";
-import ConsultationTabs from "./components/ConsultationTabs";
-import RecentInteractions from "./components/RecentInteractions";
-import NursingDiagnosis from "./components/NursingDiagnosis";
+import PatientLayout from "@/layouts/patients/PatientLayout";
 import { admissionAPI } from "@/services/api"; // Import admissionAPI instead of admission
+import AdmissionModal from "./components/AdmissionModal";
+
+import ConsultationTabs from "./components/ConsultationTabs";
+import DrugAdministrationTab from "./components/DrugAdministrationTab";
 import ImagingTab from "./components/ImagingTab";
-import PageHeader from "@/components/PageHeader";
+import LabOrders from "./components/LabOrders";
+import NursingDiagnosis from "./components/NursingDiagnosis";
+import RecentInteractions from "./components/RecentInteractions";
+import VitalSignsTab from "./components/VitalSignsTab";
+import Procedures from "./Procedures";
 
 interface Admission {
   id: number;

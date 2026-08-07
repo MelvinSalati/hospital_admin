@@ -1,9 +1,9 @@
 // components/payments/PaymentsPage.tsx
 
-import { useState, useMemo } from 'react';
 import { usePage } from '@inertiajs/react';
-import { Button } from '@/components/ui/button';
 import axios from 'axios';
+import { useState, useMemo } from 'react';
+import { Button } from '@/components/ui/button';
 import {
     PaymentsHeader,
     PaymentsTabs,

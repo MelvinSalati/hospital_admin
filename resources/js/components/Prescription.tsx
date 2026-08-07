@@ -1,9 +1,9 @@
 // components/Prescription.tsx
 
-import React, { useState } from 'react';
 import { Plus, X, Pill } from 'lucide-react';
+import React, { useState } from 'react';
+import type { PrescriptionItem } from '../types/consultation.types';
 import { SectionWrapper } from './SectionWrapper';
-import { PrescriptionItem } from '../types/consultation.types';
 
 interface PrescriptionProps {
   value: PrescriptionItem[];

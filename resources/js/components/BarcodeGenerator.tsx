@@ -1,11 +1,11 @@
 // resources/js/components/BarcodeGenerator.tsx
 
-import React, { useRef, useEffect, useState } from 'react';
+import JsBarcode from 'jsbarcode';
 import { Printer, Download, RefreshCw, X, Barcode, AlertCircle } from 'lucide-react';
+import React, { useRef, useEffect, useState } from 'react';
 import { toast } from 'react-hot-toast';
 import { Badge } from '@/components/ui/badge';
 // Note: You need to install jsbarcode: npm install jsbarcode @types/jsbarcode
-import JsBarcode from 'jsbarcode';
 
 interface BarcodeGeneratorProps {
     product: {

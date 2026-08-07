@@ -1,7 +1,3 @@
-import routes from '@/constants/routes';
-import AppLayout from '@/layouts/app-layout';
-import Http from '@/utils/Http';
-import Notiflix from 'notiflix';
 import {
     Barcode,
     ChevronLeft,
@@ -19,10 +15,14 @@ import {
     ChevronRight,
     Loader2,
 } from 'lucide-react';
+import Notiflix from 'notiflix';
 import { useState, useRef, useEffect } from 'react';
-import ReceiveStock from './components/ReceiveStock';
-import IssueStock from './components/IssueStock';
+import routes from '@/constants/routes';
+import AppLayout from '@/layouts/app-layout';
+import Http from '@/utils/Http';
 import AdjustStock from './components/AdjustStock';
+import IssueStock from './components/IssueStock';
+import ReceiveStock from './components/ReceiveStock';
 import TransferStock from './components/TransferStock';
 
 interface Product {

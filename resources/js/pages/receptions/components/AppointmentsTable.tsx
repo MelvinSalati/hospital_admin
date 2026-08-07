@@ -1,7 +1,7 @@
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import Http from '@/utils/Http';
 import { useEffect, useMemo, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import Http from '@/utils/Http';
 
 export default function AppointmentsTable({ appointments }) {
     const [appointmentDay, setAppointmentDay] = useState('Todays Appointments');

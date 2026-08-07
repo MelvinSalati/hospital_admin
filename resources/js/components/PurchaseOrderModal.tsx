@@ -1,17 +1,7 @@
 // resources/js/pages/bulkstore/components/modals/PurchaseOrderModal.tsx
 
-import React, { useRef, useState, useEffect } from 'react';
-import {
-    Dialog,
-    DialogContent,
-    DialogHeader,
-    DialogTitle,
-    DialogDescription,
-    DialogFooter,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 import {
     Printer,
     Download,
@@ -36,11 +26,21 @@ import {
     AlertCircle,
     Loader2,
 } from 'lucide-react';
-import { toast } from 'react-hot-toast';
-import Http from '@/utils/Http';
+import React, { useRef, useState, useEffect } from 'react';
 import Barcode from 'react-barcode';
-import { jsPDF } from 'jspdf';
-import html2canvas from 'html2canvas';
+import { toast } from 'react-hot-toast';
+import { Button } from '@/components/ui/button';
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogDescription,
+    DialogFooter,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import Http from '@/utils/Http';
 
 // Types
 interface PurchaseOrderItem {

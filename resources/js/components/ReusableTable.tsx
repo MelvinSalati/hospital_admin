@@ -1,6 +1,7 @@
 // resources/js/components/ReusableTable.tsx
 
-import React, { useState, useMemo, useCallback, ReactNode } from 'react';
+import type { ReactNode } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 
 // ============================================================================
 // TYPES

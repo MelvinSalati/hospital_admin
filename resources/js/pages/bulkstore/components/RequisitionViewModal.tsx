@@ -1,6 +1,5 @@
 RequisitionViewModal; // components/modals/RequisitionViewModal.tsx
 
-import React from 'react';
 import {
     X,
     Package,
@@ -16,6 +15,7 @@ import {
     Printer,
     Download,
 } from 'lucide-react';
+import React from 'react';
 
 interface RequisitionViewModalProps {
     isOpen: boolean;

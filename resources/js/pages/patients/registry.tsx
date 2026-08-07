@@ -1,8 +1,8 @@
-import AppLayout from "@/layouts/app-layout";
-import AddPatientModal from '@/components/modals/AddPatientModal';
-import { useState } from 'react';
-import { Link } from '@inertiajs/react';
 import { MagnifyingGlassIcon, FunnelIcon } from '@heroicons/react/24/outline';
+import { Link } from '@inertiajs/react';
+import { useState } from 'react';
+import AddPatientModal from '@/components/modals/AddPatientModal';
+import AppLayout from "@/layouts/app-layout";
 
 interface Patient {
     id: number;

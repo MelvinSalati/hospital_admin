@@ -1,4 +1,3 @@
-import AppLayout from '@/layouts/app-layout';
 import { Head, router, usePage } from '@inertiajs/react';
 import {
     Package,
@@ -19,7 +18,6 @@ import {
     AlertCircle,
     CheckSquare,
 } from 'lucide-react';
-import { StatCard } from '@/components/dashboard/cards/StatCard';
 import { useState } from 'react';
 import {
     PieChart,
@@ -29,6 +27,8 @@ import {
     Tooltip,
     Legend,
 } from 'recharts';
+import { StatCard } from '@/components/dashboard/cards/StatCard';
+import AppLayout from '@/layouts/app-layout';
 
 const recentTransactions = [
     {

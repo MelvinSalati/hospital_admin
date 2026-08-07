@@ -1,6 +1,5 @@
 // resources/js/pages/bulkstore/components/ApprovalModal.tsx
 
-import React, { Fragment, useState, useEffect } from 'react';
 import {
     Dialog,
     DialogPanel,
@@ -8,6 +7,7 @@ import {
     Transition,
     TransitionChild,
 } from '@headlessui/react';
+import {usePage} from '@inertiajs/react'
 import {
     X,
     CheckCircle,
@@ -28,8 +28,8 @@ import {
     Eye,
     EyeOff,
 } from 'lucide-react';
+import React, { Fragment, useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
-import {usePage} from '@inertiajs/react'
 // ============================================
 // TYPES
 // ============================================

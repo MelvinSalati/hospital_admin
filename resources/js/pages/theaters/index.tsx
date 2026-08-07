@@ -1,10 +1,10 @@
+import { usePage } from '@inertiajs/react';
+import { Users, UserPlus, ClipboardCheck } from 'lucide-react';
 import { StatCard } from '@/components/dashboard/cards/StatCard';
 import PageHeader from '@/components/PageHeader';
-import AppLayout from '@/layouts/app-layout';
-import StatsCard from '@/components/StatsCard';
-import { Users, UserPlus, ClipboardCheck } from 'lucide-react';
 import PatientTable from '@/components/PatientTable';
-import { usePage } from '@inertiajs/react';
+import StatsCard from '@/components/StatsCard';
+import AppLayout from '@/layouts/app-layout';
 
 export default function TheaterDepartment() {
     const { stats, queue } = usePage<any>().props;

@@ -1,19 +1,19 @@
 // pages/Register.tsx
 
-import { useState } from 'react';
 import { useForm, usePage } from '@inertiajs/react';
-import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight, User, Phone, Shield, Save, Users, Loader2 } from 'lucide-react';
+import Notiflix from 'notiflix';
+import { useState } from 'react';
+import { Button } from '@/components/ui/button';
 
 // Import Tab Components
-import DemographicsTab from './components/tabs/DemographicsTab';
-import ContactTab from './components/tabs/ContactTab';
-import RolesTab from './components/tabs/RolesTab';
+import routes from '@/constants/routes';
 import AppLayout from '@/layouts/app-layout';
 import Http from '@/utils/Http';
-import routes from '@/constants/routes';
-import Notiflix from 'notiflix';
+import ContactTab from './components/tabs/ContactTab';
+import DemographicsTab from './components/tabs/DemographicsTab';
 import DepartmentsTab from './components/tabs/DepartmentsTab';
+import RolesTab from './components/tabs/RolesTab';
 
 interface RegisterFormData {
   first_name: string;
