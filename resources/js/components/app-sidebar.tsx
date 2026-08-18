@@ -53,6 +53,7 @@ import {
     CheckCircle2Icon,
     UserCircle,
     FileTextIcon,
+    DownloadIcon,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
@@ -327,6 +328,11 @@ const roleNavItems: Record<string, NavItem[]> = {
             icon: PackageCheck,
         },
         {
+            title: 'Goods Received Note',
+            href: '/bulkstore/goods-received-note',
+            icon: DownloadIcon,
+        },
+        {
             title: 'Stock Pricing',
             href: '/bulkstore/stock-pricing',
             icon: DollarSignIcon,
@@ -355,11 +361,11 @@ const roleNavItems: Record<string, NavItem[]> = {
             href: '/bulkstore/expiry',
             icon: CalendarClock,
         },
-        {
-            title: 'Barcode Management',
-            href: '/bulkstore/barcode-manage',
-            icon: Barcode,
-        },
+        // {
+        //     title: 'Barcode Management',
+        //     href: '/bulkstore/barcode-manage',
+        //     icon: Barcode,
+        // },
         { title: 'Reports', href: '/bulkstore/reports', icon: BarChart3 },
         { title: 'Audit Trail', href: '/bulkstore/audit-trail', icon: History },
         {

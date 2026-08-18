@@ -38,6 +38,7 @@ import type { Column, Action } from '@/components/ReusableTable';
 import { ReusableTable } from '@/components/ReusableTable';
 import AppLayout from '@/layouts/app-layout';
 import type { BreadcrumbItem } from '@/types';
+import Http from '@/utils/Http';
 
 // ============================================
 // TYPES
@@ -369,8 +370,8 @@ export default function Expiry() {
     const fetchExpiryData = async () => {
         setLoading(true);
         try {
-            const response = await axios.get('/api/expiry');
-            if (response.data.success) {
+            const response = await Http.get('/bulk-store/product-expiry');
+            if (response) {
                 setItems(response.data.data);
             }
         } catch (error) {
@@ -537,7 +538,7 @@ export default function Expiry() {
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Expiry Tracking" />
 
-            <div className="min-h-screen bg-slate-100">
+            <div className="h-full bg-blue-50">
                 <div className="p-6">
                     {/* Page Header */}
                     <PageHeader

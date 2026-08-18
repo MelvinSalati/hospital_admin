@@ -180,6 +180,10 @@ public function items()
     public function purchaseOrder()
     {
         return $this->belongsTo(\App\Models\BulkStores\PurchaseOrder::class, 'converted_to_po_id');
+    } 
+
+    public function grnItems(){
+        return $this->belongsTo(\App\Models\BulkStores\GoodsRecievedItem::class,'grn_id');
     }
 
     // ============================================

@@ -3,13 +3,16 @@
 use App\Http\Controllers\Admin\AdminController;
 use App\Http\Controllers\BulkStores\ProductController;
 use App\Http\Controllers\BulkStores\PurchaseRequisitionController;
+use App\Http\Controllers\BulkStores\GoodsReceivedNoteController;
+use App\Http\Controllers\BulkStores\BulkStoreController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
+
 /*
 |--------------------------------------------------------------------------
 | Bulk Store / Central Pharmacy Routes
 |--------------------------------------------------------------------------
-| Register in routes/api.php:
+| Register in routes/web.php:
 |
 |   require base_path('routes/bulk_stores.php');
 |
@@ -18,7 +21,6 @@ use Inertia\Inertia;
 |--------------------------------------------------------------------------
 */
 
-
 Route::middleware(['auth', 'verified'])
     ->prefix('bulkstore')
     ->name('bulkstore.')
@@ -26,10 +28,11 @@ Route::middleware(['auth', 'verified'])
 
         /*
         |--------------------------------------------------------------------------
-        | Dashboard
+        | Dashboard - Using Controller for dynamic data
         |--------------------------------------------------------------------------
         */
-        Route::inertia('/dashboard', 'bulkstore/Dashboard')->name('dashboard');
+        Route::get('/dashboard', [BulkStoreController::class, 'index'])->name('dashboard');
+        Route::get('/dashboard/refresh', [BulkStoreController::class, 'refreshDashboard'])->name('dashboard.refresh');
 
         /*
         |--------------------------------------------------------------------------
@@ -43,14 +46,13 @@ Route::middleware(['auth', 'verified'])
         Route::inertia('/stock-pricing', 'bulkstore/StockPricing')->name('stock-pricing');
 
         /*
-        |---------------------------------------------------------------------------
+        |--------------------------------------------------------------------------
         | Purchase Requisitions
-        |
-        |*/
-
-        Route::get('/purchase-requisition',[PurchaseRequisitionController::class, 'purchaseRequesition'])->name('purchase-requisition');
-    Route::get('/purchase-requisitions/approved', [PurchaseRequisitionController::class, 'approvedPurchaseRequesition'])->name('purchase-requisition');
-        Route::get('/purchase-orders/', [AdminController::class, 'getPurchaseRequisitions']);
+        |--------------------------------------------------------------------------
+        */
+        Route::get('/purchase-requisition', [PurchaseRequisitionController::class, 'purchaseRequesition'])->name('purchase-requisition');
+        Route::get('/purchase-requisitions/approved', [PurchaseRequisitionController::class, 'approvedPurchaseRequesition'])->name('purchase-requisition.approved');
+        Route::get('/purchase-orders/', [AdminController::class, 'getPurchaseRequisitions'])->name('purchase-orders.list');
         Route::inertia('/purchase-requisition/{requisitionId}', 'bulkstore/PurchaseRequisitionView')->name('purchase.view');
 
         /*
@@ -59,7 +61,7 @@ Route::middleware(['auth', 'verified'])
         |--------------------------------------------------------------------------
         */
         Route::inertia('/receive', 'bulkstore/Receive')->name('receive');
-        Route::get('/receive/product/{uuid}', [ProductController::class,'receiveProduct'])->name('receive.product');
+        Route::get('/receive/product/{uuid}', [ProductController::class, 'receiveProduct'])->name('receive.product');
         Route::inertia('/issue', 'bulkstore/Issue')->name('issue');
         Route::inertia('/transfer', 'bulkstore/Transfer')->name('transfer');
         Route::inertia('/adjustments', 'bulkstore/Adjustments')->name('adjustments');
@@ -70,17 +72,22 @@ Route::middleware(['auth', 'verified'])
         | Procurement
         |--------------------------------------------------------------------------
         */
-        Route::inertia('/purchase-orders', 'bulkstore/PurchaseOrders')
-            ->name('purchase-orders');
+        Route::inertia('/purchase-orders', 'bulkstore/PurchaseOrders')->name('purchase-orders');
+        Route::inertia('/purchase-orders/create', 'bulkstore/PurchaseOrderCreate')->name('purchase-orders.create');
+        Route::inertia('/purchase-orders/{purchaseOrder}', 'bulkstore/PurchaseOrderView')->name('purchase-orders.show');
 
-        Route::inertia('/purchase-orders/create', 'bulkstore/PurchaseOrderCreate')
-            ->name('purchase-orders.create');
+        // POST - Return products
+        Route::post('/returns', [\App\Http\Controllers\BulkStores\ReturningController::class, 'returnProduct'])->name('returns.store');
 
-        Route::inertia('/purchase-orders/{purchaseOrder}', 'bulkstore/PurchaseOrderView')
-            ->name('purchase-orders.show');
-    // POST - Return products
-    Route::post('/returns', [\App\Http\Controllers\BulkStores\ReturningController::class, 'returnProduct']);
- /*
+        /*
+        |--------------------------------------------------------------------------
+        | Goods Received Note
+        |--------------------------------------------------------------------------
+        */
+        Route::inertia('/goods-received-note', 'bulkstore/GoodsRecievedNote')->name('goods-received-note');
+        Route::get('/grn/approve/{grnCode}', [GoodsReceivedNoteController::class, 'approveGRN'])->name('grn.approve');
+
+        /*
         |--------------------------------------------------------------------------
         | Suppliers
         |--------------------------------------------------------------------------
@@ -99,8 +106,7 @@ Route::middleware(['auth', 'verified'])
         | Physical Stock Counts
         |--------------------------------------------------------------------------
         */
-        Route::inertia('/barcode-manage', 'bulkstore/BarcodeManage')
-            ->name('barcode-manage');
+        Route::inertia('/barcode-manage', 'bulkstore/BarcodeManage')->name('barcode-manage');
 
         /*
         |--------------------------------------------------------------------------
@@ -108,126 +114,103 @@ Route::middleware(['auth', 'verified'])
         |--------------------------------------------------------------------------
         */
         Route::inertia('/reports', 'bulkstore/Reports')->name('reports');
-
-        Route::inertia('/reports/stock-levels', 'bulkstore/reports/StockLevels')
-            ->name('reports.stock-levels');
-
-        Route::inertia('/reports/movements', 'bulkstore/reports/StockMovements')
-            ->name('reports.movements');
-
-        Route::inertia('/reports/consumption', 'bulkstore/reports/Consumption')
-            ->name('reports.consumption');
-
-        Route::inertia('/reports/expiry', 'bulkstore/reports/Expiry')
-            ->name('reports.expiry');
+        Route::inertia('/reports/stock-levels', 'bulkstore/reports/StockLevels')->name('reports.stock-levels');
+        Route::inertia('/reports/movements', 'bulkstore/reports/StockMovements')->name('reports.movements');
+        Route::inertia('/reports/consumption', 'bulkstore/reports/Consumption')->name('reports.consumption');
+        Route::inertia('/reports/expiry', 'bulkstore/reports/Expiry')->name('reports.expiry');
 
         /*
         |--------------------------------------------------------------------------
         | Audit
         |--------------------------------------------------------------------------
         */
-        Route::inertia('/audit-trail', 'bulkstore/AuditTrail')
-            ->name('audit');
+        Route::inertia('/audit-trail', 'bulkstore/AuditTrail')->name('audit');
 
         /*
         |--------------------------------------------------------------------------
         | Settings
         |--------------------------------------------------------------------------
         */
-        Route::inertia('/module-settings', 'bulkstore/Settings')
-            ->name('settings');
+        Route::inertia('/module-settings', 'bulkstore/Settings')->name('settings');
     });
 
-//     // ------------------------------------------------------------------
-//     // Bulk Stores
-//     // ------------------------------------------------------------------
-//     Route::apiResource('bulk-stores', BulkStoreController::class);
+// ------------------------------------------------------------------
+// API Routes for Bulk Store (AJAX / JSON endpoints)
+// ------------------------------------------------------------------
+Route::middleware(['auth:sanctum', 'verified'])
+    ->prefix('api/bulkstore')
+    ->name('api.bulkstore.')
+    ->group(function () {
 
-//     // ------------------------------------------------------------------
-//     // Departments
-//     // ------------------------------------------------------------------
-//     Route::apiResource('departments', DepartmentController::class);
+        // Dashboard API endpoints
+        Route::get('/dashboard/data', [BulkStoreController::class, 'refreshDashboard'])->name('dashboard.data');
 
-//     // ------------------------------------------------------------------
-//     // Suppliers
-//     // ------------------------------------------------------------------
-//     Route::apiResource('suppliers', SupplierController::class);
+        // ------------------------------------------------------------------
+        // Bulk Stores CRUD
+        // ------------------------------------------------------------------
+        Route::apiResource('bulk-stores', BulkStoreController::class);
 
-//     // ------------------------------------------------------------------
-//     // Stock Movements  (list + individual transaction endpoints)
-//     // ------------------------------------------------------------------
-//     Route::prefix('stock-movements')->name('movements.')->group(function () {
+        // ------------------------------------------------------------------
+        // Departments
+        // ------------------------------------------------------------------
+        Route::apiResource('departments', \App\Http\Controllers\BulkStores\DepartmentController::class);
 
-//         // Audit log (read-only)
-//         Route::get('/',          [StockMovementController::class, 'index'])->name('index');
-//         Route::get('/{stockMovement}', [StockMovementController::class, 'show'])->name('show');
+        // ------------------------------------------------------------------
+        // Suppliers
+        // ------------------------------------------------------------------
+        Route::apiResource('suppliers', \App\Http\Controllers\BulkStores\SupplierController::class);
 
-//         // Write operations – each maps to a StockService method
-//         Route::post('/receive',  [StockMovementController::class, 'receive'])->name('receive');
-//         Route::post('/issue',    [StockMovementController::class, 'issue'])->name('issue');
-//         Route::post('/transfer', [StockMovementController::class, 'transfer'])->name('transfer');
-//         Route::post('/adjust',   [StockMovementController::class, 'adjust'])->name('adjust');
-//     });
+        // ------------------------------------------------------------------
+        // Products
+        // ------------------------------------------------------------------
+        Route::apiResource('products', ProductController::class);
 
-//     // ------------------------------------------------------------------
-//     // Purchase Orders
-//     // ------------------------------------------------------------------
-//     Route::prefix('purchase-orders')->name('purchase-orders.')->group(function () {
-//         Route::get('/',                               [PurchaseOrderController::class, 'index'])->name('index');
-//         Route::post('/',                              [PurchaseOrderController::class, 'store'])->name('store');
-//         Route::get('/{purchaseOrder}',                [PurchaseOrderController::class, 'show'])->name('show');
-//         Route::delete('/{purchaseOrder}',             [PurchaseOrderController::class, 'destroy'])->name('destroy');
+        // ------------------------------------------------------------------
+        // Purchase Requisitions
+        // ------------------------------------------------------------------
+        Route::apiResource('purchase-requisitions', PurchaseRequisitionController::class);
 
-//         // Status transitions
-//         Route::post('/{purchaseOrder}/approve',       [PurchaseOrderController::class, 'approve'])->name('approve');
-//         Route::post('/{purchaseOrder}/receive',       [PurchaseOrderController::class, 'receive'])->name('receive');
-//     });
-// });
+        // ------------------------------------------------------------------
+        // Stock Movements (list + individual transaction endpoints)
+        // ------------------------------------------------------------------
+        Route::prefix('stock-movements')->name('movements.')->group(function () {
+            // Audit log (read-only)
+            Route::get('/', [\App\Http\Controllers\BulkStores\StockMovementController::class, 'index'])->name('index');
+            Route::get('/{stockMovement}', [\App\Http\Controllers\BulkStores\StockMovementController::class, 'show'])->name('show');
 
-// Route::middleware(['auth:sanctum'])->prefix('api/v1')->name('bulk-stores.')->group(function () {
+            // Write operations – each maps to a StockService method
+            Route::post('/receive', [\App\Http\Controllers\BulkStores\StockMovementController::class, 'receive'])->name('receive');
+            Route::post('/issue', [\App\Http\Controllers\BulkStores\StockMovementController::class, 'issue'])->name('issue');
+            Route::post('/transfer', [\App\Http\Controllers\BulkStores\StockMovementController::class, 'transfer'])->name('transfer');
+            Route::post('/adjust', [\App\Http\Controllers\BulkStores\StockMovementController::class, 'adjust'])->name('adjust');
+        });
 
-//     // ------------------------------------------------------------------
-//     // Bulk Stores
-//     // ------------------------------------------------------------------
-//     Route::apiResource('bulk-stores', BulkStoreController::class);
+        // ------------------------------------------------------------------
+        // Purchase Orders
+        // ------------------------------------------------------------------
+        Route::prefix('purchase-orders')->name('purchase-orders.')->group(function () {
+            Route::get('/', [\App\Http\Controllers\BulkStores\PurchaseOrderController::class, 'index'])->name('index');
+            Route::post('/', [\App\Http\Controllers\BulkStores\PurchaseOrderController::class, 'store'])->name('store');
+            Route::get('/{purchaseOrder}', [\App\Http\Controllers\BulkStores\PurchaseOrderController::class, 'show'])->name('show');
+            Route::delete('/{purchaseOrder}', [\App\Http\Controllers\BulkStores\PurchaseOrderController::class, 'destroy'])->name('destroy');
 
-//     // ------------------------------------------------------------------
-//     // Departments
-//     // ------------------------------------------------------------------
-//     Route::apiResource('departments', DepartmentController::class);
+            // Status transitions
+            Route::post('/{purchaseOrder}/approve', [\App\Http\Controllers\BulkStores\PurchaseOrderController::class, 'approve'])->name('approve');
+            Route::post('/{purchaseOrder}/receive', [\App\Http\Controllers\BulkStores\PurchaseOrderController::class, 'receive'])->name('receive');
+        });
 
-//     // ------------------------------------------------------------------
-//     // Suppliers
-//     // ------------------------------------------------------------------
-//     Route::apiResource('suppliers', SupplierController::class);
+        // ------------------------------------------------------------------
+        // Goods Received Notes
+        // ------------------------------------------------------------------
+        Route::apiResource('goods-received-notes', GoodsReceivedNoteController::class);
 
-//     // ------------------------------------------------------------------
-//     // Stock Movements  (list + individual transaction endpoints)
-//     // ------------------------------------------------------------------
-//     Route::prefix('stock-movements')->name('movements.')->group(function () {
-
-//         // Audit log (read-only)
-//         Route::get('/',          [StockMovementController::class, 'index'])->name('index');
-//         Route::get('/{stockMovement}', [StockMovementController::class, 'show'])->name('show');
-
-//         // Write operations – each maps to a StockService method
-//         Route::post('/receive',  [StockMovementController::class, 'receive'])->name('receive');
-//         Route::post('/issue',    [StockMovementController::class, 'issue'])->name('issue');
-//         Route::post('/transfer', [StockMovementController::class, 'transfer'])->name('transfer');
-//         Route::post('/adjust',   [StockMovementController::class, 'adjust'])->name('adjust');
-//     });
-
-//     // ------------------------------------------------------------------
-//     // Purchase Orders
-//     // ------------------------------------------------------------------
-//     Route::prefix('purchase-orders')->name('purchase-orders.')->group(function () {
-//         Route::get('/',                               [PurchaseOrderController::class, 'index'])->name('index');
-//         Route::post('/',                              [PurchaseOrderController::class, 'store'])->name('store');
-//         Route::get('/{purchaseOrder}',                [PurchaseOrderController::class, 'show'])->name('show');
-//         Route::delete('/{purchaseOrder}',             [PurchaseOrderController::class, 'destroy'])->name('destroy');
-
-//         // Status transitions
-//         Route::post('/{purchaseOrder}/approve',       [PurchaseOrderController::class, 'approve'])->name('approve');
-//         Route::post('/{purchaseOrder}/receive',       [PurchaseOrderController::class, 'receive'])->name('receive');
-//     });
-// });
+        // ------------------------------------------------------------------
+        // Reports
+        // ------------------------------------------------------------------
+        Route::prefix('reports')->name('reports.')->group(function () {
+            Route::get('/stock-levels', [\App\Http\Controllers\BulkStores\ReportController::class, 'stockLevels'])->name('stock-levels');
+            Route::get('/movements', [\App\Http\Controllers\BulkStores\ReportController::class, 'movements'])->name('movements');
+            Route::get('/consumption', [\App\Http\Controllers\BulkStores\ReportController::class, 'consumption'])->name('consumption');
+            Route::get('/expiry', [\App\Http\Controllers\BulkStores\ReportController::class, 'expiry'])->name('expiry');
+        });
+    });

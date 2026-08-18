@@ -29,6 +29,42 @@ class NumberGenerator
         return self::generateDefault($prefix, $model);
     }
 
+    public static function generateOTP(
+        string $identifier,
+        string $type = 'approval',
+        int $length = 4,
+        int $expiryMinutes = 15
+    ): string {
+        // Check if OTP already exists for this identifier and type
+        $existingOTP = \App\Models\OTP::where('identifier', $identifier)
+            ->where('type', $type)
+            ->where('expires_at', '>', now())
+            ->whereNull('used_at')
+            ->first();
+
+        if ($existingOTP) {
+            return $existingOTP->code;
+        }
+
+        // Generate new OTP
+        $code = str_pad(rand(0, 999999), $length, '0', STR_PAD_LEFT);
+
+        // // Check if this OTP code already exists (prevent duplicates)
+        while (\App\Models\OTP::where('code', $code)->where('type', $type)->exists()) {
+            $code = str_pad(rand(0, 999999), $length, '0', STR_PAD_LEFT);
+        }
+
+        // // Store in database
+        $otp = \App\Models\OTP::create([
+            'identifier' => $identifier,
+            'code' => $code,
+            'type' => $type,
+            'expires_at' => now()->addMinutes($expiryMinutes),
+        ]);
+
+        return $code;
+    }
+
     /**
      * Generate Purchase Requisition Number
      * Format: PR-YYYY-00001

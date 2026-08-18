@@ -1,5 +1,4 @@
-// Pages/BulkStore/Dashboard.tsx
-import { Head } from '@inertiajs/react';
+import { Head, usePage } from '@inertiajs/react';
 import {
     Package,
     DollarSign,
@@ -49,7 +48,7 @@ import AppLayout from '@/layouts/app-layout';
 import type { BreadcrumbItem } from '@/types';
 
 // ============================================
-// TYPES
+// TYPES - Updated to match props
 // ============================================
 
 interface DashboardStats {
@@ -75,110 +74,48 @@ interface DashboardStats {
     monthlyReturns: number;
 }
 
-// ============================================
-// DUMMY DATA
-// ============================================
+interface MonthlySummaryItem {
+    metric: string;
+    value: number;
+    change: number;
+    color: string;
+}
 
-const stats: DashboardStats = {
-    totalProducts: 1245,
-    totalStockValue: 2800000,
-    totalQuantityAvailable: 456789,
-    lowStockItems: 46,
-    outOfStockItems: 12,
-    overstockItems: 23,
-    nearExpiryItems: 78,
-    expiredItems: 5,
-    stockReceivedToday: 12500,
-    stockIssuedToday: 8200,
-    adjustmentsToday: 350,
-    returnsToday: 180,
-    pendingOrders: 14,
-    completedOrders: 56,
-    departmentsServed: 12,
-    pendingRequests: 8,
-    monthlyConsumption: 145000,
-    monthlyReceived: 168000,
-    monthlyAdjustments: 2450,
-    monthlyReturns: 1200,
-};
+interface TopProduct {
+    name: string;
+    quantity: number;
+    percentage: number;
+}
 
-// Monthly summary data
-const monthlySummaryData = [
-    { metric: 'Consumption', value: 145000, change: 12, color: '#3b82f6' },
-    { metric: 'Received', value: 168000, change: 8, color: '#22c55e' },
-    { metric: 'Adjustments', value: 2450, change: -5, color: '#f59e0b' },
-    { metric: 'Returns', value: 1200, change: -3, color: '#ef4444' },
-];
+interface DepartmentData {
+    department: string;
+    consumption: number;
+}
 
-// Top products data
-const topProductsData = [
-    { name: 'Paracetamol 500mg', quantity: 25000, percentage: 15 },
-    { name: 'ART Drugs', quantity: 18400, percentage: 11 },
-    { name: 'Antibiotics', quantity: 12500, percentage: 8 },
-    { name: 'IV Fluids', quantity: 9800, percentage: 6 },
-    { name: 'Syringes', quantity: 8700, percentage: 5 },
-];
+interface RecentTransaction {
+    date: string;
+    product: string;
+    type: string;
+    quantity: number;
+    status: 'completed' | 'pending';
+}
 
-// Department consumption data
-const departmentData = [
-    { department: 'Pharmacy', consumption: 35000 },
-    { department: 'OPD', consumption: 22000 },
-    { department: 'Laboratory', consumption: 15000 },
-    { department: 'Maternity', consumption: 12000 },
-    { department: 'Surgical', consumption: 10000 },
-];
+interface PendingAction {
+    action: string;
+    count: number;
+    priority: 'high' | 'medium' | 'low';
+    icon: string;
+}
 
-// Recent transactions
-const recentTransactions = [
-    {
-        date: 'Today',
-        product: 'Ceftriaxone 1g',
-        type: 'Received',
-        quantity: 500,
-        status: 'completed',
-    },
-    {
-        date: 'Today',
-        product: 'Surgical Gloves',
-        type: 'Issued',
-        quantity: 200,
-        status: 'completed',
-    },
-    {
-        date: 'Today',
-        product: 'Syringes 5ml',
-        type: 'Adjusted',
-        quantity: -50,
-        status: 'pending',
-    },
-    {
-        date: 'Yesterday',
-        product: 'Paracetamol',
-        type: 'Received',
-        quantity: 1000,
-        status: 'completed',
-    },
-    {
-        date: 'Yesterday',
-        product: 'IV Fluids 1L',
-        type: 'Issued',
-        quantity: 150,
-        status: 'completed',
-    },
-];
-
-// Pending actions
-const pendingActions = [
-    { action: 'Approve Requests', count: 14, priority: 'high', icon: Clock },
-    { action: 'Receive Orders', count: 5, priority: 'medium', icon: Truck },
-    {
-        action: 'Stock Adjustments',
-        count: 8,
-        priority: 'medium',
-        icon: AlertTriangle,
-    },
-    { action: 'Expiry Review', count: 3, priority: 'low', icon: Calendar },
-];
+interface DashboardData {
+    stats: DashboardStats;
+    monthlySummary: MonthlySummaryItem[];
+    topProducts: TopProduct[];
+    departmentData: DepartmentData[];
+    recentTransactions: RecentTransaction[];
+    pendingActions: PendingAction[];
+    dateRange: string;
+}
 
 // ============================================
 // STAT CARD COMPONENT
@@ -312,9 +249,49 @@ const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Dashboard', href: '/bulkstore/dashboard' },
 ];
 
+// Props interface for the component
+interface DashboardProps {
+    dashboardData: DashboardData;
+}
+
 export default function Dashboard() {
-    const [dateRange, setDateRange] = useState('This Month');
+    const { dashboardData } = usePage().props;
+    console.log(dashboardData);
+    
+    const [dateRange, setDateRange] = useState(
+        dashboardData?.dateRange || 'This Month',
+    );
     const [isRefreshing, setIsRefreshing] = useState(false);
+
+    // Use data from props, fallback to empty/default values
+    const stats = dashboardData?.stats || {
+        totalProducts: 0,
+        totalStockValue: 0,
+        totalQuantityAvailable: 0,
+        lowStockItems: 0,
+        outOfStockItems: 0,
+        overstockItems: 0,
+        nearExpiryItems: 0,
+        expiredItems: 0,
+        stockReceivedToday: 0,
+        stockIssuedToday: 0,
+        adjustmentsToday: 0,
+        returnsToday: 0,
+        pendingOrders: 0,
+        completedOrders: 0,
+        departmentsServed: 0,
+        pendingRequests: 0,
+        monthlyConsumption: 0,
+        monthlyReceived: 0,
+        monthlyAdjustments: 0,
+        monthlyReturns: 0,
+    };
+
+    const monthlySummaryData = dashboardData?.monthlySummary || [];
+    const topProductsData = dashboardData?.topProducts || [];
+    const departmentData = dashboardData?.departmentData || [];
+    const recentTransactions = dashboardData?.recentTransactions || [];
+    const pendingActions = dashboardData?.pendingActions || [];
 
     const formatCurrency = (amount: number) => {
         return new Intl.NumberFormat('en-ZM', {
@@ -331,7 +308,19 @@ export default function Dashboard() {
 
     const handleRefresh = () => {
         setIsRefreshing(true);
+        // Simulate refresh - you can replace with actual API call
         setTimeout(() => setIsRefreshing(false), 1000);
+    };
+
+    // Map icon strings to actual components
+    const getIconComponent = (iconName: string) => {
+        const icons: Record<string, any> = {
+            Clock: Clock,
+            Truck: Truck,
+            AlertTriangle: AlertTriangle,
+            Calendar: Calendar,
+        };
+        return icons[iconName] || Clock;
     };
 
     return (
@@ -383,22 +372,12 @@ export default function Dashboard() {
                         value={formatNumber(stats.totalProducts)}
                         icon={<Package className="h-5 w-5" />}
                         color="blue"
-                        trend={{
-                            value: 12,
-                            direction: 'up',
-                            label: 'vs last month',
-                        }}
                     />
                     <StatCard
                         title="Stock Value"
                         value={formatCurrency(stats.totalStockValue)}
                         icon={<DollarSign className="h-5 w-5" />}
-                        color="green"
-                        trend={{
-                            value: 8.5,
-                            direction: 'up',
-                            label: 'vs last month',
-                        }}
+                        color="green"               
                     />
                     <StatCard
                         title="Low Stock"
@@ -419,22 +398,13 @@ export default function Dashboard() {
                         value={formatNumber(stats.stockReceivedToday)}
                         icon={<ArrowDown className="h-5 w-5" />}
                         color="purple"
-                        trend={{
-                            value: 12,
-                            direction: 'up',
-                            label: 'vs yesterday',
-                        }}
+                       
                     />
                     <StatCard
                         title="Issued Today"
                         value={formatNumber(stats.stockIssuedToday)}
                         icon={<ArrowUp className="h-5 w-5" />}
                         color="teal"
-                        trend={{
-                            value: 8,
-                            direction: 'down',
-                            label: 'vs yesterday',
-                        }}
                     />
                 </div>
 
@@ -460,33 +430,40 @@ export default function Dashboard() {
                     </CardHeader>
                     <CardContent>
                         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                            {monthlySummaryData.map((item, index) => (
-                                <div
-                                    key={index}
-                                    className="rounded-lg bg-slate-50 p-3 text-center dark:bg-slate-800/50"
-                                >
-                                    <p className="text-[10px] font-medium tracking-wider text-slate-500 uppercase dark:text-slate-400">
-                                        {item.metric}
-                                    </p>
-                                    <p className="mt-0.5 text-lg font-bold text-slate-800 dark:text-slate-100">
-                                        {formatNumber(item.value)}
-                                    </p>
+                            {monthlySummaryData.length > 0 ? (
+                                monthlySummaryData.map((item, index) => (
                                     <div
-                                        className={`mt-0.5 flex items-center justify-center gap-1 text-xs font-medium ${
-                                            item.change > 0
-                                                ? 'text-green-600'
-                                                : 'text-red-600'
-                                        }`}
+                                        key={index}
+                                        className="rounded-lg bg-slate-50 p-3 text-center dark:bg-slate-800/50"
                                     >
-                                        {item.change > 0 ? (
-                                            <ArrowUp className="h-3 w-3" />
-                                        ) : (
-                                            <ArrowDown className="h-3 w-3" />
-                                        )}
-                                        {Math.abs(item.change)}% vs last month
+                                        <p className="text-[10px] font-medium tracking-wider text-slate-500 uppercase dark:text-slate-400">
+                                            {item.metric}
+                                        </p>
+                                        <p className="mt-0.5 text-lg font-bold text-slate-800 dark:text-slate-100">
+                                            {formatNumber(item.value)}
+                                        </p>
+                                        <div
+                                            className={`mt-0.5 flex items-center justify-center gap-1 text-xs font-medium ${
+                                                item.change > 0
+                                                    ? 'text-green-600'
+                                                    : 'text-red-600'
+                                            }`}
+                                        >
+                                            {item.change > 0 ? (
+                                                <ArrowUp className="h-3 w-3" />
+                                            ) : (
+                                                <ArrowDown className="h-3 w-3" />
+                                            )}
+                                            {Math.abs(item.change)}% vs last
+                                            month
+                                        </div>
                                     </div>
+                                ))
+                            ) : (
+                                <div className="col-span-4 py-4 text-center text-sm text-slate-500">
+                                    No monthly summary data available
                                 </div>
-                            ))}
+                            )}
                         </div>
                     </CardContent>
                 </Card>
@@ -509,37 +486,43 @@ export default function Dashboard() {
                         </CardHeader>
                         <CardContent>
                             <div className="space-y-2.5">
-                                {topProductsData.map((product, index) => (
-                                    <div
-                                        key={index}
-                                        className="flex items-center gap-3"
-                                    >
-                                        <span className="w-5 text-right text-[10px] font-medium text-slate-400">
-                                            #{index + 1}
-                                        </span>
-                                        <div className="flex-1">
-                                            <div className="flex items-center justify-between">
-                                                <span className="max-w-[120px] truncate text-xs font-medium text-slate-700 dark:text-slate-300">
-                                                    {product.name}
-                                                </span>
-                                                <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                                                    {formatNumber(
-                                                        product.quantity,
-                                                    )}
-                                                </span>
-                                            </div>
-                                            <div className="mt-0.5 h-1.5 w-full rounded-full bg-slate-100 dark:bg-slate-700">
-                                                <div
-                                                    className="h-1.5 rounded-full transition-all"
-                                                    style={{
-                                                        width: `${product.percentage}%`,
-                                                        backgroundColor: `hsl(${217 + index * 30}, 91%, 60%)`,
-                                                    }}
-                                                />
+                                {topProductsData.length > 0 ? (
+                                    topProductsData.map((product, index) => (
+                                        <div
+                                            key={index}
+                                            className="flex items-center gap-3"
+                                        >
+                                            <span className="w-5 text-right text-[10px] font-medium text-slate-400">
+                                                #{index + 1}
+                                            </span>
+                                            <div className="flex-1">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="max-w-[120px] truncate text-xs font-medium text-slate-700 dark:text-slate-300">
+                                                        {product.name}
+                                                    </span>
+                                                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                                                        {formatNumber(
+                                                            product.quantity,
+                                                        )}
+                                                    </span>
+                                                </div>
+                                                <div className="mt-0.5 h-1.5 w-full rounded-full bg-slate-100 dark:bg-slate-700">
+                                                    <div
+                                                        className="h-1.5 rounded-full transition-all"
+                                                        style={{
+                                                            width: `${Math.min(product.percentage, 100)}%`,
+                                                            backgroundColor: `hsl(${217 + index * 30}, 91%, 60%)`,
+                                                        }}
+                                                    />
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    ))
+                                ) : (
+                                    <p className="text-center text-sm text-slate-500">
+                                        No product consumption data available
+                                    </p>
+                                )}
                             </div>
                         </CardContent>
                     </Card>
@@ -557,45 +540,56 @@ export default function Dashboard() {
                             </CardDescription>
                         </CardHeader>
                         <CardContent>
-                            <div className="h-[180px] w-full">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart
-                                        data={departmentData}
-                                        layout="vertical"
+                            {departmentData.length > 0 ? (
+                                <div className="h-[180px] w-full">
+                                    <ResponsiveContainer
+                                        width="100%"
+                                        height="100%"
                                     >
-                                        <XAxis
-                                            type="number"
-                                            tick={{
-                                                fontSize: 10,
-                                                fill: '#94a3b8',
-                                            }}
-                                        />
-                                        <YAxis
-                                            dataKey="department"
-                                            type="category"
-                                            width={70}
-                                            tick={{
-                                                fontSize: 10,
-                                                fill: '#94a3b8',
-                                            }}
-                                        />
-                                        <Tooltip
-                                            contentStyle={{
-                                                backgroundColor: 'white',
-                                                border: '1px solid #e2e8f0',
-                                                borderRadius: '8px',
-                                                fontSize: '12px',
-                                            }}
-                                        />
-                                        <Bar
-                                            dataKey="consumption"
-                                            fill="#8b5cf6"
-                                            radius={[0, 4, 4, 0]}
-                                            name="Consumption"
-                                        />
-                                    </BarChart>
-                                </ResponsiveContainer>
-                            </div>
+                                        <BarChart
+                                            data={departmentData}
+                                            layout="vertical"
+                                        >
+                                            <XAxis
+                                                type="number"
+                                                tick={{
+                                                    fontSize: 10,
+                                                    fill: '#94a3b8',
+                                                }}
+                                            />
+                                            <YAxis
+                                                dataKey="department"
+                                                type="category"
+                                                width={70}
+                                                tick={{
+                                                    fontSize: 10,
+                                                    fill: '#94a3b8',
+                                                }}
+                                            />
+                                            <Tooltip
+                                                contentStyle={{
+                                                    backgroundColor: 'white',
+                                                    border: '1px solid #e2e8f0',
+                                                    borderRadius: '8px',
+                                                    fontSize: '12px',
+                                                }}
+                                            />
+                                            <Bar
+                                                dataKey="consumption"
+                                                fill="#8b5cf6"
+                                                radius={[0, 4, 4, 0]}
+                                                name="Consumption"
+                                            />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            ) : (
+                                <div className="flex h-[180px] items-center justify-center">
+                                    <p className="text-center text-sm text-slate-500">
+                                        No department consumption data available
+                                    </p>
+                                </div>
+                            )}
                         </CardContent>
                     </Card>
                 </div>
@@ -618,36 +612,44 @@ export default function Dashboard() {
                         </CardHeader>
                         <CardContent>
                             <div className="space-y-1.5">
-                                {pendingActions.map((action, index) => {
-                                    const Icon = action.icon;
-                                    const priorityColors = {
-                                        high: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-                                        medium: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
-                                        low: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
-                                    };
-                                    return (
-                                        <div
-                                            key={index}
-                                            className="flex items-center justify-between rounded-lg bg-slate-50 p-2.5 transition-colors hover:bg-slate-100 dark:bg-slate-800/50 dark:hover:bg-slate-700/50"
-                                        >
-                                            <div className="flex items-center gap-3">
-                                                <div className="rounded-lg bg-white p-1.5 shadow-sm dark:bg-slate-700">
-                                                    <Icon className="h-3.5 w-3.5 text-slate-500" />
+                                {pendingActions.length > 0 ? (
+                                    pendingActions.map((action, index) => {
+                                        const Icon = getIconComponent(
+                                            action.icon,
+                                        );
+                                        const priorityColors = {
+                                            high: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+                                            medium: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+                                            low: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
+                                        };
+                                        return (
+                                            <div
+                                                key={index}
+                                                className="flex items-center justify-between rounded-lg bg-slate-50 p-2.5 transition-colors hover:bg-slate-100 dark:bg-slate-800/50 dark:hover:bg-slate-700/50"
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    <div className="rounded-lg bg-white p-1.5 shadow-sm dark:bg-slate-700">
+                                                        <Icon className="h-3.5 w-3.5 text-slate-500" />
+                                                    </div>
+                                                    <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                                                        {action.action}
+                                                    </span>
                                                 </div>
-                                                <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                                                    {action.action}
-                                                </span>
+                                                <div className="flex items-center gap-2">
+                                                    <span
+                                                        className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${priorityColors[action.priority]}`}
+                                                    >
+                                                        {action.count}
+                                                    </span>
+                                                </div>
                                             </div>
-                                            <div className="flex items-center gap-2">
-                                                <span
-                                                    className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${priorityColors[action.priority as keyof typeof priorityColors]}`}
-                                                >
-                                                    {action.count}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
+                                        );
+                                    })
+                                ) : (
+                                    <p className="text-center text-sm text-slate-500">
+                                        No pending actions
+                                    </p>
+                                )}
                             </div>
                         </CardContent>
                     </Card>
@@ -666,60 +668,68 @@ export default function Dashboard() {
                         </CardHeader>
                         <CardContent>
                             <div className="space-y-1.5">
-                                {recentTransactions.map(
-                                    (transaction, index) => (
-                                        <div
-                                            key={index}
-                                            className="flex items-center justify-between rounded-lg p-2 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
-                                        >
-                                            <div className="flex min-w-0 items-center gap-3">
-                                                <span className="w-12 flex-shrink-0 text-[10px] text-slate-400">
-                                                    {transaction.date}
-                                                </span>
-                                                <span className="truncate text-xs font-medium text-slate-700 dark:text-slate-300">
-                                                    {transaction.product}
-                                                </span>
+                                {recentTransactions.length > 0 ? (
+                                    recentTransactions.map(
+                                        (transaction, index) => (
+                                            <div
+                                                key={index}
+                                                className="flex items-center justify-between rounded-lg p-2 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                                            >
+                                                <div className="flex min-w-0 items-center gap-3">
+                                                    <span className="w-12 flex-shrink-0 text-[10px] text-slate-400">
+                                                        {transaction.date}
+                                                    </span>
+                                                    <span className="truncate text-xs font-medium text-slate-700 dark:text-slate-300">
+                                                        {transaction.product}
+                                                    </span>
+                                                </div>
+                                                <div className="flex flex-shrink-0 items-center gap-2">
+                                                    <span
+                                                        className={`text-[10px] font-medium ${
+                                                            transaction.type ===
+                                                            'Received'
+                                                                ? 'text-green-600'
+                                                                : transaction.type ===
+                                                                    'Issued'
+                                                                  ? 'text-blue-600'
+                                                                  : 'text-orange-600'
+                                                        }`}
+                                                    >
+                                                        {transaction.type}
+                                                    </span>
+                                                    <span
+                                                        className={`text-xs font-bold ${
+                                                            transaction.quantity >
+                                                            0
+                                                                ? 'text-green-600'
+                                                                : 'text-red-600'
+                                                        }`}
+                                                    >
+                                                        {transaction.quantity >
+                                                        0
+                                                            ? '+'
+                                                            : ''}
+                                                        {transaction.quantity}
+                                                    </span>
+                                                    <Badge
+                                                        variant="outline"
+                                                        className={`text-[10px] ${
+                                                            transaction.status ===
+                                                            'completed'
+                                                                ? 'border-green-200 text-green-600'
+                                                                : 'border-yellow-200 text-yellow-600'
+                                                        }`}
+                                                    >
+                                                        {transaction.status}
+                                                    </Badge>
+                                                </div>
                                             </div>
-                                            <div className="flex flex-shrink-0 items-center gap-2">
-                                                <span
-                                                    className={`text-[10px] font-medium ${
-                                                        transaction.type ===
-                                                        'Received'
-                                                            ? 'text-green-600'
-                                                            : transaction.type ===
-                                                                'Issued'
-                                                              ? 'text-blue-600'
-                                                              : 'text-orange-600'
-                                                    }`}
-                                                >
-                                                    {transaction.type}
-                                                </span>
-                                                <span
-                                                    className={`text-xs font-bold ${
-                                                        transaction.quantity > 0
-                                                            ? 'text-green-600'
-                                                            : 'text-red-600'
-                                                    }`}
-                                                >
-                                                    {transaction.quantity > 0
-                                                        ? '+'
-                                                        : ''}
-                                                    {transaction.quantity}
-                                                </span>
-                                                <Badge
-                                                    variant="outline"
-                                                    className={`text-[10px] ${
-                                                        transaction.status ===
-                                                        'completed'
-                                                            ? 'border-green-200 text-green-600'
-                                                            : 'border-yellow-200 text-yellow-600'
-                                                    }`}
-                                                >
-                                                    {transaction.status}
-                                                </Badge>
-                                            </div>
-                                        </div>
-                                    ),
+                                        ),
+                                    )
+                                ) : (
+                                    <p className="text-center text-sm text-slate-500">
+                                        No recent transactions
+                                    </p>
                                 )}
                             </div>
                         </CardContent>
@@ -750,10 +760,10 @@ export default function Dashboard() {
                     ].map((item, i) => (
                         <button
                             key={i}
-                            className={`p-2.5 bg-${item.color}-50 hover:bg-${item.color}-100 dark:bg-${item.color}-950/20 dark:hover:bg-${item.color}-900/30 rounded-xl text-center shadow-sm transition-all hover:shadow`}
+                            className={`rounded-xl bg-${item.color}-50 p-2.5 text-center shadow-sm transition-all hover:shadow dark:bg-${item.color}-950/20 dark:hover:bg-${item.color}-900/30`}
                         >
                             <item.icon
-                                className={`h-4 w-4 text-${item.color}-600 dark:text-${item.color}-400 mx-auto mb-1`}
+                                className={`mx-auto mb-1 h-4 w-4 text-${item.color}-600 dark:text-${item.color}-400`}
                             />
                             <span
                                 className={`text-[10px] font-medium text-${item.color}-700 dark:text-${item.color}-400`}
@@ -762,6 +772,60 @@ export default function Dashboard() {
                             </span>
                         </button>
                     ))}
+                </div>
+
+                {/* ============================================ */}
+                {/* SECTION 6: Additional Stats Footer */}
+                {/* ============================================ */}
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-6">
+                    <div className="rounded-lg bg-slate-50 p-3 text-center dark:bg-slate-800/30">
+                        <p className="text-[10px] font-medium text-slate-500 uppercase dark:text-slate-400">
+                            Departments
+                        </p>
+                        <p className="text-lg font-bold text-slate-800 dark:text-slate-200">
+                            {stats.departmentsServed}
+                        </p>
+                    </div>
+                    <div className="rounded-lg bg-slate-50 p-3 text-center dark:bg-slate-800/30">
+                        <p className="text-[10px] font-medium text-slate-500 uppercase dark:text-slate-400">
+                            Pending Orders
+                        </p>
+                        <p className="text-lg font-bold text-slate-800 dark:text-slate-200">
+                            {stats.pendingOrders}
+                        </p>
+                    </div>
+                    <div className="rounded-lg bg-slate-50 p-3 text-center dark:bg-slate-800/30">
+                        <p className="text-[10px] font-medium text-slate-500 uppercase dark:text-slate-400">
+                            Completed Orders
+                        </p>
+                        <p className="text-lg font-bold text-slate-800 dark:text-slate-200">
+                            {stats.completedOrders}
+                        </p>
+                    </div>
+                    <div className="rounded-lg bg-slate-50 p-3 text-center dark:bg-slate-800/30">
+                        <p className="text-[10px] font-medium text-slate-500 uppercase dark:text-slate-400">
+                            Pending Requests
+                        </p>
+                        <p className="text-lg font-bold text-slate-800 dark:text-slate-200">
+                            {stats.pendingRequests}
+                        </p>
+                    </div>
+                    <div className="rounded-lg bg-slate-50 p-3 text-center dark:bg-slate-800/30">
+                        <p className="text-[10px] font-medium text-slate-500 uppercase dark:text-slate-400">
+                            Total Quantity
+                        </p>
+                        <p className="text-lg font-bold text-slate-800 dark:text-slate-200">
+                            {formatNumber(stats.totalQuantityAvailable)}
+                        </p>
+                    </div>
+                    <div className="rounded-lg bg-slate-50 p-3 text-center dark:bg-slate-800/30">
+                        <p className="text-[10px] font-medium text-slate-500 uppercase dark:text-slate-400">
+                            Overstock Items
+                        </p>
+                        <p className="text-lg font-bold text-slate-800 dark:text-slate-200">
+                            {stats.overstockItems}
+                        </p>
+                    </div>
                 </div>
             </div>
         </AppLayout>

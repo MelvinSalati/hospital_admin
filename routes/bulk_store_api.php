@@ -6,7 +6,36 @@ use App\Http\Controllers\BulkStores\BulkStoreSettingController;
 use App\Http\Controllers\BulkStores\PurchaseRequisitionController;
 use App\Http\Controllers\BulkStores\PurchaseOrderController;
 use App\Http\Controllers\BulkStores\StockPricingController;
+use App\Http\Controllers\BulkStores\GoodsReceivedNoteController; 
+
 Route::prefix('v1/bulk-store')->group(function () {
+    //verify 
+    Route::post('/{otp}/verify-token',[GoodsReceivedNoteController::class,'verifyOtp']);
+    Route::prefix('/{userId}/')->group(function () {
+        Route::post('/verify-approval-code', [GoodsReceivedNoteController::class, 'authorizeApprovalCode']);
+    });
+    // GRN Routes
+    Route::prefix('grns')->group(function () {
+        // GET routes
+        Route::get('/', [GoodsReceivedNoteController::class, 'index']);
+        Route::get('/stats', [GoodsReceivedNoteController::class, 'stats']);
+        Route::get('/by-requisition/{requisitionId}', [GoodsReceivedNoteController::class, 'getByRequisition']);
+        Route::get('/by-number/{grnNumber}', [GoodsReceivedNoteController::class, 'getByNumber']);
+        Route::get('/{id}', [GoodsReceivedNoteController::class, 'show']);
+        Route::get('/{id}/print', [GoodsReceivedNoteController::class, 'printGrn']);
+
+        // POST routes
+        Route::post('/generate-from-receiving', [GoodsReceivedNoteController::class, 'generateFromReceiving']);
+        Route::post('/{id}/approve', [GoodsReceivedNoteController::class, 'approve']);
+        Route::post('/{id}/reject', [GoodsReceivedNoteController::class, 'reject']);
+
+        // PUT/PATCH routes
+        Route::put('/{id}', [GoodsReceivedNoteController::class, 'update']);
+        Route::patch('/{id}', [GoodsReceivedNoteController::class, 'update']);
+
+        // DELETE routes
+        Route::delete('/{id}', [GoodsReceivedNoteController::class, 'destroy']);
+    });
     // Existing routes
     Route::get('/product/search/{barcode}', [\App\Http\Controllers\BulkStores\ProductController::class, 'searchProduct']);
     Route::get('/product/{id}', [\App\Http\Controllers\BulkStores\ProductController::class, 'getProduct']);
@@ -31,7 +60,7 @@ Route::prefix('v1/bulk-store')->group(function () {
 
     // GET - Return history with filters
     Route::get('/returns/history', [\App\Http\Controllers\BulkStores\ReturningController::class, 'getReturnHistory']);
-
+    // Route::get('/grns/by-requisition/{requisitionId}', [\App\Http\Controllers\BulkStores\GoodsReceivedNoteController::class, 'getByRequisition']);
     /**
      * Stock Pricing 
      */
