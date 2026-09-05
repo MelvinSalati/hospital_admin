@@ -66,7 +66,7 @@ import ReusableTable from '@/components/ReusableTable';
 import { Badge } from '@/components/ui/badge';
 import AppLayout from '@/layouts/app-layout';
 import Http from '@/utils/Http';
-import AddDrugModal from './components/AddDrugModal';
+import AddDrugModal from './AddDrugModal';
 
 // ============================================================================
 // Types
@@ -1704,7 +1704,7 @@ function CategoryFormModal({
                                         name: e.target.value,
                                     })
                                 }
-                                className="border-blue-600 mt-0.5 h-8 w-full rounded-lg border border-slate-200 px-3 text-sm focus:border-blue-400 focus:ring-1 focus:ring-blue-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                                className="mt-0.5 h-8 w-full rounded-lg border border-blue-600 border-slate-200 px-3 text-sm focus:border-blue-400 focus:ring-1 focus:ring-blue-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                                 placeholder="Enter category name"
                                 required
                             />
