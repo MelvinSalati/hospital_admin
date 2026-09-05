@@ -28,7 +28,7 @@ import { toast } from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
 import ResusableTable from '@/components/ReusableTable';
 import AppLayout from '@/layouts/app-layout';
-import GRNModal from '../components/Modal/GRNModal';
+import GRNModal from '../components/Modals/GRNModal';
 
 // Status configuration
 const STATUS_CONFIG = {
