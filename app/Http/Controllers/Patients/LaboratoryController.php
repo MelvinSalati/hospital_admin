@@ -14,14 +14,15 @@ use App\Models\Services\Service;
 use App\Models\Payments\Invoice;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Facades\Str; 
+use App\Models\Patients\PatientVisitScheme;
+use Illuminate\Support\Facades\Str;
 
 class LaboratoryController extends Controller
 {
     /**
      * Display a listing of the resource.
      */
-    public function index($patientId)
+    public function index(int $patientId)
     {
         try {
             // Get active visit token for payment scheme
@@ -30,32 +31,14 @@ class LaboratoryController extends Controller
 
             // Get laboratory services with correct pricing
             $pricingHelper = new ServicePricingHelper($paymentMethod);
-            $laboratoryServices = $pricingHelper->getLaboratory($patientId);
-
-            // Get previous laboratory orders from the correct table
-            // Check if table exists first
-            $previousOrders = \App\Models\Patients\LabOrder::where('patient_id', $patientId)
-                ->latest()
+            $schemeSelected = PatientVisitScheme::where('token', $activeToken['token'])
+                ->value('scheme_id');
+            $laboratoryServices =  Service::where('scheme_type', $schemeSelected)
+                ->where('service_category','Laboratory')
                 ->get();
-            // Get pending test orders
-            $pendingTestOrders = [];
-            if (DB::getSchemaBuilder()->hasTable('lab_order')) {
-                $pendingTestOrders = DB::table('lab_order')
-                    ->where('status', 'pending')
-                    ->where('patient_id', $patientId)
-                    ->orderByDesc('created_at')
-                    ->get();
-            }
 
-            // Get completed test orders
-            $completedTestOrders = [];
-            if (DB::getSchemaBuilder()->hasTable('lab_order')) {
-                $completedTestOrders = DB::table('lab_order')
-                    ->where('status', 'completed')
-                    ->where('patient_id', $patientId)
-                    ->orderByDesc('created_at')
-                    ->get();
-            }
+                // Get previous laboratory orders - GROUPED and DISTINCT
+                $previousOrders = $this->getGroupedPreviousOrders($patientId);
 
             return Inertia::render('patients/laboratory', [
                 'patientId' => $patientId,
@@ -72,11 +55,79 @@ class LaboratoryController extends Controller
                 'patientId' => $patientId,
                 'services' => collect(),
                 'previousOrders' => collect(),
-                'pending_test_orders' => collect(),
-                'completed_test_orders' => collect(),
                 'error' => 'Unable to load laboratory data. Error: ' . $e->getMessage(),
             ]);
         }
+    }
+
+    /**
+     * Get grouped previous orders - DISTINCT by order_number or grouped by order
+     */
+    private function getGroupedPreviousOrders($patientId)
+    {
+        $orders = [];
+
+        // Try to get from lab_order table first (more complete)
+        if (DB::getSchemaBuilder()->hasTable('lab_order')) {
+            $labOrders = DB::table('lab_order')
+                ->where('patient_id', $patientId)
+                ->orderByDesc('created_at')
+                ->get();
+
+            // Group by order_number if available, otherwise by id
+            $grouped = [];
+            foreach ($labOrders as $order) {
+                $key = $order->order_number ?? $order->id;
+                if (!isset($grouped[$key])) {
+                    $grouped[$key] = $order;
+                }
+            }
+
+            // Convert back to array
+            $orders = array_values($grouped);
+        }
+
+        // If no orders found, try LabOrderItem
+        if (empty($orders)) {
+            $labOrderItems = \App\Models\Patients\LabOrderItem::where('patient_id', $patientId)
+                ->latest()
+                ->get();
+
+            // Group by order_number or invoice_id
+            $grouped = [];
+            foreach ($labOrderItems as $item) {
+                $key = $item->order_number ?? $item->invoice_id ?? $item->id;
+                if (!isset($grouped[$key])) {
+                    $grouped[$key] = (object) [
+                        'id' => $item->id,
+                        'order_number' => $item->order_number ?? 'LAB-' . random(8),
+                        'service_name' => $item->service_name ?? 'Laboratory Test',
+                        'service_category' => $item->service_category ?? 'Laboratory',
+                        'quantity' => $item->quantity ?? 1,
+                        'unit_price' => $item->unit_price ?? 0,
+                        'total_price' => $item->total_price ?? 0,
+                        'status' => $item->status ?? 'pending',
+                        'priority' => $item->priority ?? 'routine',
+                        'created_at' => $item->created_at ?? now(),
+                        'result_value' => $item->result_value ?? null,
+                        'performed_by' => $item->performed_by ?? null,
+                        'result_date' => $item->result_date ?? null,
+                    ];
+                } else {
+                    // Aggregate quantities if same order
+                    $grouped[$key]->quantity += ($item->quantity ?? 1);
+                    $grouped[$key]->total_price += ($item->total_price ?? 0);
+                    // Append service name if multiple
+                    if ($grouped[$key]->service_name !== $item->service_name) {
+                        $grouped[$key]->service_name .= ', ' . ($item->service_name ?? '');
+                    }
+                }
+            }
+
+            $orders = array_values($grouped);
+        }
+
+        return collect($orders);
     }
 
     /**
@@ -131,6 +182,7 @@ class LaboratoryController extends Controller
             $totalAmount = 0;
             $invoiceItems = [];
             $laboratoryOrderItems = [];
+            $orderNumber = $this->generateLaboratoryOrderNumber();
 
             foreach ($request->input('services') as $service) {
                 $serviceRecord = Service::find($service['id']);
@@ -181,6 +233,7 @@ class LaboratoryController extends Controller
                     'notes' => $service['notes'] ?? null,
                     'ordered_at' => now(),
                     'visit_token' => $token,
+                    'order_number' => $orderNumber, // Same order number for all items
                 ];
             }
 
@@ -263,18 +316,46 @@ class LaboratoryController extends Controller
                 foreach ($laboratoryOrderItems as $orderItem) {
                     DB::table('lab_order')->insert([
                         'invoice_id' => $invoice->id,
-                        'test_name'  => $request->input('service_name'),
+                        'test_name' => $orderItem['service_name'],
                         'patient_id' => $patientId,
                         'ordered_by' => Auth::id(),
-                        'order_number' => $this->generateLaboratoryOrderNumber(),
+                        'order_number' => $orderNumber,
                         'status' => 'pending',
                         'created_at' => now(),
                         'updated_at' => now(),
-                        ...$orderItem,
+                        'quantity' => $orderItem['quantity'],
+                        'unit_price' => $orderItem['unit_price'],
+                        'total_price' => $orderItem['total_price'],
+                        'service_category' => $orderItem['service_category'],
+                        'priority' => $orderItem['priority'],
+                        'notes' => $orderItem['notes'] ?? null,
+                    ]);
+                }
+            }
+
+            // Also store in LabOrderItem if table exists
+            if (DB::getSchemaBuilder()->hasTable('lab_order_items')) {
+                foreach ($laboratoryOrderItems as $orderItem) {
+                    DB::table('lab_order_items')->insert([
+                        'patient_id' => $patientId,
+                        'invoice_id' => $invoice->id,
+                        'service_id' => $orderItem['service_id'],
+                        'service_name' => $orderItem['service_name'],
+                        'service_category' => $orderItem['service_category'],
+                        'service_type' => $orderItem['service_type'],
+                        'quantity' => $orderItem['quantity'],
+                        'unit_price' => $orderItem['unit_price'],
+                        'total_price' => $orderItem['total_price'],
+                        'priority' => $orderItem['priority'],
+                        'notes' => $orderItem['notes'] ?? null,
+                        'order_number' => $orderNumber,
+                        'status' => 'pending',
+                        'created_at' => now(),
+                        'updated_at' => now(),
                     ]);
                 }
             } else {
-                Log::warning('lab_order table does not exist');
+                Log::warning('lab_order_items table does not exist');
             }
 
             DB::commit();
@@ -308,6 +389,7 @@ class LaboratoryController extends Controller
                     'is_appended' => $isAppended,
                     'total_amount' => $totalAmount,
                     'items_count' => count($invoiceItems),
+                    'order_number' => $orderNumber,
                 ],
             ], 201);
         } catch (\Exception $e) {
@@ -345,16 +427,33 @@ class LaboratoryController extends Controller
         }
 
         try {
-            DB::table('lab_order')
-                ->where('id', $testOrderId)
-                ->update([
-                    'result_value' => $request->result_value,
-                    'remarks' => $request->remarks,
-                    'performed_by' => $request->performed_by ?? Auth::user()?->name,
-                    'result_date' => $request->result_date ?? now(),
-                    'status' => 'completed',
-                    'updated_at' => now(),
-                ]);
+            // Update in lab_order table
+            if (DB::getSchemaBuilder()->hasTable('lab_order')) {
+                DB::table('lab_order')
+                    ->where('id', $testOrderId)
+                    ->update([
+                        'result_value' => $request->result_value,
+                        'remarks' => $request->remarks,
+                        'performed_by' => $request->performed_by ?? Auth::user()?->name,
+                        'result_date' => $request->result_date ?? now(),
+                        'status' => 'completed',
+                        'updated_at' => now(),
+                    ]);
+            }
+
+            // Also update in lab_order_items if exists
+            if (DB::getSchemaBuilder()->hasTable('lab_order_items')) {
+                DB::table('lab_order_items')
+                    ->where('id', $testOrderId)
+                    ->update([
+                        'result_value' => $request->result_value,
+                        'remarks' => $request->remarks,
+                        'performed_by' => $request->performed_by ?? Auth::user()?->name,
+                        'result_date' => $request->result_date ?? now(),
+                        'status' => 'completed',
+                        'updated_at' => now(),
+                    ]);
+            }
 
             Log::info('Laboratory results updated', ['test_order_id' => $testOrderId]);
 
@@ -392,21 +491,34 @@ class LaboratoryController extends Controller
     private function generateLaboratoryOrderNumber(): string
     {
         $date = now()->format('Ymd');
-        $lastOrder = DB::table('lab_orders')
-            ->where('order_number', 'like', "LAB-{$date}-%")
-            ->orderByDesc('id')
-            ->first();
+        $sequence = 1;
 
-        if (! $lastOrder) {
-            return "LAB-{$date}-0001";
+        // Check in lab_order table
+        if (DB::getSchemaBuilder()->hasTable('lab_order')) {
+            $lastOrder = DB::table('lab_order')
+                ->where('order_number', 'like', "LAB-{$date}-%")
+                ->orderByDesc('id')
+                ->first();
+
+            if ($lastOrder) {
+                $lastSequence = (int) substr($lastOrder->order_number, -4);
+                $sequence = $lastSequence + 1;
+            }
         }
 
-        $lastSequence = (int) substr($lastOrder->order_number, -4);
+        // Also check in lab_order_items if lab_order doesn't have the order
+        if ($sequence === 1 && DB::getSchemaBuilder()->hasTable('lab_order_items')) {
+            $lastItem = DB::table('lab_order_items')
+                ->where('order_number', 'like', "LAB-{$date}-%")
+                ->orderByDesc('id')
+                ->first();
 
-        return sprintf(
-            'LAB-%s-%04d',
-            $date."".rand(000,999),
-            $lastSequence + 1
-        );
+            if ($lastItem) {
+                $lastSequence = (int) substr($lastItem->order_number, -4);
+                $sequence = max($sequence, $lastSequence + 1);
+            }
+        }
+
+        return sprintf('LAB-%s-%04d', $date, $sequence);
     }
 }

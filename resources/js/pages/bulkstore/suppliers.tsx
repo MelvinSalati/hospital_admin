@@ -1110,35 +1110,6 @@ export default function Suppliers() {
                         ]}
                     />
 
-                    {/* Stats Cards */}
-                    <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                            <p className="text-xs text-gray-500">
-                                Total Suppliers
-                            </p>
-                            <p className="text-2xl font-bold text-gray-900">
-                                {stats.total}
-                            </p>
-                        </div>
-                        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                            <p className="text-xs text-gray-500">Active</p>
-                            <p className="text-2xl font-bold text-green-600">
-                                {stats.active}
-                            </p>
-                        </div>
-                        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                            <p className="text-xs text-gray-500">Inactive</p>
-                            <p className="text-2xl font-bold text-gray-600">
-                                {stats.inactive}
-                            </p>
-                        </div>
-                        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                            <p className="text-xs text-gray-500">Blacklisted</p>
-                            <p className="text-2xl font-bold text-red-600">
-                                {stats.blacklisted}
-                            </p>
-                        </div>
-                    </div>
 
                     {/* Table */}
                     <div className="mt-6">

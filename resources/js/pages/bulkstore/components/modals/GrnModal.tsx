@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import axios from 'axios';
 import {
     X,
     Printer,
@@ -15,9 +15,9 @@ import {
     XCircle,
     Shield,
 } from 'lucide-react';
-import { toast } from 'react-hot-toast';
-import axios from 'axios';
 import QRCode from 'qrcode';
+import React, { useState, useRef, useEffect } from 'react';
+import { toast } from 'react-hot-toast';
 
 // Helper functions
 const formatCurrency = (value) => {

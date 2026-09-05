@@ -295,10 +295,10 @@ export function ReusableTable<T extends Record<string, any>>({
 
     return (
         <div
-            className={`rounded-xl border border-slate-200 bg-blue-50 dark:border-slate-700 ${className}`}
+            className={`rounded-2xl border border-slate-200 bg-white dark:border-slate-700 ${className}`}
         >
             {/* Header with Title and Filters */}
-            <div className="border-b border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
+            <div className="border-b border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800/50">
                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     {title && (
                         <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200">

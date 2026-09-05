@@ -5,6 +5,7 @@ use App\Http\Controllers\BulkStores\ProductController;
 use App\Http\Controllers\BulkStores\PurchaseRequisitionController;
 use App\Http\Controllers\BulkStores\GoodsReceivedNoteController;
 use App\Http\Controllers\BulkStores\BulkStoreController;
+use App\Http\Controllers\BulkStores\SupplierController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -39,11 +40,11 @@ Route::middleware(['auth', 'verified'])
         | Inventory
         |--------------------------------------------------------------------------
         */
-        Route::inertia('/products', 'bulkstore/Products')->name('products');
+        Route::get('/products',[ProductController::class,'showProducts']);
         Route::inertia('/stock', 'bulkstore/Stock')->name('stock');
         Route::inertia('/batches', 'bulkstore/Batches')->name('batches');
-        Route::inertia('/expiry', 'bulkstore/Expiry')->name('expiry');
-        Route::inertia('/stock-pricing', 'bulkstore/StockPricing')->name('stock-pricing');
+        Route::get('/expiry', [ProductController::class,'getExpiry']);
+        Route::get('/stock-pricing', [ProductController::class,'getStockPricing']);
 
         /*
         |--------------------------------------------------------------------------
@@ -64,7 +65,7 @@ Route::middleware(['auth', 'verified'])
         Route::get('/receive/product/{uuid}', [ProductController::class, 'receiveProduct'])->name('receive.product');
         Route::inertia('/issue', 'bulkstore/Issue')->name('issue');
         Route::inertia('/transfer', 'bulkstore/Transfer')->name('transfer');
-        Route::inertia('/adjustments', 'bulkstore/Adjustments')->name('adjustments');
+        Route::get('/adjustments', [ProductController::class,'adjustedProducts']);
         Route::inertia('/returns', 'bulkstore/Returns')->name('returns');
 
         /*
@@ -92,7 +93,7 @@ Route::middleware(['auth', 'verified'])
         | Suppliers
         |--------------------------------------------------------------------------
         */
-        Route::inertia('/suppliers', 'bulkstore/Suppliers')->name('suppliers');
+        Route::get('/suppliers', [SupplierController::class,'index'])->name('suppliers');
 
         /*
         |--------------------------------------------------------------------------

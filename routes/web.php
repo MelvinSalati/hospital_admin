@@ -99,13 +99,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     });
 
 Route::middleware(['auth','verified'])->group(function () {
-    Route::prefix('reception')->group(function(){
-        Route::get('/appointments',[ReceptionController::class, 'appointments']);
-        Route::get('/bills',[ReceptionController::class, 'bills']);
-        Route::get('/registry',[ReceptionController::class, 'registry']);
-        Route::get('/create', [ReceptionController::class, 'addPatient']);
-        Route::get('/reports',[ReceptionController::class, 'reports']);
-    });
+
 
     /**
      * Register patient
@@ -114,12 +108,12 @@ Route::middleware(['auth','verified'])->group(function () {
     Route::prefix('patients')->group(function () {
         Route::get('/register', [PatientController::class, 'create'])->name('patients.create');
         Route::post('/{userId}', [PatientController::class, 'store'])->name('patients.store');
-        Route::get('/{id}', [PatientController::class, 'show'])->name('patients.show');
+        Route::get('/dashboard/{id}', [PatientController::class, 'show']);
         Route::get('/{id}/edit', [PatientController::class, 'edit'])->name('patients.edit');
         Route::put('/{id}', [PatientController::class, 'update'])->name('patients.update');
         Route::delete('/{id}', [PatientController::class, 'destroy'])->name('patients.destroy');
         Route::post('/{id}/restore', [PatientController::class, 'restore'])->name('patients.restore');
-        Route::get('/search', [PatientController::class, 'search'])->name('patients.search');
+        // Route::get('/search', [PatientController::class, 'search'])->name('patients.search');
         Route::get("/payment/{patientId}", [PaymentsController::class, 'index'])->name('patient.payment');
         Route::get("/appointments/{patientId}", [AppointmentsController::class, 'index'])->name('patient.appointments');
         Route::get("/counsultations/{patientId}", [InteractionController::class, 'index'])->name('patient.consultation');
@@ -127,7 +121,7 @@ Route::middleware(['auth','verified'])->group(function () {
         Route::get("/radiology/{patientId}", [RadiologyController::class, 'index'])->name('patient.radiology');
         Route::get("/dispense/{patientId}", [PaymentsController::class, 'index'])->name('patient.dispense');
         Route::get("/prescription/{patientId}", [PaymentsController::class, 'index'])->name('patient.prescription');
-        Route::get('/bills/{patientId}', [BillsController::class, 'index'])->name('patient.bills');
+        // Route::get('/bills/{patientId}', [BillsController::class, 'index'])->name('patient.bills');
         Route::get("/payment/{patientId}", [DischargesController::class, 'index'])->name('patient.payment');
         Route::get("mch/{patientId}", [MartenalChildHealthController::class, 'index'])->name('patient.mch');
          Route::get("dental/{patientId}", [PatientDentalController::class, 'index'])->name('patient.dental');
@@ -241,7 +235,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::prefix("user")->group(function () {
         Route::get('/create', function () {
-            return Inertia::render('users/register');
+            return Inertia::render('users/register',[
+                'departments' => \App\Models\Department::all()
+            ]);
         });
     });
 
@@ -282,6 +278,9 @@ Route::get('/check-auth', function () {
 })->middleware('auth');
 
 require __DIR__ . '/bulk_store_web.php';
+require __DIR__ . '/patients_web.php';
+require __DIR__ . '/nurses_web.php';
+require __DIR__ . '/reception_web.php';
 require __DIR__ . '/settings.php';
 require __DIR__ . '/consultations.php';
 require __DIR__ . '/notifications_web.php';

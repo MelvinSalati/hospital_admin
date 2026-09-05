@@ -8,11 +8,16 @@ use App\Models\Patients\PrescriptionItem;
 use App\Models\Payments\Invoice;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use App\Models\DrugItem;
 use App\Http\Controllers\Controller;
 use App\Helpers\VisitTokenHelper;
 use App\Helpers\PaymentMethodHelper;
 use App\Models\Payments\PaymentMethod;
+use App\Models\Services\Service;
+use App\Models\Patients\PatientVisitScheme;
+use Illuminate\Support\Facades\Validator;
+use App\Helpers\ServicePricingHelper;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 
@@ -24,46 +29,58 @@ class PrescriptionsController extends Controller
         // Initialize PaymentMethodHelper for this patient
         $paymentHelper = new PaymentMethodHelper($patientId);
         $paymentMethod = $paymentHelper->getPaymentMethod();
+        // Get active visit token for payment scheme
+        $activeToken = VisitTokenHelper::getActiveTokenArray($patientId);
+        $paymentMethod = $activeToken['payment_method'] ?? 'cash';
+
+        // Get laboratory services with correct pricing
+        $pricingHelper = new ServicePricingHelper($paymentMethod);
+        $schemeSelected = PatientVisitScheme::where('token', $activeToken['token'])
+            ->value('scheme_id');
+        $drugs =  Service::where('scheme_type', $schemeSelected)
+            ->where('service_category', 'Drugs')
+            ->get();
+
 
         // Get drugs and transform them to match frontend expectations
-        $drugs = DrugItem::all()->map(function ($drug) {
-            return [
-                'id' => $drug->id,
-                'service_name' => $drug->drug_name,
-                'service_category' => $drug->therapeutic_class ?? 'Pharmacy',
-                'service_code' => $drug->drug_code,
-                'description' => $drug->generic_name ?? null,
-                'price' => $drug->selling_price ?? 0,
-                'cash_price' => $drug->selling_price ?? 0,
-                'nhima_price' => $drug->nhima_price ?? 0,
-                'insurance_price' => $drug->insurance_price ?? 0,
-                'charity_price' => $drug->charity_price ?? 0,
-                'stock' => $drug->maximum_stock_level ?? 0,
-                'dosage' => $drug->dosage_form ?? null,
-                'dosage_form' => $drug->dosage_form ?? null,
-                'frequency' => null,
-                'route' => $drug->route_of_administration ?? null,
-                'route_of_administration' => $drug->route_of_administration ?? null,
-                'presentation' => $drug->dosage_form ?? null,
-                'strength' => $drug->strength ?? null,
-                'strength_unit' => $drug->unit_of_measure ?? null,
-                'unit_of_measure' => $drug->unit_of_measure ?? null,
-                'brand_name' => $drug->brand_name,
-                'generic_name' => $drug->generic_name,
-                'pack_size' => $drug->pack_size,
-                'barcode' => $drug->barcode,
-                'is_active' => $drug->is_active,
-                'track_batches' => $drug->track_batches,
-                'track_expiry' => $drug->track_expiry,
-                'minimum_stock_level' => $drug->minimum_stock_level,
-                'maximum_stock_level' => $drug->maximum_stock_level,
-                'reorder_level' => $drug->reorder_level,
-                'purchase_price' => $drug->purchase_price,
-                'selling_price' => $drug->selling_price,
-                // Keep original drug data for reference
-                '_original' => $drug->toArray(),
-            ];
-        });
+        // $drugs = DrugItem::all()->map(function ($drug) {
+        //     return [
+        //         'id' => $drug->id,
+        //         'service_name' => $drug->drug_name,
+        //         'service_category' => $drug->therapeutic_class ?? 'Pharmacy',
+        //         'service_code' => $drug->drug_code,
+        //         'description' => $drug->generic_name ?? null,
+        //         'price' => $drug->selling_price ?? 0,
+        //         'cash_price' => $drug->selling_price ?? 0,
+        //         'nhima_price' => $drug->nhima_price ?? 0,
+        //         'insurance_price' => $drug->insurance_price ?? 0,
+        //         'charity_price' => $drug->charity_price ?? 0,
+        //         'stock' => $drug->maximum_stock_level ?? 0,
+        //         'dosage' => $drug->dosage_form ?? null,
+        //         'dosage_form' => $drug->dosage_form ?? null,
+        //         'frequency' => null,
+        //         'route' => $drug->route_of_administration ?? null,
+        //         'route_of_administration' => $drug->route_of_administration ?? null,
+        //         'presentation' => $drug->dosage_form ?? null,
+        //         'strength' => $drug->strength ?? null,
+        //         'strength_unit' => $drug->unit_of_measure ?? null,
+        //         'unit_of_measure' => $drug->unit_of_measure ?? null,
+        //         'brand_name' => $drug->brand_name,
+        //         'generic_name' => $drug->generic_name,
+        //         'pack_size' => $drug->pack_size,
+        //         'barcode' => $drug->barcode,
+        //         'is_active' => $drug->is_active,
+        //         'track_batches' => $drug->track_batches,
+        //         'track_expiry' => $drug->track_expiry,
+        //         'minimum_stock_level' => $drug->minimum_stock_level,
+        //         'maximum_stock_level' => $drug->maximum_stock_level,
+        //         'reorder_level' => $drug->reorder_level,
+        //         'purchase_price' => $drug->purchase_price,
+        //         'selling_price' => $drug->selling_price,
+        //         // Keep original drug data for reference
+        //         '_original' => $drug->toArray(),
+        //     ];
+        // });
 
         // Get default payment method (if needed for display)
         $defaultPaymentMethod = PaymentMethod::where('patient_id', $patientId)
@@ -77,9 +94,6 @@ class PrescriptionsController extends Controller
                 ->get(),
             'services' => $drugs, // Now properly transformed for frontend
             'patientId' => $patientId,
-            'payment_method' => $paymentMethod,
-            'price_column' => $paymentHelper->getPriceColumn(),
-            'default_payment_method' => $defaultPaymentMethod
         ]);
     }
 
@@ -104,11 +118,11 @@ class PrescriptionsController extends Controller
         return 'VISIT-' . $patientId . '-' . date('YmdHis');
     }
 
-    public function store(Request $request, $patientId)
+    public function store(Request $request, int $patientId)
     {
-        $request->validate([
+        $validator = Validator::make($request->all(), [
             'items' => 'required|array',
-            'items.*.id' => 'required|exists:drug_items,id',
+            'items.*.id' => 'required|exists:services,id',
             'items.*.quantity' => 'required|integer|min:1',
             'items.*.dosage' => 'nullable|string',
             'items.*.frequency' => 'nullable|string',
@@ -118,11 +132,19 @@ class PrescriptionsController extends Controller
             'admission_number' => 'nullable|string',
             'is_admitted' => 'boolean',
             'clinical_notes' => 'nullable|string',
-            'scheme' => 'nullable|string|in:cash,nhima,insurance,charity,mobile_money',
         ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed.',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
 
         $patient = Patient::findOrFail($patientId);
         $visitToken = $this->token($patientId);
+        Log::info('', [$visitToken]);
         $scheme = $request->scheme ?? 'cash';
 
         DB::beginTransaction();
@@ -135,7 +157,7 @@ class PrescriptionsController extends Controller
 
             // Prepare items for storage
             foreach ($request->items as $index => $item) {
-                $drug = DrugItem::find($item['id']);
+                $drug = Service::find($item['id']);
                 if (!$drug) {
                     throw new \Exception("Drug with ID {$item['id']} not found");
                 }
@@ -149,9 +171,9 @@ class PrescriptionsController extends Controller
                 $prescriptionItemsArray[] = [
                     'id' => $drug->id,
                     'drug_id' => $drug->id,
-                    'drug_name' => $drug->drug_name,
-                    'service_name' => $drug->drug_name,
-                    'name' => $drug->drug_name,
+                    'drug_name' => $drug->drug_name ?? $drug->service_name ?? 'Unknown Drug',
+                    'service_name' => $drug->service_name,
+                    'name' => $drug->service_name,
                     'category' => $drug->therapeutic_class ?? 'Pharmacy',
                     'quantity' => $item['quantity'],
                     'price' => $price,
@@ -175,12 +197,25 @@ class PrescriptionsController extends Controller
                     'pack_size' => $drug->pack_size,
                 ];
 
+                // FIX: Ensure drug_name is not null with proper fallback
+                $drugName = $drug->drug_name ?? $drug->service_name ?? null;
+
+                // Log warning if drug_name is missing
+                if (empty($drugName)) {
+                    \Log::warning('Drug missing name fields', [
+                        'drug_id' => $drug->id,
+                        'service_name' => $drug->service_name,
+                        'drug_name' => $drug->drug_name
+                    ]);
+                    $drugName = 'Unknown Drug (ID: ' . $drug->id . ')';
+                }
+
                 // Format for prescription_items table (for payment tracking)
                 $prescriptionItemsForTable[] = [
                     'visit_token' => $visitToken,
                     'patient_id' => $patient->id,
                     'service_id' => $drug->id,
-                    'drug_name' => $drug->drug_name,
+                    'drug_name' => $drugName, // FIX: Using fallback value
                     'drug_code' => $drug->drug_code ?? null,
                     'drug_category' => $drug->therapeutic_class ?? null,
                     'dosage' => $item['dosage'] ?? $drug->dosage_form ?? null,
@@ -401,7 +436,7 @@ class PrescriptionsController extends Controller
             }
         } catch (\Exception $e) {
             DB::rollBack();
-            \Log::error('Prescription creation failed: ' . $e->getMessage());
+            Log::error('Prescription creation failed: ' . $e->getMessage());
             \Log::error('Stack trace: ' . $e->getTraceAsString());
             return response()->json([
                 'success' => false,
@@ -410,7 +445,6 @@ class PrescriptionsController extends Controller
             ], 500);
         }
     }
-
     /**
      * Get drugs with correct pricing based on patient's payment method
      * API endpoint for dynamic drug pricing

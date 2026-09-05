@@ -1,7 +1,7 @@
-import { Head } from '@inertiajs/react';
-import { DollarSign, RefreshCw, Edit, Eye, Wallet, Users } from 'lucide-react';
+import { Head, usePage } from '@inertiajs/react';
+import { DollarSign, RefreshCw, Edit, Eye, Wallet, Save } from 'lucide-react';
 import { X, Loader2 } from 'lucide-react';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { toast } from 'react-hot-toast';
 import Container from '@/components/container';
 import PageHeader from '@/components/PageHeader';
@@ -18,47 +18,35 @@ import Http from '@/utils/Http';
 // ============================================
 
 interface Product {
-    id: number;
+    product_id: number;
     product_uuid: string;
-    description: string;
     product_name: string;
-    barcode: string | null;
     product_code: string;
-    product_description: string | null;
+    description: string;
     category_id: number;
-    category?: {
-        id: number;
-        name: string;
-        description: string;
-    };
+    category_name?: string;
     strength: string | null;
     unit: string | null;
     form: string | null;
     supplier_id: number | null;
-    supplier?: {
-        id: number;
-        supplier_name: string;
-        supplier_code: string;
-    };
-    created_by: number | null;
-    created_by_department: number | null;
+    supplier_name?: string;
+    // Pricing fields
+    cash_price: number;
+    insurance_price: number;
+    // Stock fields
+    total_stock?: number;
+    stock_status?: string;
+    batch_number?: string;
+    expiry_date?: string;
+    unit_cost?: number;
+    last_updated?: string;
+    is_active: boolean;
     created_at: string;
     updated_at: string;
-    // Pricing fields
-    unit_cost?: number;
-    cash_price?: number;
-    insurance_price?: number;
-    markup_percentage?: number;
-    current_stock?: number;
-    reorder_level?: number;
-}
-
-interface ProductStats {
-    total: number;
-    with_pricing: number;
-    without_pricing: number;
-    total_categories: number;
-    total_suppliers: number;
+    nearest_expiry?: string;
+    expiry_status?: string;
+    active_batches?: number;
+    days_remaining?: number;
 }
 
 // ============================================
@@ -68,10 +56,10 @@ interface ProductStats {
 interface CustomModalProps {
     isOpen: boolean;
     onClose: () => void;
-    title: string;
+    title: React.ReactNode;
     description?: string;
     children: React.ReactNode;
-    maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl';
+    maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl';
     showCloseButton?: boolean;
     className?: string;
     footer?: React.ReactNode;
@@ -97,6 +85,8 @@ const CustomModal: React.FC<CustomModalProps> = ({
         xl: 'max-w-xl',
         '2xl': 'max-w-2xl',
         '3xl': 'max-w-3xl',
+        '4xl': 'max-w-4xl',
+        '5xl': 'max-w-5xl',
     };
 
     return (
@@ -110,13 +100,19 @@ const CustomModal: React.FC<CustomModalProps> = ({
             >
                 <div className="flex flex-shrink-0 items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
                     <div className="min-w-0 flex-1">
-                        <h3 className="truncate text-base font-semibold text-slate-800 dark:text-slate-200">
-                            {title}
-                        </h3>
-                        {description && (
-                            <p className="truncate text-xs text-slate-500 dark:text-slate-400">
-                                {description}
-                            </p>
+                        {typeof title === 'string' ? (
+                            <>
+                                <h3 className="truncate text-base font-semibold text-slate-800 dark:text-slate-200">
+                                    {title}
+                                </h3>
+                                {description && (
+                                    <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+                                        {description}
+                                    </p>
+                                )}
+                            </>
+                        ) : (
+                            title
                         )}
                     </div>
                     {showCloseButton && (
@@ -142,89 +138,50 @@ const CustomModal: React.FC<CustomModalProps> = ({
 };
 
 // ============================================
-// PRICE CALCULATION PREVIEW COMPONENT
+// PRICE PREVIEW COMPONENT
 // ============================================
 
-const PricePreview = ({
-    unitCost,
-    cashPrice,
-    insurancePrice,
-    markupPercentage,
-}: any) => {
-    if (!unitCost || unitCost <= 0) return null;
-
-    const insuranceMarkup =
-        unitCost > 0 && insurancePrice > 0
-            ? Math.round(((insurancePrice - unitCost) / unitCost) * 100)
-            : 0;
+const PricePreview = ({ cashPrice, insurancePrice }: any) => {
+    const hasPrices = cashPrice > 0 || insurancePrice > 0;
+    if (!hasPrices) return null;
 
     return (
         <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
             <p className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                Price Calculation Preview
+                Price Summary
             </p>
 
             {cashPrice > 0 && (
                 <div className="flex items-center justify-between rounded bg-green-50 p-2 dark:bg-green-900/20">
-                    <div className="flex items-center gap-2">
-                        <Wallet className="h-4 w-4 text-green-600 dark:text-green-400" />
-                        <span className="text-xs font-medium text-green-700 dark:text-green-300">
-                            Cash Price
-                        </span>
-                    </div>
-                    <div className="text-right">
-                        <span className="text-xs font-semibold text-green-700 dark:text-green-300">
-                            {new Intl.NumberFormat('en-ZM', {
-                                style: 'currency',
-                                currency: 'ZMW',
-                            })
-                                .format(cashPrice)
-                                .replace('ZMW', 'ZK')}
-                        </span>
-                        <span className="ml-2 text-xs text-green-600 dark:text-green-400">
-                            (Markup: {markupPercentage || 0}%)
-                        </span>
-                    </div>
+                    <span className="text-xs font-medium text-green-700 dark:text-green-300">
+                        Cash Price
+                    </span>
+                    <span className="text-xs font-semibold text-green-700 dark:text-green-300">
+                        {new Intl.NumberFormat('en-ZM', {
+                            style: 'currency',
+                            currency: 'ZMW',
+                        })
+                            .format(cashPrice)
+                            .replace('ZMW', 'ZK')}
+                    </span>
                 </div>
             )}
 
             {insurancePrice > 0 && (
-                <div className="flex items-center justify-between rounded bg-blue-50 p-2 dark:bg-blue-900/20">
-                    <div className="flex items-center gap-2">
-                        <Users className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                        <span className="text-xs font-medium text-blue-700 dark:text-blue-300">
-                            Insurance Price
-                        </span>
-                    </div>
-                    <div className="text-right">
-                        <span className="text-xs font-semibold text-blue-700 dark:text-blue-300">
-                            {new Intl.NumberFormat('en-ZM', {
-                                style: 'currency',
-                                currency: 'ZMW',
-                            })
-                                .format(insurancePrice)
-                                .replace('ZMW', 'ZK')}
-                        </span>
-                        <span className="ml-2 text-xs text-blue-600 dark:text-blue-400">
-                            (Markup: {insuranceMarkup}%)
-                        </span>
-                    </div>
+                <div className="flex items-center justify-between rounded bg-purple-50 p-2 dark:bg-purple-900/20">
+                    <span className="text-xs font-medium text-purple-700 dark:text-purple-300">
+                        Insurance Price
+                    </span>
+                    <span className="text-xs font-semibold text-purple-700 dark:text-purple-300">
+                        {new Intl.NumberFormat('en-ZM', {
+                            style: 'currency',
+                            currency: 'ZMW',
+                        })
+                            .format(insurancePrice)
+                            .replace('ZMW', 'ZK')}
+                    </span>
                 </div>
             )}
-
-            <div className="flex items-center justify-between rounded bg-slate-100 p-2 dark:bg-slate-700">
-                <span className="text-xs text-slate-600 dark:text-slate-400">
-                    Unit Cost
-                </span>
-                <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    {new Intl.NumberFormat('en-ZM', {
-                        style: 'currency',
-                        currency: 'ZMW',
-                    })
-                        .format(unitCost)
-                        .replace('ZMW', 'ZK')}
-                </span>
-            </div>
         </div>
     );
 };
@@ -234,12 +191,14 @@ const PricePreview = ({
 // ============================================
 
 export default function StockPricing() {
+    const { props } = usePage();
+    const { products } = props as any;
+
     const [loading, setLoading] = useState(false);
-    const [products, setProducts] = useState<Product[]>([]);
+    const [productList, setProductList] = useState<Product[]>([]);
+    const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [categoryFilter, setCategoryFilter] = useState<string>('');
-    const [supplierFilter, setSupplierFilter] = useState<string>('');
-    const [activeTab, setActiveTab] = useState<string>('all');
     const [pagination, setPagination] = useState({
         currentPage: 1,
         pageSize: 10,
@@ -257,20 +216,8 @@ export default function StockPricing() {
 
     // Form states for editing
     const [editForm, setEditForm] = useState({
-        unit_cost: 0,
         cash_price: 0,
         insurance_price: 0,
-        markup_percentage: 0,
-        reorder_level: 0,
-    });
-
-    // Stats
-    const [stats, setStats] = useState<ProductStats>({
-        total: 0,
-        with_pricing: 0,
-        without_pricing: 0,
-        total_categories: 0,
-        total_suppliers: 0,
     });
 
     // ============================================
@@ -289,95 +236,119 @@ export default function StockPricing() {
             .replace('ZMW', 'ZK');
     };
 
-    const formatDate = (date: string) => {
+    const formatDateTime = (date: string) => {
         if (!date) return 'N/A';
         return new Date(date).toLocaleDateString('en-ZM', {
             year: 'numeric',
             month: 'short',
             day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
         });
     };
 
     const getCategoryName = (categoryId: number | null) => {
-        const categories: Record<number, string> = {
-            1: 'Pharmaceuticals',
-            2: 'Medical Supplies',
-            3: 'Laboratory',
-            4: 'IV Fluids',
-            5: 'Surgical',
-            6: 'Diagnostic',
-        };
-        return categoryId
-            ? categories[categoryId] || `Category ${categoryId}`
-            : 'Uncategorized';
+        if (!categoryId) return 'Uncategorized';
+        const product = productList.find((p) => p.category_id === categoryId);
+        return product?.category_name || `Category ${categoryId}`;
+    };
+
+    const getStockStatus = (
+        totalStock: number | string | undefined,
+    ): 'GOOD' | 'LOW_STOCK' | 'OUT_OF_STOCK' => {
+        const stock =
+            typeof totalStock === 'string'
+                ? parseFloat(totalStock)
+                : totalStock || 0;
+        if (stock <= 0) return 'OUT_OF_STOCK';
+        if (stock <= 10) return 'LOW_STOCK';
+        return 'GOOD';
+    };
+
+    const getProductId = (product: Product): number => {
+        return product.product_id || 0;
+    };
+
+    const getTotalStock = (product: Product): number => {
+        if (product.total_stock !== undefined) {
+            return typeof product.total_stock === 'string'
+                ? parseFloat(product.total_stock)
+                : product.total_stock;
+        }
+        return 0;
     };
 
     // ============================================
-    // FETCH DATA
+    // DYNAMIC CATEGORY OPTIONS
     // ============================================
 
-    const fetchProducts = useCallback(async () => {
-        setLoading(true);
-        try {
-            const params: any = {
-                page: pagination.currentPage,
-                page_size: pagination.pageSize,
-            };
+    const categoryOptions = useMemo(() => {
+        const categoryMap = new Map<number, string>();
+        products?.forEach((item: Product) => {
+            if (item.category_id && item.category_name) {
+                categoryMap.set(item.category_id, item.category_name);
+            }
+        });
+        return [
+            { value: '', label: 'All Categories' },
+            ...Array.from(categoryMap.entries()).map(([id, name]) => ({
+                value: String(id),
+                label: name,
+            })),
+        ];
+    }, [products]);
 
-            if (searchTerm) params.search = searchTerm;
-            if (categoryFilter) params.category = categoryFilter;
-            if (supplierFilter) params.supplier = supplierFilter;
-
-            const response = await Http.get('/bulk-store/products/all');
-            const productsData = response.data.products || [];
-
-            setProducts(productsData);
-
-            // Calculate stats
-            const withPricing = productsData.filter(
-                (p: Product) => p.unit_cost && p.unit_cost > 0,
-            ).length;
-
-            const categories = new Set(
-                productsData.map((p: Product) => p.category_id),
-            ).size;
-            const suppliers = new Set(
-                productsData.map((p: Product) => p.supplier_id),
-            ).size;
-
-            setStats({
-                total: productsData.length || 0,
-                with_pricing: withPricing,
-                without_pricing: (productsData.length || 0) - withPricing,
-                total_categories: categories,
-                total_suppliers: suppliers,
-            });
-
-            setPagination((prev) => ({
-                ...prev,
-                totalItems: productsData.length || 0,
-                totalPages: Math.ceil(
-                    (productsData.length || 0) / prev.pageSize,
-                ),
-                currentPage: 1,
-            }));
-        } catch (error) {
-            console.error('Failed to fetch products:', error);
-            toast.error('Failed to load products');
-        } finally {
-            setLoading(false);
-        }
-    }, [
-        pagination.currentPage,
-        pagination.pageSize,
-        searchTerm,
-        categoryFilter,
-        supplierFilter,
-    ]);
+    // ============================================
+    // INITIALIZE PRODUCTS FROM PROPS
+    // ============================================
 
     useEffect(() => {
-        fetchProducts();
-    }, [fetchProducts]);
+        if (products) {
+            const productData = Array.isArray(products)
+                ? products
+                : products.data || [];
+            setProductList(productData);
+            setFilteredProducts(productData);
+            setPagination((prev) => ({
+                ...prev,
+                totalItems: productData.length || 0,
+                totalPages:
+                    Math.ceil((productData.length || 0) / prev.pageSize) || 1,
+            }));
+        }
+    }, [products]);
+
+    // ============================================
+    // FILTER PRODUCTS
+    // ============================================
+
+    useEffect(() => {
+        let filtered = productList;
+
+        if (searchTerm) {
+            const term = searchTerm.toLowerCase();
+            filtered = filtered.filter(
+                (product) =>
+                    product.product_name?.toLowerCase().includes(term) ||
+                    product.product_code?.toLowerCase().includes(term) ||
+                    product.description?.toLowerCase().includes(term),
+            );
+        }
+
+        if (categoryFilter) {
+            filtered = filtered.filter(
+                (product) => product.category_id === parseInt(categoryFilter),
+            );
+        }
+
+        setFilteredProducts(filtered);
+        setPagination((prev) => ({
+            ...prev,
+            totalItems: filtered.length,
+            totalPages: Math.ceil(filtered.length / prev.pageSize) || 1,
+            currentPage: 1,
+        }));
+    }, [searchTerm, categoryFilter, productList]);
 
     // ============================================
     // HANDLERS
@@ -391,48 +362,67 @@ export default function StockPricing() {
     const handleEdit = (product: Product) => {
         setSelectedProduct(product);
         setEditForm({
-            unit_cost: product.unit_cost || 0,
             cash_price: product.cash_price || 0,
             insurance_price: product.insurance_price || 0,
-            markup_percentage: product.markup_percentage || 0,
-            reorder_level: product.reorder_level || 0,
         });
         setShowEditModal(true);
     };
 
     const handleRefresh = () => {
-        fetchProducts();
-        toast.success('Data refreshed');
+        setLoading(true);
+        setTimeout(() => {
+            setLoading(false);
+            toast.success('Data refreshed');
+        }, 500);
     };
 
-    const handleTabChange = (tab: string) => {
-        setActiveTab(tab);
-        setPagination((prev) => ({ ...prev, currentPage: 1 }));
-    };
-
+    // ✅ FIXED: Properly handle save with correct response checking
     const handleSavePricing = async () => {
-        if (!selectedProduct) return;
+        if (!selectedProduct) {
+            toast.error('No product selected');
+            return;
+        }
+
+        const productId = getProductId(selectedProduct);
+        if (!productId) {
+            toast.error('Invalid product ID');
+            console.error('Product ID is undefined:', selectedProduct);
+            return;
+        }
+
         setIsProcessing(true);
 
         try {
-            const response = await Http.put(
-                `/bulk-store/products/${selectedProduct.id}/pricing`,
+            const response = await Http.post(
+                `/bulk-store/products/${productId}/pricing`,
                 {
-                    unit_cost: editForm.unit_cost,
                     cash_price: editForm.cash_price,
                     insurance_price: editForm.insurance_price,
-                    markup_percentage: editForm.markup_percentage,
-                    reorder_level: editForm.reorder_level,
                 },
             );
 
-            if (response.data.success) {
+            console.log('Response:', response);
+
+            // ✅ FIXED: Check response status correctly
+            if (response.status === 200 || response.data.success) {
                 toast.success(
                     `Pricing updated for ${selectedProduct.product_name}`,
                 );
                 setShowEditModal(false);
                 setSelectedProduct(null);
-                await fetchProducts();
+
+                // Update local product list
+                const updatedProducts = productList.map((p) =>
+                    p.product_id === productId
+                        ? {
+                              ...p,
+                              cash_price: editForm.cash_price,
+                              insurance_price: editForm.insurance_price,
+                          }
+                        : p,
+                );
+                setProductList(updatedProducts);
+                setFilteredProducts(updatedProducts);
             } else {
                 throw new Error(
                     response.data.message || 'Failed to update pricing',
@@ -449,58 +439,11 @@ export default function StockPricing() {
     };
 
     const handleUpdateForm = (field: string, value: number) => {
-        const updatedForm = { ...editForm, [field]: value };
-
-        // Auto-calculate markup percentage if unit_cost and cash_price are set
-        if (field === 'unit_cost' || field === 'cash_price') {
-            const unitCost = field === 'unit_cost' ? value : editForm.unit_cost;
-            const cashPrice =
-                field === 'cash_price' ? value : editForm.cash_price;
-            if (unitCost > 0 && cashPrice > 0) {
-                const markup = ((cashPrice - unitCost) / unitCost) * 100;
-                updatedForm.markup_percentage = Math.round(markup * 100) / 100;
-            }
-        }
-
-        // Auto-calculate cash_price if unit_cost and markup_percentage are set
-        if (field === 'unit_cost' || field === 'markup_percentage') {
-            const unitCost = field === 'unit_cost' ? value : editForm.unit_cost;
-            const markup =
-                field === 'markup_percentage'
-                    ? value
-                    : editForm.markup_percentage;
-            if (unitCost > 0 && markup > 0) {
-                updatedForm.cash_price = unitCost * (1 + markup / 100);
-            }
-        }
-
-        setEditForm(updatedForm);
+        setEditForm((prev) => ({
+            ...prev,
+            [field]: value,
+        }));
     };
-
-    // ============================================
-    // STATS CARDS
-    // ============================================
-
-    const StatCard = ({ title, value, color, icon, subtitle }: any) => (
-        <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-            <div className="flex items-center justify-between">
-                <div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                        {title}
-                    </p>
-                    <p className="text-xl font-bold text-slate-800 dark:text-slate-200">
-                        {value}
-                    </p>
-                    {subtitle && (
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
-                            {subtitle}
-                        </p>
-                    )}
-                </div>
-                <div className={`rounded-full p-1.5 ${color}`}>{icon}</div>
-            </div>
-        </div>
-    );
 
     // ============================================
     // TABLE DEFINITIONS
@@ -521,7 +464,7 @@ export default function StockPricing() {
         {
             id: 'product_name',
             label: 'Product Name',
-            minWidth: 150,
+            minWidth: 180,
             format: (value, row) => (
                 <div>
                     <div className="text-sm font-medium text-slate-800 dark:text-slate-200">
@@ -530,6 +473,25 @@ export default function StockPricing() {
                     {row.strength && (
                         <div className="text-xs text-slate-500 dark:text-slate-400">
                             {row.strength} {row.form ? `(${row.form})` : ''}
+                        </div>
+                    )}
+                    {row.total_stock !== undefined && (
+                        <div className="flex items-center gap-1 text-xs">
+                            <span className="text-slate-400">Stock:</span>
+                            <span
+                                className={`font-medium ${
+                                    getTotalStock(row) <= 10
+                                        ? 'text-red-600'
+                                        : 'text-green-600'
+                                }`}
+                            >
+                                {row.total_stock}
+                            </span>
+                            {row.active_batches && (
+                                <span className="text-slate-400">
+                                    • {row.active_batches} batches
+                                </span>
+                            )}
                         </div>
                     )}
                 </div>
@@ -557,27 +519,9 @@ export default function StockPricing() {
             ),
         },
         {
-            id: 'unit_cost',
-            label: 'Unit Cost',
-            minWidth: 110,
-            align: 'right',
-            format: (value) => (
-                <div className="text-right">
-                    {value && value > 0 ? (
-                        <span className="font-semibold text-slate-800 dark:text-slate-200">
-                            {formatCurrency(value)}
-                        </span>
-                    ) : (
-                        <span className="text-xs text-slate-400">Not set</span>
-                    )}
-                </div>
-            ),
-            sortable: true,
-        },
-        {
             id: 'cash_price',
-            label: 'Cash Price',
-            minWidth: 110,
+            label: 'Cash',
+            minWidth: 100,
             align: 'right',
             format: (value) => (
                 <div className="text-right">
@@ -586,7 +530,7 @@ export default function StockPricing() {
                             {formatCurrency(value)}
                         </span>
                     ) : (
-                        <span className="text-xs text-slate-400">Not set</span>
+                        <span className="text-xs text-slate-400">0.00</span>
                     )}
                 </div>
             ),
@@ -594,63 +538,46 @@ export default function StockPricing() {
         },
         {
             id: 'insurance_price',
-            label: 'Insurance Price',
-            minWidth: 120,
-            align: 'right',
-            format: (value) => (
-                <div className="text-right">
-                    {value && value > 0 ? (
-                        <span className="font-semibold text-blue-600 dark:text-blue-400">
-                            {formatCurrency(value)}
-                        </span>
-                    ) : (
-                        <span className="text-xs text-slate-400">Not set</span>
-                    )}
-                </div>
-            ),
-            sortable: true,
-        },
-        {
-            id: 'markup_percentage',
-            label: 'Markup %',
-            minWidth: 90,
+            label: 'Insurance',
+            minWidth: 100,
             align: 'right',
             format: (value) => (
                 <div className="text-right">
                     {value && value > 0 ? (
                         <span className="font-semibold text-purple-600 dark:text-purple-400">
-                            {value}%
+                            {formatCurrency(value)}
                         </span>
                     ) : (
-                        <span className="text-xs text-slate-400">-</span>
+                        <span className="text-xs text-slate-400">0.00</span>
                     )}
                 </div>
             ),
             sortable: true,
         },
         {
-            id: 'current_stock',
-            label: 'Stock',
-            minWidth: 80,
+            id: 'stock_status',
+            label: 'Status',
+            minWidth: 100,
             align: 'center',
-            format: (value, row) => (
-                <div className="text-center">
-                    <span
-                        className={`font-semibold ${
-                            (value || 0) <= (row.reorder_level || 0)
-                                ? 'text-red-600 dark:text-red-400'
-                                : 'text-slate-800 dark:text-slate-200'
-                        }`}
-                    >
-                        {value || 0}
-                    </span>
-                    {row.reorder_level && row.reorder_level > 0 && (
-                        <div className="text-[10px] text-slate-400">
-                            Reorder: {row.reorder_level}
-                        </div>
-                    )}
-                </div>
-            ),
+            format: (value, row) => {
+                const status = getStockStatus(row.total_stock);
+                const statusStyles = {
+                    GOOD: 'bg-green-600',
+                    LOW_STOCK: 'bg-yellow-500',
+                    OUT_OF_STOCK: 'bg-red-600',
+                };
+                const statusLabels = {
+                    GOOD: 'In Stock',
+                    LOW_STOCK: 'Low Stock',
+                    OUT_OF_STOCK: 'Out of Stock',
+                };
+
+                return (
+                    <Badge className={statusStyles[status]}>
+                        {statusLabels[status]}
+                    </Badge>
+                );
+            },
         },
     ];
 
@@ -669,39 +596,6 @@ export default function StockPricing() {
         },
     ];
 
-    // Filter options
-    const categoryOptions = [
-        { value: '1', label: 'Pharmaceuticals' },
-        { value: '2', label: 'Medical Supplies' },
-        { value: '3', label: 'Laboratory' },
-        { value: '4', label: 'IV Fluids' },
-        { value: '5', label: 'Surgical' },
-        { value: '6', label: 'Diagnostic' },
-    ];
-
-    const supplierOptions = [
-        { value: '1', label: 'PharmaCare Ltd' },
-        { value: '2', label: 'MediSupplies Inc' },
-        { value: '3', label: 'HealthPlus Pharma' },
-        { value: '4', label: 'GlobalMed Distributors' },
-        { value: '5', label: 'ZamPharm Ltd' },
-    ];
-
-    // Tabs
-    const tabs = [
-        { key: 'all', label: 'All Products', count: stats.total },
-        {
-            key: 'with_pricing',
-            label: 'With Pricing',
-            count: stats.with_pricing,
-        },
-        {
-            key: 'without_pricing',
-            label: 'Without Pricing',
-            count: stats.without_pricing,
-        },
-    ];
-
     // ============================================
     // RENDER
     // ============================================
@@ -709,25 +603,18 @@ export default function StockPricing() {
     return (
         <AppLayout
             breadcrumbs={[
-                {
-                    title: 'Bulk Store',
-                    href: '/bulkstore',
-                },
-                {
-                    title: 'Stock Pricing',
-                    href: '/bulkstore/stock-pricing',
-                },
+                { title: 'Bulk Store', href: '/bulkstore' },
+                { title: 'Stock Pricing', href: '/bulkstore/stock-pricing' },
             ]}
         >
             <Head title="Stock Pricing" />
 
-            <div className="min-h-screen bg-blue-50 px-4 py-6 dark:bg-slate-900">
+            <div className="h-full bg-blue-50 px-4 py-6 dark:bg-slate-900">
                 <Container>
-                    {/* Header */}
                     <PageHeader
                         icon={<DollarSign className="h-6 w-6" />}
                         title="Stock Pricing"
-                        subtitle="Manage stock pricing information for all products"
+                        subtitle="Manage pricing for all products including drugs, lab tests, and procedures"
                         actions={[
                             {
                                 label: 'Refresh',
@@ -739,41 +626,10 @@ export default function StockPricing() {
                         ]}
                     />
 
-              
-
-                    {/* Tabs */}
-                    <div className="mt-6 flex flex-wrap gap-2 border-b border-slate-200 pb-2 dark:border-slate-700">
-                        {tabs.map((tab) => (
-                            <button
-                                key={tab.key}
-                                onClick={() => handleTabChange(tab.key)}
-                                className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-                                    activeTab === tab.key
-                                        ? 'bg-blue-600 text-white shadow-sm'
-                                        : 'text-slate-600 hover:bg-slate-200 dark:text-slate-300 dark:hover:bg-slate-700'
-                                }`}
-                            >
-                                {tab.label}
-                                {tab.count > 0 && (
-                                    <span
-                                        className={`ml-1 rounded-full px-2 py-0.5 text-xs ${
-                                            activeTab === tab.key
-                                                ? 'bg-white/20 text-white'
-                                                : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
-                                        }`}
-                                    >
-                                        {tab.count}
-                                    </span>
-                                )}
-                            </button>
-                        ))}
-                    </div>
-
-                    {/* Table */}
                     <div className="mt-6">
                         <ReusableTable
                             columns={columns}
-                            data={products}
+                            data={filteredProducts}
                             actions={actions}
                             loading={loading}
                             title="Products"
@@ -784,15 +640,6 @@ export default function StockPricing() {
                             filterPlaceholder="Search by product name, code, or description..."
                             statusFilterKey="category_id"
                             statusOptions={categoryOptions}
-                            additionalFilters={[
-                                {
-                                    key: 'supplier_id',
-                                    label: 'Supplier',
-                                    options: supplierOptions,
-                                    value: supplierFilter,
-                                    onChange: setSupplierFilter,
-                                },
-                            ]}
                             emptyMessage="No products found"
                             onSearchChange={(value) => {
                                 setSearchTerm(value);
@@ -814,12 +661,7 @@ export default function StockPricing() {
                                     currentPage: 1,
                                 }));
                             }}
-                            pagination={{
-                                currentPage: pagination.currentPage,
-                                pageSize: pagination.pageSize,
-                                totalItems: pagination.totalItems,
-                                totalPages: pagination.totalPages,
-                            }}
+                            pagination={pagination}
                         />
                     </div>
                 </Container>
@@ -867,7 +709,6 @@ export default function StockPricing() {
             >
                 {selectedProduct && (
                     <div className="space-y-4">
-                        {/* Header */}
                         <div className="flex items-start justify-between">
                             <div>
                                 <h4 className="text-lg font-bold text-slate-800 dark:text-slate-200">
@@ -884,67 +725,89 @@ export default function StockPricing() {
                                             selectedProduct.category_id,
                                         )}
                                     </span>
+                                    {selectedProduct.strength && (
+                                        <>
+                                            <span>•</span>
+                                            <span>
+                                                {selectedProduct.strength}
+                                            </span>
+                                        </>
+                                    )}
                                 </div>
                             </div>
-                            <Badge variant="outline" className="text-xs">
-                                {selectedProduct.unit || 'N/A'}
+                            <Badge
+                                className={
+                                    selectedProduct.is_active !== false
+                                        ? 'bg-green-600'
+                                        : 'bg-red-600'
+                                }
+                            >
+                                {selectedProduct.is_active !== false
+                                    ? 'Active'
+                                    : 'Inactive'}
                             </Badge>
                         </div>
 
-                        {/* Product Details */}
-                        <div className="grid grid-cols-2 gap-2 rounded-lg bg-slate-50 p-3 dark:bg-slate-800/50">
-                            <div>
-                                <Label className="text-[10px] text-slate-500">
-                                    Strength
-                                </Label>
-                                <p className="text-sm text-slate-800 dark:text-slate-200">
-                                    {selectedProduct.strength || 'N/A'}
-                                </p>
+                        {selectedProduct.total_stock !== undefined && (
+                            <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                                <div className="grid grid-cols-3 gap-3">
+                                    <div>
+                                        <Label className="text-[10px] text-slate-500">
+                                            Total Stock
+                                        </Label>
+                                        <p
+                                            className={`text-lg font-bold ${
+                                                getTotalStock(
+                                                    selectedProduct,
+                                                ) <= 10
+                                                    ? 'text-red-600'
+                                                    : 'text-slate-800 dark:text-slate-200'
+                                            }`}
+                                        >
+                                            {selectedProduct.total_stock}
+                                        </p>
+                                    </div>
+                                    {selectedProduct.active_batches !==
+                                        undefined && (
+                                        <div>
+                                            <Label className="text-[10px] text-slate-500">
+                                                Active Batches
+                                            </Label>
+                                            <p className="text-lg font-bold text-slate-800 dark:text-slate-200">
+                                                {selectedProduct.active_batches}
+                                            </p>
+                                        </div>
+                                    )}
+                                    {selectedProduct.nearest_expiry && (
+                                        <div>
+                                            <Label className="text-[10px] text-slate-500">
+                                                Nearest Expiry
+                                            </Label>
+                                            <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                                                {formatDateTime(
+                                                    selectedProduct.nearest_expiry,
+                                                )}
+                                            </p>
+                                            {selectedProduct.days_remaining && (
+                                                <p className="text-xs text-slate-400">
+                                                    {
+                                                        selectedProduct.days_remaining
+                                                    }{' '}
+                                                    days remaining
+                                                </p>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
-                            <div>
-                                <Label className="text-[10px] text-slate-500">
-                                    Form
-                                </Label>
-                                <p className="text-sm text-slate-800 dark:text-slate-200">
-                                    {selectedProduct.form || 'N/A'}
-                                </p>
-                            </div>
-                            <div>
-                                <Label className="text-[10px] text-slate-500">
-                                    Supplier
-                                </Label>
-                                <p className="text-sm text-slate-800 dark:text-slate-200">
-                                    {selectedProduct.supplier?.supplier_name ||
-                                        'N/A'}
-                                </p>
-                            </div>
-                            <div>
-                                <Label className="text-[10px] text-slate-500">
-                                    Description
-                                </Label>
-                                <p className="text-sm text-slate-800 dark:text-slate-200">
-                                    {selectedProduct.description || 'N/A'}
-                                </p>
-                            </div>
-                        </div>
+                        )}
 
-                        {/* Pricing Details */}
                         <div>
                             <Label className="text-sm font-medium text-slate-700 dark:text-slate-300">
                                 Pricing Information
                             </Label>
-                            <div className="mt-2 grid grid-cols-3 gap-2 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                            <div className="mt-2 grid grid-cols-2 gap-3 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
                                 <div>
-                                    <Label className="text-[10px] text-slate-500">
-                                        Unit Cost
-                                    </Label>
-                                    <p className="text-base font-semibold text-slate-800 dark:text-slate-200">
-                                        {formatCurrency(
-                                            selectedProduct.unit_cost,
-                                        )}
-                                    </p>
-                                </div>
-                                <div className="border-l border-slate-200 pl-2 dark:border-slate-700">
                                     <Label className="text-[10px] text-slate-500">
                                         Cash Price
                                     </Label>
@@ -954,11 +817,11 @@ export default function StockPricing() {
                                         )}
                                     </p>
                                 </div>
-                                <div className="border-l border-slate-200 pl-2 dark:border-slate-700">
+                                <div>
                                     <Label className="text-[10px] text-slate-500">
                                         Insurance Price
                                     </Label>
-                                    <p className="text-base font-semibold text-blue-600 dark:text-blue-400">
+                                    <p className="text-base font-semibold text-purple-600 dark:text-purple-400">
                                         {formatCurrency(
                                             selectedProduct.insurance_price,
                                         )}
@@ -967,32 +830,6 @@ export default function StockPricing() {
                             </div>
                         </div>
 
-                        {/* Stock Information */}
-                        <div>
-                            <Label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                                Stock Information
-                            </Label>
-                            <div className="mt-2 grid grid-cols-2 gap-2 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
-                                <div>
-                                    <Label className="text-[10px] text-slate-500">
-                                        Current Stock
-                                    </Label>
-                                    <p className="text-base font-semibold text-slate-800 dark:text-slate-200">
-                                        {selectedProduct.current_stock || 0}
-                                    </p>
-                                </div>
-                                <div>
-                                    <Label className="text-[10px] text-slate-500">
-                                        Reorder Level
-                                    </Label>
-                                    <p className="text-base font-semibold text-slate-800 dark:text-slate-200">
-                                        {selectedProduct.reorder_level || 0}
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Metadata */}
                         <div className="flex flex-wrap items-center justify-between gap-1 border-t border-slate-200 pt-2 text-[10px] text-slate-500 dark:border-slate-700 dark:text-slate-400">
                             <span>
                                 Created:{' '}
@@ -1016,35 +853,50 @@ export default function StockPricing() {
                     setShowEditModal(false);
                     setSelectedProduct(null);
                 }}
-                title="Edit Pricing"
-                description={selectedProduct?.product_name}
-                maxWidth="lg"
+                title={
+                    <div className="flex items-center gap-3">
+                        <div className="rounded-lg bg-blue-100 p-2 dark:bg-blue-900/40">
+                            <DollarSign className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                        </div>
+                        <div>
+                            <span className="text-lg font-semibold text-slate-800 dark:text-slate-200">
+                                Edit Pricing
+                            </span>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                                {selectedProduct?.product_name}
+                            </p>
+                        </div>
+                    </div>
+                }
+                maxWidth="3xl"
+                className="shadow-2xl"
                 footer={
-                    <div className="flex items-center justify-end gap-2">
+                    <div className="flex items-center justify-end gap-3 px-2 py-1">
                         <Button
                             variant="outline"
-                            size="sm"
+                            size="default"
                             onClick={() => {
                                 setShowEditModal(false);
                                 setSelectedProduct(null);
                             }}
+                            className="min-w-[100px]"
                         >
                             Cancel
                         </Button>
                         <Button
-                            size="sm"
+                            size="default"
                             onClick={handleSavePricing}
                             disabled={isProcessing}
-                            className="bg-blue-600 hover:bg-blue-700"
+                            className="min-w-[140px] bg-blue-600 hover:bg-blue-700"
                         >
                             {isProcessing ? (
                                 <>
-                                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                                     Saving...
                                 </>
                             ) : (
                                 <>
-                                    <DollarSign className="mr-1.5 h-3.5 w-3.5" />
+                                    <Save className="mr-2 h-4 w-4" />
                                     Save Pricing
                                 </>
                             )}
@@ -1053,194 +905,289 @@ export default function StockPricing() {
                 }
             >
                 {selectedProduct && (
-                    <div className="space-y-4">
-                        {/* Product Info */}
-                        <div className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/50">
-                            <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="space-y-6 p-2">
+                        {/* Header Section */}
+                        <div className="rounded-xl border border-slate-200 bg-gradient-to-r from-blue-50 to-indigo-50 p-5 dark:border-slate-700 dark:from-blue-950/30 dark:to-indigo-950/30">
+                            <div className="flex items-start justify-between">
                                 <div>
-                                    <Label className="text-[10px] text-slate-500">
-                                        Product
-                                    </Label>
-                                    <p className="font-medium text-slate-800 dark:text-slate-200">
+                                    <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200">
                                         {selectedProduct.product_name}
-                                    </p>
-                                </div>
-                                <div>
-                                    <Label className="text-[10px] text-slate-500">
-                                        Code
-                                    </Label>
-                                    <p className="font-mono font-medium text-slate-800 dark:text-slate-200">
-                                        {selectedProduct.product_code || 'N/A'}
-                                    </p>
-                                </div>
-                                <div>
-                                    <Label className="text-[10px] text-slate-500">
-                                        Category
-                                    </Label>
-                                    <p className="font-medium text-slate-800 dark:text-slate-200">
-                                        {getCategoryName(
-                                            selectedProduct.category_id,
+                                    </h2>
+                                    <div className="mt-1 flex flex-wrap items-center gap-3 text-sm text-slate-600 dark:text-slate-400">
+                                        <span className="rounded bg-white/50 px-2 py-0.5 font-mono dark:bg-slate-800/50">
+                                            {selectedProduct.product_code ||
+                                                'N/A'}
+                                        </span>
+                                        <span>•</span>
+                                        <span className="flex items-center gap-1">
+                                            <span className="text-slate-400">
+                                                Category:
+                                            </span>
+                                            <span className="font-medium text-slate-700 dark:text-slate-300">
+                                                {getCategoryName(
+                                                    selectedProduct.category_id,
+                                                )}
+                                            </span>
+                                        </span>
+                                        {selectedProduct.strength && (
+                                            <>
+                                                <span>•</span>
+                                                <span className="font-medium text-slate-700 dark:text-slate-300">
+                                                    {selectedProduct.strength}
+                                                </span>
+                                            </>
                                         )}
-                                    </p>
+                                        {selectedProduct.form && (
+                                            <>
+                                                <span>•</span>
+                                                <span className="font-medium text-slate-700 dark:text-slate-300">
+                                                    {selectedProduct.form}
+                                                </span>
+                                            </>
+                                        )}
+                                    </div>
                                 </div>
-                                <div>
-                                    <Label className="text-[10px] text-slate-500">
-                                        Unit
-                                    </Label>
-                                    <p className="font-medium text-slate-800 dark:text-slate-200">
-                                        {selectedProduct.unit || 'N/A'}
-                                    </p>
-                                </div>
+                                <Badge
+                                    className={`px-3 py-1 text-sm ${
+                                        selectedProduct.is_active !== false
+                                            ? 'bg-green-600 hover:bg-green-700'
+                                            : 'bg-red-600 hover:bg-red-700'
+                                    }`}
+                                >
+                                    {selectedProduct.is_active !== false
+                                        ? 'Active'
+                                        : 'Inactive'}
+                                </Badge>
                             </div>
                         </div>
 
-                        {/* Pricing Form */}
-                        <div className="space-y-3">
-                            {/* Unit Cost */}
-                            <div>
-                                <Label
-                                    htmlFor="unit_cost"
-                                    className="text-xs font-medium"
-                                >
-                                    Unit Cost (ZK)
+                        {/* Product Info Grid */}
+                        <div className="grid grid-cols-4 gap-4">
+                            <div className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/50">
+                                <Label className="text-[11px] font-medium tracking-wider text-slate-500 uppercase">
+                                    Unit
                                 </Label>
-                                <input
-                                    id="unit_cost"
-                                    type="number"
-                                    step="0.01"
-                                    min="0"
-                                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200"
-                                    value={editForm.unit_cost}
-                                    onChange={(e) =>
-                                        handleUpdateForm(
-                                            'unit_cost',
-                                            parseFloat(e.target.value) || 0,
-                                        )
-                                    }
-                                />
-                            </div>
-
-                            {/* Markup Percentage */}
-                            <div>
-                                <Label
-                                    htmlFor="markup_percentage"
-                                    className="text-xs font-medium"
-                                >
-                                    Markup Percentage (%)
-                                </Label>
-                                <input
-                                    id="markup_percentage"
-                                    type="number"
-                                    step="0.01"
-                                    min="0"
-                                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200"
-                                    value={editForm.markup_percentage}
-                                    onChange={(e) =>
-                                        handleUpdateForm(
-                                            'markup_percentage',
-                                            parseFloat(e.target.value) || 0,
-                                        )
-                                    }
-                                />
-                            </div>
-
-                            {/* Cash Price */}
-                            <div>
-                                <Label
-                                    htmlFor="cash_price"
-                                    className="text-xs font-medium"
-                                >
-                                    Cash Price (ZK)
-                                </Label>
-                                <div className="relative">
-                                    <div className="absolute top-1/2 left-3 -translate-y-1/2">
-                                        <Wallet className="h-4 w-4 text-slate-400" />
-                                    </div>
-                                    <input
-                                        id="cash_price"
-                                        type="number"
-                                        step="0.01"
-                                        min="0"
-                                        className="mt-1 w-full rounded-lg border border-slate-300 py-2 pr-3 pl-10 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200"
-                                        value={editForm.cash_price}
-                                        onChange={(e) =>
-                                            handleUpdateForm(
-                                                'cash_price',
-                                                parseFloat(e.target.value) || 0,
-                                            )
-                                        }
-                                    />
-                                </div>
-                                <p className="mt-0.5 text-[10px] text-slate-400">
-                                    Price for cash-paying customers
+                                <p className="mt-1 text-base font-semibold text-slate-800 dark:text-slate-200">
+                                    {selectedProduct.unit || 'N/A'}
                                 </p>
                             </div>
-
-                            {/* Insurance Price */}
-                            <div>
-                                <Label
-                                    htmlFor="insurance_price"
-                                    className="text-xs font-medium"
-                                >
-                                    Insurance Price (ZK)
-                                </Label>
-                                <div className="relative">
-                                    <div className="absolute top-1/2 left-3 -translate-y-1/2">
-                                        <Users className="h-4 w-4 text-slate-400" />
-                                    </div>
-                                    <input
-                                        id="insurance_price"
-                                        type="number"
-                                        step="0.01"
-                                        min="0"
-                                        className="mt-1 w-full rounded-lg border border-slate-300 py-2 pr-3 pl-10 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200"
-                                        value={editForm.insurance_price}
-                                        onChange={(e) =>
-                                            handleUpdateForm(
-                                                'insurance_price',
-                                                parseFloat(e.target.value) || 0,
-                                            )
-                                        }
-                                    />
+                            {selectedProduct.total_stock !== undefined && (
+                                <div className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/50">
+                                    <Label className="text-[11px] font-medium tracking-wider text-slate-500 uppercase">
+                                        Total Stock
+                                    </Label>
+                                    <p
+                                        className={`mt-1 text-base font-bold ${
+                                            getTotalStock(selectedProduct) <= 10
+                                                ? 'text-red-600'
+                                                : 'text-slate-800 dark:text-slate-200'
+                                        }`}
+                                    >
+                                        {selectedProduct.total_stock}
+                                    </p>
                                 </div>
-                                <p className="mt-0.5 text-[10px] text-slate-400">
-                                    Price for insurance-paying customers (e.g.,
-                                    NHIMA, private insurance)
-                                </p>
+                            )}
+                            {selectedProduct.active_batches !== undefined && (
+                                <div className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/50">
+                                    <Label className="text-[11px] font-medium tracking-wider text-slate-500 uppercase">
+                                        Active Batches
+                                    </Label>
+                                    <p className="mt-1 text-base font-medium text-slate-800 dark:text-slate-200">
+                                        {selectedProduct.active_batches}
+                                    </p>
+                                </div>
+                            )}
+                            {selectedProduct.nearest_expiry && (
+                                <div className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/50">
+                                    <Label className="text-[11px] font-medium tracking-wider text-slate-500 uppercase">
+                                        Nearest Expiry
+                                    </Label>
+                                    <p className="mt-1 text-base font-medium text-slate-800 dark:text-slate-200">
+                                        {formatDateTime(
+                                            selectedProduct.nearest_expiry,
+                                        )}
+                                    </p>
+                                    {selectedProduct.days_remaining && (
+                                        <p className="text-xs text-slate-400">
+                                            {selectedProduct.days_remaining}{' '}
+                                            days remaining
+                                        </p>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Divider */}
+                        <div className="border-t border-slate-200 dark:border-slate-700" />
+
+                        {/* Pricing Section */}
+                        <div>
+                            <div className="mb-4 flex items-center gap-2">
+                                <DollarSign className="h-5 w-5 text-blue-600" />
+                                <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">
+                                    Pricing Configuration
+                                </h3>
+                                <span className="ml-2 text-xs text-slate-400">
+                                    Set prices for different payment methods
+                                </span>
                             </div>
 
-                            {/* Reorder Level */}
-                            <div>
-                                <Label
-                                    htmlFor="reorder_level"
-                                    className="text-xs font-medium"
-                                >
-                                    Reorder Level
-                                </Label>
-                                <input
-                                    id="reorder_level"
-                                    type="number"
-                                    step="1"
-                                    min="0"
-                                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200"
-                                    value={editForm.reorder_level}
-                                    onChange={(e) =>
-                                        handleUpdateForm(
-                                            'reorder_level',
-                                            parseFloat(e.target.value) || 0,
-                                        )
-                                    }
-                                />
+                            <div className="grid grid-cols-2 gap-6">
+                                {/* Cash Price */}
+                                <div className="rounded-xl border border-green-200 bg-green-50/50 p-5 dark:border-green-800/30 dark:bg-green-950/20">
+                                    <div className="flex items-center gap-2">
+                                        <div className="rounded-full bg-green-100 p-2 dark:bg-green-900/40">
+                                            <Wallet className="h-5 w-5 text-green-600 dark:text-green-400" />
+                                        </div>
+                                        <div>
+                                            <Label
+                                                htmlFor="cash_price"
+                                                className="text-sm font-semibold text-green-700 dark:text-green-300"
+                                            >
+                                                Cash Price
+                                            </Label>
+                                            <p className="text-[11px] text-green-600/70 dark:text-green-400/70">
+                                                Price for cash-paying patients
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div className="relative mt-3">
+                                        <span className="absolute top-1/2 left-4 -translate-y-1/2 text-sm font-medium text-slate-500 dark:text-slate-400">
+                                            ZK
+                                        </span>
+                                        <input
+                                            id="cash_price"
+                                            type="number"
+                                            step="0.01"
+                                            min="0"
+                                            className="w-full rounded-xl border-2 border-green-300 bg-white px-4 py-3 pl-10 text-lg font-semibold text-slate-800 focus:border-green-500 focus:ring-2 focus:ring-green-500/30 focus:outline-none dark:border-green-700 dark:bg-slate-800 dark:text-slate-200 dark:focus:border-green-500"
+                                            value={editForm.cash_price}
+                                            onChange={(e) =>
+                                                handleUpdateForm(
+                                                    'cash_price',
+                                                    parseFloat(
+                                                        e.target.value,
+                                                    ) || 0,
+                                                )
+                                            }
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Insurance Price */}
+                                <div className="rounded-xl border border-purple-200 bg-purple-50/50 p-5 dark:border-purple-800/30 dark:bg-purple-950/20">
+                                    <div className="flex items-center gap-2">
+                                        <div className="rounded-full bg-purple-100 p-2 dark:bg-purple-900/40">
+                                            <Shield className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                                        </div>
+                                        <div>
+                                            <Label
+                                                htmlFor="insurance_price"
+                                                className="text-sm font-semibold text-purple-700 dark:text-purple-300"
+                                            >
+                                                Insurance Price
+                                            </Label>
+                                            <p className="text-[11px] text-purple-600/70 dark:text-purple-400/70">
+                                                Price for insurance patients
+                                                (NHIMA, private)
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div className="relative mt-3">
+                                        <span className="absolute top-1/2 left-4 -translate-y-1/2 text-sm font-medium text-slate-500 dark:text-slate-400">
+                                            ZK
+                                        </span>
+                                        <input
+                                            id="insurance_price"
+                                            type="number"
+                                            step="0.01"
+                                            min="0"
+                                            className="w-full rounded-xl border-2 border-purple-300 bg-white px-4 py-3 pl-10 text-lg font-semibold text-slate-800 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/30 focus:outline-none dark:border-purple-700 dark:bg-slate-800 dark:text-slate-200 dark:focus:border-purple-500"
+                                            value={editForm.insurance_price}
+                                            onChange={(e) =>
+                                                handleUpdateForm(
+                                                    'insurance_price',
+                                                    parseFloat(
+                                                        e.target.value,
+                                                    ) || 0,
+                                                )
+                                            }
+                                        />
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
                         {/* Price Preview */}
-                        <PricePreview
-                            unitCost={editForm.unit_cost}
-                            cashPrice={editForm.cash_price}
-                            insurancePrice={editForm.insurance_price}
-                            markupPercentage={editForm.markup_percentage}
-                        />
+                        <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-5 dark:border-slate-700 dark:bg-slate-800/30">
+                            <div className="mb-3 flex items-center gap-2">
+                                <div className="rounded-full bg-blue-100 p-1.5 dark:bg-blue-900/40">
+                                    <DollarSign className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                                </div>
+                                <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                                    Price Summary
+                                </h4>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                {editForm.cash_price > 0 && (
+                                    <div className="flex items-center justify-between rounded-lg bg-green-100/60 px-4 py-3 dark:bg-green-900/30">
+                                        <span className="text-sm font-medium text-green-800 dark:text-green-300">
+                                            Cash Price
+                                        </span>
+                                        <span className="text-lg font-bold text-green-700 dark:text-green-400">
+                                            {formatCurrency(
+                                                editForm.cash_price,
+                                            )}
+                                        </span>
+                                    </div>
+                                )}
+                                {editForm.insurance_price > 0 && (
+                                    <div className="flex items-center justify-between rounded-lg bg-purple-100/60 px-4 py-3 dark:bg-purple-900/30">
+                                        <span className="text-sm font-medium text-purple-800 dark:text-purple-300">
+                                            Insurance Price
+                                        </span>
+                                        <span className="text-lg font-bold text-purple-700 dark:text-purple-400">
+                                            {formatCurrency(
+                                                editForm.insurance_price,
+                                            )}
+                                        </span>
+                                    </div>
+                                )}
+                                {!editForm.cash_price &&
+                                    !editForm.insurance_price && (
+                                        <div className="col-span-2 py-4 text-center text-sm text-slate-400">
+                                            Enter prices above to see the
+                                            summary
+                                        </div>
+                                    )}
+                            </div>
+                        </div>
+
+                        {/* Audit Footer */}
+                        <div className="flex items-center justify-between border-t border-slate-200 pt-3 text-[11px] text-slate-400 dark:border-slate-700">
+                            <div className="flex items-center gap-4">
+                                <span>
+                                    Created:{' '}
+                                    <span className="font-medium text-slate-600 dark:text-slate-300">
+                                        {formatDateTime(
+                                            selectedProduct.created_at,
+                                        )}
+                                    </span>
+                                </span>
+                                <span>
+                                    Updated:{' '}
+                                    <span className="font-medium text-slate-600 dark:text-slate-300">
+                                        {formatDateTime(
+                                            selectedProduct.updated_at,
+                                        )}
+                                    </span>
+                                </span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                                <div className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                                <span>Ready to save</span>
+                            </div>
+                        </div>
                     </div>
                 )}
             </CustomModal>
@@ -1249,16 +1196,21 @@ export default function StockPricing() {
 }
 
 // ============================================
-// ADDITIONAL HELPERS
+// ADDITIONAL ICONS
 // ============================================
 
-const formatDateTime = (date: string) => {
-    if (!date) return 'N/A';
-    return new Date(date).toLocaleDateString('en-ZM', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-    });
-};
+const Shield = ({ className }: { className?: string }) => (
+    <svg
+        className={className}
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+    >
+        <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
+        />
+    </svg>
+);

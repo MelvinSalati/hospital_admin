@@ -24,7 +24,7 @@ class PatientVisit extends Model
     // public function visitToken()
     // {
     //     return $this->hasOne(VisitToken::class, 'patient_id', 'patient_id');
-    // } 
+    // }
 
     public function patient(){
        return  $this->belongsTo(Patient::class,'patient_id');
@@ -39,16 +39,17 @@ class PatientVisit extends Model
         return $this->belongsTo(User::class, 'assigned_staff');
     }
 
-    public function assignedDepartment()
+    public function department()
     {
         return $this->belongsTo(Department::class, 'department_id');
-    } 
+    }
+
     public function visitToken(){
         return $this->belongsTo(VisitToken::class,'patient_id');
-    } 
+    }
 
     public function invoice(){
         return $this->belongsTo(Invoice::class,'patient_id');
     }
- 
+
 }

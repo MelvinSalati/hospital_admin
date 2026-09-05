@@ -1,693 +1,760 @@
-// pages/patients/registry.tsx
-
-import { Link } from '@inertiajs/react';
 import {
-    Search,
-    Phone,
-    Mail,
-    Calendar,
-    Heart,
-    Download,
-    Eye,
-    Edit,
-    Loader2,
-    X,
-    ChevronLeft,
-    ChevronRight,
-    User,
-    Filter,
-    UserSearch,
-    Users,
-    Clock,
-    CheckCircle,
-    AlertCircle,
-    Plus,
-    Printer,
-} from 'lucide-react';
-import Notiflix from 'notiflix';
-import { useState } from 'react';
+    MagnifyingGlassIcon,
+    FunnelIcon,
+    XMarkIcon,
+    UserPlusIcon,
+    AdjustmentsHorizontalIcon,
+} from '@heroicons/react/24/outline';
+import { Link, usePage } from '@inertiajs/react';
+import axios from 'axios';
+import { useState, useEffect } from 'react';
+import { toast } from 'react-hot-toast';
+import AddPatientModal from '@/components/modals/AddPatientModal';
+import PageHeader from '@/components/PageHeader';
 import AppLayout from '@/layouts/app-layout';
 import Http from '@/utils/Http';
 
-// ============================================================================
-// Types
-// ============================================================================
-
 interface Patient {
-    id: number;
+    id: string;
     patient_number: string;
     first_name: string;
     last_name: string;
     gender: string;
-    date_of_birth: string;
-    phone: string | null;
-    email: string | null;
-    blood_group: string | null;
-    status: 'active' | 'inactive' | 'deceased';
+    phone: string;
+    email: string;
+    nrc?: string;
+    passport?: string;
+    national_id?: string;
+    alt_phone?: string;
+    status: 'active' | 'inactive';
+    created_at: string;
 }
 
-interface SearchResponse {
-    success: boolean;
-    data: {
-        data: Patient[];
-        current_page: number;
-        last_page: number;
-        total: number;
-    };
-}
+// Search options
+type SearchOption =
+    | 'all'
+    | 'name'
+    | 'patient_number'
+    | 'phone'
+    | 'alt_phone'
+    | 'nrc'
+    | 'passport'
+    | 'national_id'
+    | 'email';
 
-// ============================================================================
-// Sub-Components
-// ============================================================================
+const searchOptions: {
+    value: SearchOption;
+    label: string;
+    icon: string;
+    placeholder: string;
+}[] = [
+    {
+        value: 'name',
+        label: 'Name',
+        icon: '👤',
+        placeholder: 'Search by first or last name...',
+    },
+    {
+        value: 'patient_number',
+        label: 'Patient ID',
+        icon: '🆔',
+        placeholder: 'Search by patient ID...',
+    },
+    {
+        value: 'phone',
+        label: 'Phone Number',
+        icon: '📱',
+        placeholder: 'Search by phone number...',
+    },
+   
+    {
+        value: 'nrc',
+        label: 'NRC Number',
+        icon: '🪪',
+        placeholder: 'Enter NRC number (e.g., 123456/78/9)...',
+    },
 
-const StatusBadge: React.FC<{ status: Patient['status'] }> = ({ status }) => {
-    const config = {
-        active: {
-            icon: <CheckCircle className="h-2.5 w-2.5" />,
-            label: 'Active',
-            bg: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400',
-        },
-        inactive: {
-            icon: <Clock className="h-2.5 w-2.5" />,
-            label: 'Inactive',
-            bg: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400',
-        },
-        deceased: {
-            icon: <AlertCircle className="h-2.5 w-2.5" />,
-            label: 'Deceased',
-            bg: 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400',
-        },
-    };
+];
 
-    const { icon, label, bg } = config[status];
+export default function Registry() {
+    const { auth } = usePage().props as any;
 
-    return (
-        <span
-            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-medium ${bg}`}
-        >
-            {icon}
-            {label}
-        </span>
-    );
-};
-
-const PatientAvatar: React.FC<{ first?: string; last?: string }> = ({
-    first,
-    last,
-}) => {
-    const initials = `${first?.charAt(0) || '?'}${last?.charAt(0) || '?'}`;
-    return (
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 text-xs font-medium text-white shadow-sm">
-            {initials}
-        </div>
-    );
-};
-
-// ============================================================================
-// Main Component
-// ============================================================================
-
-export default function PatientRegistry() {
-    const [searchQuery, setSearchQuery] = useState('');
-    const [searchType, setSearchType] = useState('all');
-    const [results, setResults] = useState<Patient[]>([]);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [searchOption, setSearchOption] = useState<SearchOption>('all');
+    const [statusFilter, setStatusFilter] = useState<
+        'all' | 'active' | 'inactive'
+    >('all');
+    const [patients, setPatients] = useState<Patient[]>([]);
     const [loading, setLoading] = useState(false);
     const [hasSearched, setHasSearched] = useState(false);
-    const [currentPage, setCurrentPage] = useState(1);
-    const [totalPages, setTotalPages] = useState(1);
-    const [totalResults, setTotalResults] = useState(0);
 
-    const handleSearch = async (page = 1) => {
-        if (!searchQuery.trim()) {
-            Notiflix.Notify.warning('Please enter a search term');
+    // Get current search option
+    const currentOption = searchOptions.find(
+        (opt) => opt.value === searchOption,
+    );
+
+    // Handle search with POST request
+    const handleSearch = async () => {
+        if (!searchTerm.trim() && statusFilter === 'all') {
+            // If no search term and no status filter, clear results
+            setPatients([]);
+            setHasSearched(false);
             return;
         }
 
         setLoading(true);
         try {
-            const response = await Http.post<SearchResponse>(
-                '/patients/search',
-                {
-                    query: searchQuery,
-                    type: searchType,
-                    page: page,
-                },
-            );
-
+            const response = await Http.post('/patients/registry/search', {
+                search_value: searchTerm,
+                search_type: searchOption,
+            });
+            console.log(searchTerm, searchOption, response);
             if (response.data.success) {
-                const patients = response.data.data || [];
-                setResults(patients);
+                setPatients(response.data.data || []);
                 setHasSearched(true);
-                setCurrentPage(response.data.current_page || 1);
-                setTotalPages(response.data.last_page || 1);
-                setTotalResults(response.data.total || 0);
 
-                if (patients.length === 0) {
-                    Notiflix.Notify.info('No patients found');
+                if (response.data.data.length === 0) {
+                    toast.info('No patients found matching your criteria');
                 }
+            } else {
+                toast.error(
+                    response.data.message || 'Failed to search patients',
+                );
+                setPatients([]);
             }
         } catch (error: any) {
-            Notiflix.Notify.failure(
-                error?.response?.data?.message || 'Search failed',
+            console.error('Search error:', error);
+            toast.error(
+                error.message ||
+                    'An error occurred while searching',
             );
-            setResults([]);
+            setPatients([]);
         } finally {
             setLoading(false);
         }
     };
 
-    const handleKeyPress = (e: React.KeyboardEvent) => {
-        if (e.key === 'Enter') handleSearch(1);
+    // Handle Enter key press
+    const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter') {
+            handleSearch();
+        }
+    };
+
+    // Handle search button click
+    const handleSearchClick = () => {
+        handleSearch();
+    };
+
+    const handlePatientAdded = () => {
+        toast.success('Patient added successfully');
+        // Refresh the search results
+        if (searchTerm || statusFilter !== 'all') {
+            handleSearch();
+        }
     };
 
     const clearSearch = () => {
-        setSearchQuery('');
-        setResults([]);
+        setSearchTerm('');
+        setSearchOption('all');
+        setStatusFilter('all');
+        setPatients([]);
         setHasSearched(false);
-        setCurrentPage(1);
-        setTotalPages(1);
-        setTotalResults(0);
     };
 
-    const calculateAge = (dob: string) => {
-        if (!dob) return 'N/A';
-        const age = Math.floor(
-            (new Date().getTime() - new Date(dob).getTime()) / 3.15576e10,
-        );
-        return age > 0 ? age : 'N/A';
-    };
-
-    const exportToCSV = () => {
-        const headers = [
-            'Patient ID',
-            'Name',
-            'Phone',
-            'Email',
-            'Age',
-            'Gender',
-            'Blood Group',
-            'Status',
-        ];
-        const rows = results.map((p) => [
-            p.patient_number,
-            `"${p.first_name} ${p.last_name}"`,
-            p.phone || '',
-            p.email || '',
-            calculateAge(p.date_of_birth),
-            p.gender || '',
-            p.blood_group || '',
-            p.status,
-        ]);
-
-        const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join(
-            '\n',
-        );
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `patients_export_${new Date().toISOString().split('T')[0]}.csv`;
-        a.click();
-        URL.revokeObjectURL(url);
-        Notiflix.Notify.success(`Exported ${results.length} patient records`);
+    // Format date for display
+    const formatDate = (date: string) => {
+        try {
+            return new Date(date).toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+            });
+        } catch {
+            return date;
+        }
     };
 
     return (
         <AppLayout
             breadcrumbs={[
                 {
-                    title: 'Registry',
-                    href: '/registry',
+                    title: 'Patient',
+                    href: '/',
                 },
                 {
-                    title: 'Patient',
+                    title: 'Registry',
                     href: '/',
                 },
             ]}
         >
-            <div className="flex h-full min-h-screen flex-1 flex-col gap-3 bg-slate-50 p-3 dark:bg-slate-900">
-                {/* Header */}
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                        <h1 className="text-sm font-bold text-slate-800 dark:text-slate-100">
-                            Patient Registry
-                        </h1>
-                        <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                            Search and manage patient records
-                        </p>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                        <button
-                            onClick={() =>
-                                (window.location.href = '/patients/create')
-                            }
-                            className="flex items-center gap-1 rounded-lg bg-blue-600 px-2.5 py-1.5 text-[10px] font-medium text-white transition-colors hover:bg-blue-700"
+            <div className="min-h-screen bg-blue-50 p-4 md:p-6">
+                <PageHeader
+                    icon={
+                        <svg
+                            className="h-5 w-5"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
                         >
-                            <Plus className="h-3 w-3" />
-                            Add Patient
-                        </button>
-                        <div className="flex items-center gap-1 text-[10px] text-slate-500 dark:text-slate-400">
-                            <Users className="h-3 w-3" />
-                            <span>{totalResults > 0 ? totalResults : '0'}</span>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Search Bar */}
-                <div className="rounded-lg border border-slate-200 bg-white p-2 shadow-sm dark:border-slate-700 dark:bg-slate-800/90">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                        <div className="relative min-w-[180px] flex-1">
-                            <Search className="absolute top-1/2 left-2 h-3 w-3 -translate-y-1/2 text-slate-400" />
-                            <input
-                                type="text"
-                                placeholder="Search by name, ID, phone, or email..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                onKeyDown={handleKeyPress}
-                                className="h-7 w-full rounded-lg border border-slate-200 pr-2 pl-7 text-[10px] focus:border-blue-400 focus:ring-1 focus:ring-blue-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                                disabled={loading}
+                            <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
                             />
-                            {searchQuery && (
-                                <button
-                                    onClick={() => setSearchQuery('')}
-                                    className="absolute top-1/2 right-1.5 -translate-y-1/2 rounded p-0.5 hover:bg-slate-100 dark:hover:bg-slate-700"
-                                >
-                                    <X className="h-2.5 w-2.5 text-slate-400" />
-                                </button>
-                            )}
-                        </div>
+                        </svg>
+                    }
+                    title={'Patient Registry'}
+                    subtitle="Manage and search patients using multiple identification methods"
+                    actions={[
+                        {
+                            label: 'Create Patient',
+                            onClick() {
+                                setIsModalOpen(true);
+                            },
+                        },
+                    ]}
+                />
 
-                        <select
-                            value={searchType}
-                            onChange={(e) => setSearchType(e.target.value)}
-                            className="h-7 rounded-lg border border-slate-200 px-2 pr-6 text-[10px] focus:border-blue-400 focus:ring-1 focus:ring-blue-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                        >
-                            <option value="all">All</option>
-                            <option value="name">Name</option>
-                            <option value="phone">Phone</option>
-                            <option value="email">Email</option>
-                            <option value="id">Patient ID</option>
-                        </select>
-
-                        <button
-                            onClick={() => handleSearch(1)}
-                            disabled={loading || !searchQuery.trim()}
-                            className="flex h-7 items-center gap-1 rounded-lg bg-blue-600 px-3 text-[10px] font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-                        >
-                            {loading ? (
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                            ) : (
-                                <Search className="h-3 w-3" />
-                            )}
-                            {loading ? 'Searching' : 'Search'}
-                        </button>
-
-                        {results.length > 0 && (
-                            <button
-                                onClick={exportToCSV}
-                                className="flex h-7 items-center gap-1 rounded-lg border border-slate-200 px-2.5 text-[10px] font-medium text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
-                            >
-                                <Download className="h-3 w-3" />
-                                Export
-                            </button>
-                        )}
-                    </div>
-
-                    {/* Search Info */}
-                    {hasSearched && searchQuery && (
-                        <div className="mt-1.5 flex items-center justify-between text-[9px] text-slate-500 dark:text-slate-400">
-                            <span>
-                                Found{' '}
-                                <span className="font-medium text-blue-600 dark:text-blue-400">
-                                    {totalResults}
-                                </span>{' '}
-                                patient{totalResults !== 1 ? 's' : ''}
-                                {totalResults > 0 && (
-                                    <span className="ml-1.5">
-                                        • Page {currentPage} of {totalPages}
-                                    </span>
+                {/* Search Section */}
+                <div className="bg-white p-2">
+                    <div className="mb-6 rounded-xl bg-white p-4">
+                        <div className="flex flex-col gap-3 lg:flex-row">
+                            {/* Search Input */}
+                            <div className="relative flex-1">
+                                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                                    <MagnifyingGlassIcon className="h-5 w-5 text-gray-400" />
+                                </div>
+                                <input
+                                    type="text"
+                                    placeholder={
+                                        currentOption?.placeholder ||
+                                        'Search patients...'
+                                    }
+                                    value={searchTerm}
+                                    onChange={(e) =>
+                                        setSearchTerm(e.target.value)
+                                    }
+                                    onKeyPress={handleKeyPress}
+                                    className="w-full rounded-lg border border-gray-300 bg-white py-2.5 pr-10 pl-10 text-gray-900 transition-all placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                                />
+                                {searchTerm && (
+                                    <button
+                                        onClick={() => setSearchTerm('')}
+                                        className="absolute inset-y-0 right-0 flex items-center pr-3"
+                                    >
+                                        <XMarkIcon className="h-5 w-5 text-gray-400 transition-colors hover:text-gray-600" />
+                                    </button>
                                 )}
-                            </span>
-                            <button
-                                onClick={clearSearch}
-                                className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-                            >
-                                Clear
-                            </button>
-                        </div>
-                    )}
-                </div>
+                            </div>
 
-                {/* Loading State */}
-                {loading && (
-                    <div className="flex items-center justify-center rounded-lg border border-slate-200 bg-white p-8 dark:border-slate-700 dark:bg-slate-800/90">
-                        <Loader2 className="h-6 w-6 animate-spin text-blue-500" />
-                        <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">
-                            Searching...
-                        </span>
-                    </div>
-                )}
-
-                {/* Results */}
-                {!loading && hasSearched && (
-                    <>
-                        {results.length > 0 ? (
-                            <>
-                                {/* Desktop Table */}
-                                <div className="hidden overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm lg:block dark:border-slate-700 dark:bg-slate-800/90">
-                                    <table className="w-full">
-                                        <thead className="border-b border-slate-200 bg-slate-50 text-[9px] text-slate-600 uppercase dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-400">
-                                            <tr>
-                                                <th className="px-2 py-1.5 text-left">
-                                                    Patient
-                                                </th>
-                                                <th className="px-2 py-1.5 text-left">
-                                                    ID
-                                                </th>
-                                                <th className="px-2 py-1.5 text-left">
-                                                    Contact
-                                                </th>
-                                                <th className="px-2 py-1.5 text-left">
-                                                    Details
-                                                </th>
-                                                <th className="px-2 py-1.5 text-center">
-                                                    Status
-                                                </th>
-                                                <th className="px-2 py-1.5 text-right">
-                                                    Actions
-                                                </th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-100 text-[10px] dark:divide-slate-700/50">
-                                            {results.map((patient) => (
-                                                <tr
-                                                    key={patient.id}
-                                                    className="hover:bg-slate-50 dark:hover:bg-slate-800/50"
-                                                >
-                                                    <td className="px-2 py-1.5">
-                                                        <div className="flex items-center gap-1.5">
-                                                            <PatientAvatar
-                                                                first={
-                                                                    patient.first_name
-                                                                }
-                                                                last={
-                                                                    patient.last_name
-                                                                }
-                                                            />
-                                                            <div>
-                                                                <div className="font-medium text-slate-800 dark:text-slate-200">
-                                                                    {
-                                                                        patient.first_name
-                                                                    }{' '}
-                                                                    {
-                                                                        patient.last_name
-                                                                    }
-                                                                </div>
-                                                                <div className="text-[8px] text-slate-500 dark:text-slate-400">
-                                                                    {patient.gender ||
-                                                                        'N/A'}
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-2 py-1.5">
-                                                        <code className="font-mono text-[9px] text-slate-600 dark:text-slate-400">
-                                                            {
-                                                                patient.patient_number
-                                                            }
-                                                        </code>
-                                                    </td>
-                                                    <td className="px-2 py-1.5">
-                                                        <div className="space-y-0.5">
-                                                            {patient.phone && (
-                                                                <div className="flex items-center gap-1 text-[9px] text-slate-600 dark:text-slate-400">
-                                                                    <Phone className="h-2.5 w-2.5 text-slate-400" />
-                                                                    <span>
-                                                                        {
-                                                                            patient.phone
-                                                                        }
-                                                                    </span>
-                                                                </div>
-                                                            )}
-                                                            {patient.email && (
-                                                                <div className="flex items-center gap-1 text-[9px] text-slate-600 dark:text-slate-400">
-                                                                    <Mail className="h-2.5 w-2.5 text-slate-400" />
-                                                                    <span className="max-w-[140px] truncate">
-                                                                        {
-                                                                            patient.email
-                                                                        }
-                                                                    </span>
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-2 py-1.5">
-                                                        <div className="flex items-center gap-2 text-[9px] text-slate-600 dark:text-slate-400">
-                                                            <Calendar className="h-2.5 w-2.5 text-slate-400" />
-                                                            <span>
-                                                                {calculateAge(
-                                                                    patient.date_of_birth,
-                                                                )}{' '}
-                                                                yrs
-                                                            </span>
-                                                            {patient.blood_group && (
-                                                                <>
-                                                                    <span className="text-slate-300">
-                                                                        |
-                                                                    </span>
-                                                                    <Heart className="h-2.5 w-2.5 text-slate-400" />
-                                                                    <span className="font-mono">
-                                                                        {
-                                                                            patient.blood_group
-                                                                        }
-                                                                    </span>
-                                                                </>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-2 py-1.5 text-center">
-                                                        <StatusBadge
-                                                            status={
-                                                                patient.status
-                                                            }
-                                                        />
-                                                    </td>
-                                                    <td className="px-2 py-1.5 text-right">
-                                                        <div className="flex justify-end gap-0.5">
-                                                            <Link
-                                                                href={`/patients/${patient.id}`}
-                                                                className="rounded p-1 text-slate-500 transition-colors hover:bg-slate-100 hover:text-blue-600 dark:hover:bg-slate-700"
-                                                                title="View"
-                                                            >
-                                                                <Eye className="h-3 w-3" />
-                                                            </Link>
-                                                            <Link
-                                                                href={`/patients/${patient.id}/edit`}
-                                                                className="rounded p-1 text-slate-500 transition-colors hover:bg-slate-100 hover:text-blue-600 dark:hover:bg-slate-700"
-                                                                title="Edit"
-                                                            >
-                                                                <Edit className="h-3 w-3" />
-                                                            </Link>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-
-                                    {/* Pagination */}
-                                    {totalPages > 1 && (
-                                        <div className="flex items-center justify-between border-t border-slate-200 px-2 py-1.5 dark:border-slate-700">
-                                            <span className="text-[9px] text-slate-500 dark:text-slate-400">
-                                                {results.length} of{' '}
-                                                {totalResults}
-                                            </span>
-                                            <div className="flex gap-0.5">
-                                                <button
-                                                    onClick={() =>
-                                                        handleSearch(
-                                                            currentPage - 1,
-                                                        )
-                                                    }
-                                                    disabled={currentPage === 1}
-                                                    className="rounded border border-slate-200 p-0.5 disabled:opacity-50 dark:border-slate-700"
-                                                >
-                                                    <ChevronLeft className="h-3 w-3" />
-                                                </button>
-                                                <span className="px-1.5 py-0.5 text-[9px] text-slate-600 dark:text-slate-400">
-                                                    {currentPage}/{totalPages}
-                                                </span>
-                                                <button
-                                                    onClick={() =>
-                                                        handleSearch(
-                                                            currentPage + 1,
-                                                        )
-                                                    }
-                                                    disabled={
-                                                        currentPage ===
-                                                        totalPages
-                                                    }
-                                                    className="rounded border border-slate-200 p-0.5 disabled:opacity-50 dark:border-slate-700"
-                                                >
-                                                    <ChevronRight className="h-3 w-3" />
-                                                </button>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Mobile Cards */}
-                                <div className="space-y-1.5 lg:hidden">
-                                    {results.map((patient) => (
-                                        <div
-                                            key={patient.id}
-                                            className="rounded-lg border border-slate-200 bg-white p-2.5 shadow-sm dark:border-slate-700 dark:bg-slate-800/90"
-                                        >
-                                            <div className="flex items-start justify-between">
-                                                <div className="flex items-center gap-2">
-                                                    <PatientAvatar
-                                                        first={
-                                                            patient.first_name
-                                                        }
-                                                        last={patient.last_name}
-                                                    />
-                                                    <div>
-                                                        <div className="text-xs font-medium text-slate-800 dark:text-slate-200">
-                                                            {patient.first_name}{' '}
-                                                            {patient.last_name}
-                                                        </div>
-                                                        <div className="font-mono text-[8px] text-slate-500 dark:text-slate-400">
-                                                            {
-                                                                patient.patient_number
-                                                            }
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                <StatusBadge
-                                                    status={patient.status}
-                                                />
-                                            </div>
-                                            <div className="mt-1.5 grid grid-cols-2 gap-0.5 text-[9px] text-slate-600 dark:text-slate-400">
-                                                {patient.phone && (
-                                                    <div className="flex items-center gap-1">
-                                                        <Phone className="h-2.5 w-2.5 text-slate-400" />
-                                                        {patient.phone}
-                                                    </div>
-                                                )}
-                                                {patient.email && (
-                                                    <div className="flex items-center gap-1 truncate">
-                                                        <Mail className="h-2.5 w-2.5 text-slate-400" />
-                                                        {patient.email}
-                                                    </div>
-                                                )}
-                                                <div className="flex items-center gap-1">
-                                                    <Calendar className="h-2.5 w-2.5 text-slate-400" />
-                                                    {calculateAge(
-                                                        patient.date_of_birth,
-                                                    )}{' '}
-                                                    yrs
-                                                </div>
-                                                {patient.gender && (
-                                                    <div className="flex items-center gap-1">
-                                                        <User className="h-2.5 w-2.5 text-slate-400" />
-                                                        {patient.gender}
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <div className="mt-1.5 flex gap-1 border-t border-slate-100 pt-1.5 dark:border-slate-700">
-                                                <Link
-                                                    href={`/patients/${patient.id}`}
-                                                    className="flex flex-1 items-center justify-center gap-1 rounded border border-slate-200 py-1 text-[9px] font-medium text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
-                                                >
-                                                    <Eye className="h-2.5 w-2.5" />
-                                                    View
-                                                </Link>
-                                                <Link
-                                                    href={`/patients/${patient.id}/edit`}
-                                                    className="flex flex-1 items-center justify-center gap-1 rounded bg-blue-50 py-1 text-[9px] font-medium text-blue-600 transition-colors hover:bg-blue-100 dark:bg-blue-950/30 dark:text-blue-400"
-                                                >
-                                                    <Edit className="h-2.5 w-2.5" />
-                                                    Edit
-                                                </Link>
-                                            </div>
-                                        </div>
-                                    ))}
-
-                                    {/* Mobile Pagination */}
-                                    {totalPages > 1 && (
-                                        <div className="mt-2 flex items-center justify-between gap-2">
-                                            <button
-                                                onClick={() =>
-                                                    handleSearch(
-                                                        currentPage - 1,
-                                                    )
-                                                }
-                                                disabled={currentPage === 1}
-                                                className="flex-1 rounded-lg border border-slate-200 px-3 py-1 text-[9px] font-medium disabled:opacity-50 dark:border-slate-700"
-                                            >
-                                                Previous
-                                            </button>
-                                            <span className="text-[9px] text-slate-600 dark:text-slate-400">
-                                                {currentPage} of {totalPages}
-                                            </span>
-                                            <button
-                                                onClick={() =>
-                                                    handleSearch(
-                                                        currentPage + 1,
-                                                    )
-                                                }
-                                                disabled={
-                                                    currentPage === totalPages
-                                                }
-                                                className="flex-1 rounded-lg border border-slate-200 px-3 py-1 text-[9px] font-medium disabled:opacity-50 dark:border-slate-700"
-                                            >
-                                                Next
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
-                            </>
-                        ) : (
-                            // Empty State
-                            <div className="rounded-lg border border-slate-200 bg-white p-8 text-center shadow-sm dark:border-slate-700 dark:bg-slate-800/90">
-                                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-700">
-                                    <UserSearch className="h-6 w-6 text-slate-400" />
-                                </div>
-                                <h3 className="mt-2 text-xs font-medium text-slate-800 dark:text-slate-200">
-                                    No patients found
-                                </h3>
-                                <p className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">
-                                    Try adjusting your search terms
-                                </p>
-                                <button
-                                    onClick={clearSearch}
-                                    className="mt-2 inline-flex items-center gap-1 rounded-lg bg-slate-100 px-3 py-1 text-[10px] font-medium text-slate-600 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300"
+                            {/* Search Options */}
+                            <div className="flex flex-wrap gap-2">
+                                <select
+                                    value={searchOption}
+                                    onChange={(e) =>
+                                        setSearchOption(
+                                            e.target.value as SearchOption,
+                                        )
+                                    }
+                                    className="min-w-[160px] rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-gray-700 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
                                 >
-                                    <X className="h-3 w-3" />
-                                    Clear search
-                                </button>
-                            </div>
-                        )}
-                    </>
-                )}
+                                    {searchOptions.map((option) => (
+                                        <option
+                                            key={option.value}
+                                            value={option.value}
+                                        >
+                                            {option.icon} {option.label}
+                                        </option>
+                                    ))}
+                                </select>
 
-                {/* Initial State */}
-                {!loading && !hasSearched && (
-                    <div className="flex flex-1 items-center justify-center rounded-lg border-2 border-dashed border-slate-200 bg-white p-12 dark:border-slate-700 dark:bg-slate-800/50">
-                        <div className="text-center">
-                            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-xl bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30">
-                                <Search className="h-8 w-8 text-blue-400" />
+                                <select
+                                    value={statusFilter}
+                                    onChange={(e) =>
+                                        setStatusFilter(e.target.value as any)
+                                    }
+                                    className="min-w-[130px] rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-gray-700 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                                >
+                                    <option value="all">All Status</option>
+                                    <option value="active">● Active</option>
+                                    <option value="inactive">○ Inactive</option>
+                                </select>
+
+                                {/* Search Button */}
+                                <button
+                                    onClick={handleSearchClick}
+                                    disabled={loading}
+                                    className="flex items-center gap-2 rounded-lg bg-blue-600 px-6 py-2.5 text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    {loading ? (
+                                        <>
+                                            <svg
+                                                className="h-4 w-4 animate-spin"
+                                                fill="none"
+                                                viewBox="0 0 24 24"
+                                            >
+                                                <circle
+                                                    className="opacity-25"
+                                                    cx="12"
+                                                    cy="12"
+                                                    r="10"
+                                                    stroke="currentColor"
+                                                    strokeWidth="4"
+                                                />
+                                                <path
+                                                    className="opacity-75"
+                                                    fill="currentColor"
+                                                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                                />
+                                            </svg>
+                                            Searching...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <MagnifyingGlassIcon className="h-4 w-4" />
+                                            Search
+                                        </>
+                                    )}
+                                </button>
+
+                                {(searchTerm ||
+                                    statusFilter !== 'all' ||
+                                    searchOption !== 'all') && (
+                                    <button
+                                        onClick={clearSearch}
+                                        className="rounded-lg bg-gray-100 px-3 py-2.5 text-gray-500 transition-colors hover:bg-gray-200 hover:text-gray-700"
+                                        title="Clear all filters"
+                                    >
+                                        <XMarkIcon className="h-5 w-5" />
+                                    </button>
+                                )}
                             </div>
-                            <h3 className="mt-3 text-sm font-medium text-slate-800 dark:text-slate-200">
-                                Search Patient Records
-                            </h3>
-                            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                Enter a name, ID, phone number, or email to find
-                                patients
+                        </div>
+
+                        {/* Quick Search Chips */}
+                        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                            <span className="mr-1 text-xs text-gray-400">
+                                Quick search:
+                            </span>
+                            {[
+                                { label: 'NRC', value: 'nrc' },
+                                { label: 'Passport', value: 'passport' },
+                                { label: 'Phone', value: 'phone' },
+                                { label: 'Alt Phone', value: 'alt_phone' },
+                                {
+                                    label: 'Patient ID',
+                                    value: 'patient_number',
+                                },
+                                { label: 'Email', value: 'email' },
+                            ].map(({ label, value }) => (
+                                <button
+                                    key={label}
+                                    onClick={() => {
+                                        setSearchOption(value as SearchOption);
+                                        setSearchTerm('');
+                                        const input = document.querySelector(
+                                            'input[type="text"]',
+                                        ) as HTMLInputElement;
+                                        if (input) input.focus();
+                                    }}
+                                    className={`rounded-full border px-2.5 py-1 text-xs transition-all ${
+                                        searchOption === value
+                                            ? 'border-blue-300 bg-blue-50 text-blue-700'
+                                            : 'border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100'
+                                    }`}
+                                >
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Results Stats */}
+                    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                            <p className="text-sm text-gray-600">
+                                {hasSearched ? (
+                                    <>
+                                        <span className="font-semibold text-gray-900">
+                                            {patients.length}
+                                        </span>{' '}
+                                        patient
+                                        {patients.length !== 1 ? 's' : ''} found
+                                        {searchTerm && (
+                                            <span className="ml-1 text-gray-400">
+                                                matching "{searchTerm}"
+                                            </span>
+                                        )}
+                                        {statusFilter !== 'all' && (
+                                            <span
+                                                className={`ml-1 rounded-full px-2 py-0.5 text-xs ${
+                                                    statusFilter === 'active'
+                                                        ? 'bg-green-100 text-green-700'
+                                                        : 'bg-gray-100 text-gray-600'
+                                                }`}
+                                            >
+                                                {statusFilter}
+                                            </span>
+                                        )}
+                                    </>
+                                ) : (
+                                    'Enter search criteria and click Search'
+                                )}
                             </p>
                         </div>
+                        {patients.length > 0 && (
+                            <div className="flex items-center gap-2 text-sm">
+                                <span className="flex items-center gap-1.5 rounded-md bg-green-50 px-2.5 py-1 text-green-700">
+                                    <span className="h-1.5 w-1.5 rounded-full bg-green-500"></span>
+                                    {
+                                        patients.filter(
+                                            (p) => p.status === 'active',
+                                        ).length
+                                    }{' '}
+                                    Active
+                                </span>
+                                <span className="flex items-center gap-1.5 rounded-md bg-gray-50 px-2.5 py-1 text-gray-600">
+                                    <span className="h-1.5 w-1.5 rounded-full bg-gray-400"></span>
+                                    {
+                                        patients.filter(
+                                            (p) => p.status === 'inactive',
+                                        ).length
+                                    }{' '}
+                                    Inactive
+                                </span>
+                            </div>
+                        )}
                     </div>
-                )}
+
+                    {/* Patients Table */}
+                    <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+                        <div className="overflow-x-auto">
+                            <table className="w-full">
+                                <thead>
+                                    <tr className="border-b border-gray-200 bg-gray-50">
+                                        <th className="px-6 py-3.5 text-left text-xs font-semibold tracking-wider text-gray-500 uppercase">
+                                            Patient #
+                                        </th>
+                                        <th className="px-6 py-3.5 text-left text-xs font-semibold tracking-wider text-gray-500 uppercase">
+                                            Name
+                                        </th>
+                                        <th className="px-6 py-3.5 text-left text-xs font-semibold tracking-wider text-gray-500 uppercase">
+                                            Contact
+                                        </th>
+                                        <th className="px-6 py-3.5 text-left text-xs font-semibold tracking-wider text-gray-500 uppercase">
+                                            Identification
+                                        </th>
+                                        <th className="px-6 py-3.5 text-left text-xs font-semibold tracking-wider text-gray-500 uppercase">
+                                            Status
+                                        </th>
+                                        <th className="px-6 py-3.5 text-left text-xs font-semibold tracking-wider text-gray-500 uppercase">
+                                            Registered
+                                        </th>
+                                        <th className="px-6 py-3.5 text-right text-xs font-semibold tracking-wider text-gray-500 uppercase">
+                                            Actions
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {loading ? (
+                                        <tr>
+                                            <td
+                                                colSpan={7}
+                                                className="px-6 py-12 text-center"
+                                            >
+                                                <div className="flex items-center justify-center gap-2">
+                                                    <svg
+                                                        className="h-6 w-6 animate-spin text-blue-600"
+                                                        fill="none"
+                                                        viewBox="0 0 24 24"
+                                                    >
+                                                        <circle
+                                                            className="opacity-25"
+                                                            cx="12"
+                                                            cy="12"
+                                                            r="10"
+                                                            stroke="currentColor"
+                                                            strokeWidth="4"
+                                                        />
+                                                        <path
+                                                            className="opacity-75"
+                                                            fill="currentColor"
+                                                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                                        />
+                                                    </svg>
+                                                    <span className="text-gray-500">
+                                                        Searching...
+                                                    </span>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ) : patients.length > 0 ? (
+                                        patients.map((patient) => (
+                                            <tr
+                                                key={patient.id}
+                                                className="transition-colors hover:bg-gray-50"
+                                            >
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    <span className="font-mono text-sm font-medium text-blue-600">
+                                                        {patient.patient_number}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    <div className="flex items-center">
+                                                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-blue-600 text-sm font-medium text-white">
+                                                            {
+                                                                patient
+                                                                    .first_name[0]
+                                                            }
+                                                            {
+                                                                patient
+                                                                    .last_name[0]
+                                                            }
+                                                        </div>
+                                                        <div className="ml-3">
+                                                            <div className="text-sm font-medium text-gray-900">
+                                                                {
+                                                                    patient.first_name
+                                                                }{' '}
+                                                                {
+                                                                    patient.last_name
+                                                                }
+                                                            </div>
+                                                            <div className="text-xs text-gray-400 capitalize">
+                                                                {patient.gender}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <div className="space-y-0.5 text-sm text-gray-600">
+                                                        <div className="flex items-center gap-1.5">
+                                                            <span className="text-gray-400">
+                                                                ✉
+                                                            </span>
+                                                            <span className="text-sm">
+                                                                {patient.email}
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex items-center gap-1.5">
+                                                            <span className="text-gray-400">
+                                                                📱
+                                                            </span>
+                                                            <span>
+                                                                {patient.phone}
+                                                            </span>
+                                                        </div>
+                                                        {patient.alt_phone && (
+                                                            <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                                                                <span>📞</span>
+                                                                <span>
+                                                                    {
+                                                                        patient.alt_phone
+                                                                    }
+                                                                </span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <div className="space-y-0.5">
+                                                        {patient.nrc && (
+                                                            <div className="inline-flex items-center gap-1.5 rounded border border-gray-200 bg-gray-50 px-2 py-0.5 font-mono text-xs">
+                                                                <span className="text-gray-400">
+                                                                    NRC:
+                                                                </span>
+                                                                <span className="text-gray-700">
+                                                                    {
+                                                                        patient.nrc
+                                                                    }
+                                                                </span>
+                                                            </div>
+                                                        )}
+                                                        {patient.passport && (
+                                                            <div className="ml-1 inline-flex items-center gap-1.5 rounded border border-gray-200 bg-gray-50 px-2 py-0.5 font-mono text-xs">
+                                                                <span className="text-gray-400">
+                                                                    Passport:
+                                                                </span>
+                                                                <span className="text-gray-700">
+                                                                    {
+                                                                        patient.passport
+                                                                    }
+                                                                </span>
+                                                            </div>
+                                                        )}
+                                                        {patient.national_id && (
+                                                            <div className="ml-1 inline-flex items-center gap-1.5 rounded border border-gray-200 bg-gray-50 px-2 py-0.5 font-mono text-xs">
+                                                                <span className="text-gray-400">
+                                                                    NID:
+                                                                </span>
+                                                                <span className="text-gray-700">
+                                                                    {
+                                                                        patient.national_id
+                                                                    }
+                                                                </span>
+                                                            </div>
+                                                        )}
+                                                        {!patient.nrc &&
+                                                            !patient.passport &&
+                                                            !patient.national_id && (
+                                                                <span className="text-xs text-gray-400">
+                                                                    —
+                                                                </span>
+                                                            )}
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    <span
+                                                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
+                                                            patient.status ===
+                                                            'active'
+                                                                ? 'bg-green-100 text-green-700'
+                                                                : 'bg-gray-100 text-gray-600'
+                                                        }`}
+                                                    >
+                                                        <span
+                                                            className={`h-1.5 w-1.5 rounded-full ${
+                                                                patient.status ===
+                                                                'active'
+                                                                    ? 'bg-green-500'
+                                                                    : 'bg-gray-400'
+                                                            }`}
+                                                        ></span>
+                                                        {patient.status ===
+                                                        'active'
+                                                            ? 'Active'
+                                                            : 'Inactive'}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 text-sm whitespace-nowrap text-gray-500">
+                                                    {formatDate(
+                                                        patient.created_at,
+                                                    )}
+                                                </td>
+                                                <td className="px-6 py-4 text-right text-sm whitespace-nowrap">
+                                                    <Link
+                                                        href={`/patients/${patient.id}`}
+                                                        className="mr-4 font-medium text-blue-600 transition-colors hover:text-blue-800"
+                                                    >
+                                                        View
+                                                    </Link>
+                                                    <Link
+                                                        href={`/patients/${patient.id}/edit`}
+                                                        className="font-medium text-gray-600 transition-colors hover:text-gray-800"
+                                                    >
+                                                        Edit
+                                                    </Link>
+                                                </td>
+                                            </tr>
+                                        ))
+                                    ) : hasSearched ? (
+                                        <tr>
+                                            <td
+                                                colSpan={7}
+                                                className="px-6 py-12 text-center"
+                                            >
+                                                <div className="flex flex-col items-center">
+                                                    <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-gray-100">
+                                                        <svg
+                                                            className="h-6 w-6 text-gray-400"
+                                                            fill="none"
+                                                            stroke="currentColor"
+                                                            viewBox="0 0 24 24"
+                                                        >
+                                                            <path
+                                                                strokeLinecap="round"
+                                                                strokeLinejoin="round"
+                                                                strokeWidth={2}
+                                                                d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                                                            />
+                                                        </svg>
+                                                    </div>
+                                                    <p className="text-base font-medium text-gray-900">
+                                                        No patients found
+                                                    </p>
+                                                    <p className="mt-1 text-sm text-gray-500">
+                                                        Try adjusting your
+                                                        search criteria or
+                                                        filters
+                                                    </p>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        <tr>
+                                            <td
+                                                colSpan={7}
+                                                className="px-6 py-12 text-center"
+                                            >
+                                                <div className="flex flex-col items-center">
+                                                    <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-gray-100">
+                                                        <MagnifyingGlassIcon className="h-6 w-6 text-gray-400" />
+                                                    </div>
+                                                    <p className="text-base font-medium text-gray-900">
+                                                        Search for patients
+                                                    </p>
+                                                    <p className="mt-1 text-sm text-gray-500">
+                                                        Enter a search term and
+                                                        click Search to find
+                                                        patients
+                                                    </p>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {/* Pagination */}
+                        {patients.length > 0 && (
+                            <div className="flex flex-col items-center justify-between gap-3 border-t border-gray-200 bg-gray-50 px-6 py-3.5 sm:flex-row">
+                                <p className="text-sm text-gray-500">
+                                    Showing{' '}
+                                    <span className="font-medium text-gray-700">
+                                        1
+                                    </span>{' '}
+                                    to{' '}
+                                    <span className="font-medium text-gray-700">
+                                        {patients.length}
+                                    </span>{' '}
+                                    of{' '}
+                                    <span className="font-medium text-gray-700">
+                                        {patients.length}
+                                    </span>{' '}
+                                    results
+                                </p>
+                                <div className="flex items-center gap-1.5">
+                                    <button
+                                        className="rounded-lg px-3 py-1.5 text-sm text-gray-600 transition-colors hover:bg-gray-200 disabled:opacity-50"
+                                        disabled
+                                    >
+                                        Previous
+                                    </button>
+                                    <button className="rounded-lg bg-blue-600 px-3.5 py-1.5 text-sm text-white transition-colors hover:bg-blue-700">
+                                        1
+                                    </button>
+                                    <button
+                                        className="rounded-lg px-3 py-1.5 text-sm text-gray-600 transition-colors hover:bg-gray-200 disabled:opacity-50"
+                                        disabled
+                                    >
+                                        Next
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Add Patient Modal */}
+                <AddPatientModal
+                    isOpen={isModalOpen}
+                    onClose={() => setIsModalOpen(false)}
+                    onSuccess={handlePatientAdded}
+                />
             </div>
         </AppLayout>
     );

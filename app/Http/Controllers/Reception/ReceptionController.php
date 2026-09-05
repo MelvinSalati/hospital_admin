@@ -5,11 +5,27 @@ namespace App\Http\Controllers\Reception;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\PatientVisit;
+use App\Services\Receptions\ReceptionService;
 use Inertia\Inertia;
 
 class ReceptionController extends Controller
 {
-    
+    protected ReceptionService $receptionService; 
+
+    public function __construct(ReceptionService $service){
+        $this->receptionService     = $service;
+    } 
+
+    /**
+     *  renders the dashbiard  specifically dashboard page
+     */
+    public function index(){
+        return  Inertia::render('receptions/dashboard', $this->receptionService->getDashboard());
+    }
+ 
+      public function search(){
+        return  Inertia::render('receptions/registry');
+    }
     public function appointments(){
         return Inertia::render('receptions/appointments', [
             'appointments' => \App\Models\Appointments\Appointment::query()

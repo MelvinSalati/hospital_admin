@@ -132,17 +132,6 @@ interface PurchaseRequisition {
     special_instructions?: string;
 }
 
-interface RequisitionStats {
-    total: number;
-    pending: number;
-    approved: number;
-    rejected: number;
-    total_value: number;
-    urgent_count: number;
-    high_priority_count: number;
-    funds_released: number;
-}
-
 // ============================================
 // STATUS CONFIG
 // ============================================
@@ -287,7 +276,6 @@ export default function Receive() {
     const [statusFilter, setStatusFilter] = useState<string>('');
     const [priorityFilter, setPriorityFilter] = useState<string>('');
     const [departmentFilter, setDepartmentFilter] = useState<string>('');
-    const [activeTab, setActiveTab] = useState<string>('all');
 
     // Modal states
     const [showReceiveModal, setShowReceiveModal] = useState(false);
@@ -300,18 +288,6 @@ export default function Receive() {
     const [returnItems, setReturnItems] = useState<any[]>([]);
     const [grnData, setGrnData] = useState<any>(null);
     const [isProcessing, setIsProcessing] = useState(false);
-
-    // Stats
-    const [stats, setStats] = useState<RequisitionStats>({
-        total: 0,
-        pending: 0,
-        approved: 0,
-        rejected: 0,
-        total_value: 0,
-        urgent_count: 0,
-        high_priority_count: 0,
-        funds_released: 0,
-    });
 
     const [pagination, setPagination] = useState({
         currentPage: 1,
@@ -478,29 +454,23 @@ export default function Receive() {
             const params: any = {
                 page: pagination.currentPage,
                 page_size: pagination.pageSize,
-                status: 'approved', // Only fetch approved requisitions for receiving
+                status: 'approved',
             };
 
             if (searchTerm) params.search = searchTerm;
             if (statusFilter) params.status = statusFilter;
             if (priorityFilter) params.priority = priorityFilter;
             if (departmentFilter) params.department = departmentFilter;
-            if (activeTab !== 'all' && activeTab !== 'approved')
-                params.status = activeTab;
 
             const response = await Http.get(
                 '/bulk-store/purchase-requisitions/approved',
                 { params },
             );
             const data = response.data;
-
-            // The data is in data.data (Laravel pagination format)
             const orders = data.data || [];
 
-            // Transform the data to ensure we have supplier_name
             const transformedOrders = orders.map(
                 (order: PurchaseRequisition) => {
-                    // If supplier is an object, extract the name
                     let supplierName = order.supplier_name || 'N/A';
                     if (order.supplier && typeof order.supplier === 'object') {
                         supplierName = order.supplier.supplier_name || 'N/A';
@@ -513,37 +483,6 @@ export default function Receive() {
             );
 
             setRequisitions(transformedOrders);
-
-            // Calculate stats from all data (not just paginated)
-            const allData = data.data || [];
-            const totalValue = allData.reduce(
-                (sum: number, order: PurchaseRequisition) =>
-                    sum + parseFloat(order.estimated_total || 0),
-                0,
-            );
-
-            setStats({
-                total: data.total || allData.length || 0,
-                pending: allData.filter(
-                    (o: PurchaseRequisition) => o.status === 'pending',
-                ).length,
-                approved: allData.filter(
-                    (o: PurchaseRequisition) => o.status === 'approved',
-                ).length,
-                rejected: allData.filter(
-                    (o: PurchaseRequisition) => o.status === 'rejected',
-                ).length,
-                total_value: totalValue,
-                urgent_count: allData.filter(
-                    (o: PurchaseRequisition) => o.priority === 'urgent',
-                ).length,
-                high_priority_count: allData.filter(
-                    (o: PurchaseRequisition) => o.priority === 'high',
-                ).length,
-                funds_released: allData.filter(
-                    (o: PurchaseRequisition) => o.funds_released === true,
-                ).length,
-            });
 
             setPagination((prev) => ({
                 ...prev,
@@ -564,7 +503,6 @@ export default function Receive() {
         statusFilter,
         priorityFilter,
         departmentFilter,
-        activeTab,
     ]);
 
     useEffect(() => {
@@ -574,17 +512,15 @@ export default function Receive() {
     // ============================================
     // HANDLERS
     // ============================================
-    // Check if all items are fully received
+
     const canReceive = () => {
         if (receiveItems.length === 0) return false;
 
-        // Check if all items have at least one batch
         const hasBatches = receiveItems.some(
             (item) => item.batches && item.batches.length > 0,
         );
         if (!hasBatches) return false;
 
-        // Check if all items are fully received
         const allFullyReceived = receiveItems.every((item) => {
             const totalReceived =
                 item.batches?.reduce(
@@ -594,7 +530,6 @@ export default function Receive() {
             return totalReceived >= parseFloat(item.quantity);
         });
 
-        // Check if any batch has expired date in the past
         const hasExpiredBatch = receiveItems.some((item) =>
             item.batches?.some((batch: any) => {
                 if (!batch.expiry_date) return false;
@@ -609,6 +544,7 @@ export default function Receive() {
 
         return allFullyReceived;
     };
+
     const handleView = (requisition: PurchaseRequisition) => {
         setSelectedRequisition(requisition);
         setShowViewPOModal(true);
@@ -631,7 +567,20 @@ export default function Receive() {
 
     const handleReturnStock = (requisition: PurchaseRequisition) => {
         setSelectedRequisition(requisition);
-        setReturnItems([]);
+        // ✅ Auto-populate return items from requisition items
+        setReturnItems(
+            requisition.items?.map((item) => ({
+                id: item.id,
+                product_id: item.product_id,
+                commodity: item.product?.product_name || `Product #${item.product_id}`,
+                product_code: item.product?.product_code || '',
+                batch_number: '',
+                expiry_date: '',
+                quantity: 0,
+                max_quantity: parseFloat(item.quantity),
+                reason: 'Damaged',
+            })) || [],
+        );
         setShowReturnModal(true);
     };
 
@@ -679,7 +628,6 @@ export default function Receive() {
         if (!selectedRequisition) return;
         setIsProcessing(true);
 
-        // Get supplier_id from selected requisition
         const supplierId =
             selectedRequisition.supplier_id ||
             selectedRequisition.supplier?.id ||
@@ -688,9 +636,9 @@ export default function Receive() {
         const payload = {
             purchase_requisition_id: selectedRequisition.id,
             purchase_order_id: selectedRequisition.converted_to_po_id || null,
-            supplier_id: supplierId, // ← Add supplier_id here
+            supplier_id: supplierId,
             department_id: selectedRequisition.department_id,
-            bulk_store_id: null, // You can add this if needed
+            bulk_store_id: null,
             items: receiveItems.flatMap((item) =>
                 item.batches.map((batch: any) => ({
                     requisition_item_id: item.id,
@@ -699,15 +647,13 @@ export default function Receive() {
                     batch_number: batch.batch_number,
                     expiry_date: batch.expiry_date,
                     manufacturing_date: batch.manufacturing_date,
-                    purchase_order_item_id: null, // You can get this from the requisition item if available
+                    purchase_order_item_id: null,
                     location: null,
                     notes: null,
                 })),
             ),
             created_by: auth.user.id,
         };
-
-        console.log(payload);
 
         try {
             const response = await Http.post('/bulk-store/receiving', payload);
@@ -740,25 +686,6 @@ export default function Receive() {
         }
     };
 
-    const handleAddReturnItem = () => {
-        setReturnItems([
-            ...returnItems,
-            {
-                commodity: '',
-                batch_number: '',
-                expiry_date: '',
-                quantity: 0,
-                reason: 'Damaged',
-            },
-        ]);
-    };
-
-    const handleRemoveReturnItem = (index: number) => {
-        const updated = [...returnItems];
-        updated.splice(index, 1);
-        setReturnItems(updated);
-    };
-
     const handleUpdateReturnItem = (
         index: number,
         field: string,
@@ -769,9 +696,22 @@ export default function Receive() {
         setReturnItems(updated);
     };
 
+    const handleRemoveReturnItem = (index: number) => {
+        const updated = [...returnItems];
+        updated.splice(index, 1);
+        setReturnItems(updated);
+    };
+
     const handleSubmitReturn = async () => {
         if (returnItems.length === 0) {
-            toast.error('Please add at least one item to return');
+            toast.error('No items to return');
+            return;
+        }
+
+        // Check if any item has quantity entered
+        const hasQuantity = returnItems.some((item) => item.quantity > 0);
+        if (!hasQuantity) {
+            toast.error('Please enter quantities for items to return');
             return;
         }
 
@@ -780,7 +720,7 @@ export default function Receive() {
             const response = await Http.post('/bulk-store/returns', {
                 purchase_requisition_id: selectedRequisition?.id,
                 grn_id: grnData?.id,
-                items: returnItems,
+                items: returnItems.filter((item) => item.quantity > 0),
             });
 
             if (response.data.success) {
@@ -816,31 +756,6 @@ export default function Receive() {
         fetchRequisitions();
         toast.success('Data refreshed');
     };
-
-    // ============================================
-    // STATS CARDS
-    // ============================================
-
-    const StatCard = ({ title, value, color, icon, subtitle }: any) => (
-        <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-            <div className="flex items-center justify-between">
-                <div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                        {title}
-                    </p>
-                    <p className="text-xl font-bold text-slate-800 dark:text-slate-200">
-                        {value}
-                    </p>
-                    {subtitle && (
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
-                            {subtitle}
-                        </p>
-                    )}
-                </div>
-                <div className={`rounded-full p-1.5 ${color}`}>{icon}</div>
-            </div>
-        </div>
-    );
 
     // ============================================
     // TABLE DEFINITIONS
@@ -999,34 +914,6 @@ export default function Receive() {
             }));
     }, [requisitions]);
 
-    // Tabs
-    const tabs = [
-        {
-            key: 'all',
-            label: 'All',
-            count: stats.total,
-            icon: <FileText className="h-4 w-4" />,
-        },
-        {
-            key: 'pending',
-            label: 'Pending',
-            count: stats.pending,
-            icon: <Clock className="h-4 w-4" />,
-        },
-        {
-            key: 'approved',
-            label: 'Approved',
-            count: stats.approved,
-            icon: <CheckCircle className="h-4 w-4" />,
-        },
-        {
-            key: 'rejected',
-            label: 'Rejected',
-            count: stats.rejected,
-            icon: <X className="h-4 w-4" />,
-        },
-    ];
-
     // ============================================
     // RENDER
     // ============================================
@@ -1060,71 +947,6 @@ export default function Receive() {
                             },
                         ]}
                     />
-
-                    {/* Stats Cards */}
-                    {/* <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                        <StatCard
-                            title="Total"
-                            value={stats.total}
-                            color="bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                            icon={<FileText className="h-4 w-4" />}
-                        />
-                        <StatCard
-                            title="Approved"
-                            value={stats.approved}
-                            color="bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400"
-                            icon={<CheckCircle className="h-4 w-4" />}
-                        />
-                        <StatCard
-                            title="Pending"
-                            value={stats.pending}
-                            color="bg-yellow-100 text-yellow-600 dark:bg-yellow-900/30 dark:text-yellow-400"
-                            icon={<Clock className="h-4 w-4" />}
-                        />
-                        <StatCard
-                            title="Total Value"
-                            value={formatCurrency(stats.total_value)}
-                            color="bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400"
-                            icon={<FileText className="h-4 w-4" />}
-                            subtitle={`${stats.urgent_count} urgent`}
-                        />
-                    </div> */}
-
-                    {/* Tabs */}
-                    <div className="mt-6 flex flex-wrap gap-2 border-b border-slate-200 pb-2 dark:border-slate-700">
-                        {tabs.map((tab) => (
-                            <button
-                                key={tab.key}
-                                onClick={() => {
-                                    setActiveTab(tab.key);
-                                    setStatusFilter('');
-                                    setPagination((prev) => ({
-                                        ...prev,
-                                        currentPage: 1,
-                                    }));
-                                }}
-                                className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-                                    activeTab === tab.key
-                                        ? 'bg-blue-600 text-white shadow-sm'
-                                        : 'text-slate-600 hover:bg-slate-200 dark:text-slate-300 dark:hover:bg-slate-700'
-                                }`}
-                            >
-                                {tab.icon}
-                                {tab.label}
-                                {tab.count > 0 && (
-                                    <span
-                                        className={`ml-1 rounded-full px-2 py-0.5 text-xs ${
-                                            activeTab === tab.key
-                                                ? 'bg-white/20 text-white'
-                                                : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
-                                        }`}
-                                    >
-                                        {tab.count}
-                                    </span>
-                                )}
-                            </button>
-                        ))}
-                    </div>
 
                     {/* Table */}
                     <div className="mt-6">
@@ -1385,9 +1207,7 @@ export default function Receive() {
                                                                     item.receive_quantity ||
                                                                     ''
                                                                 }
-                                                                onChange={(
-                                                                    e,
-                                                                ) => {
+                                                                onChange={(e) => {
                                                                     const value =
                                                                         parseFloat(
                                                                             e
@@ -1435,9 +1255,7 @@ export default function Receive() {
                                                                     item.batch_number ||
                                                                     ''
                                                                 }
-                                                                onChange={(
-                                                                    e,
-                                                                ) => {
+                                                                onChange={(e) => {
                                                                     const updated =
                                                                         [
                                                                             ...receiveItems,
@@ -1458,9 +1276,7 @@ export default function Receive() {
                                                                     item.expiry_date ||
                                                                     ''
                                                                 }
-                                                                onChange={(
-                                                                    e,
-                                                                ) => {
+                                                                onChange={(e) => {
                                                                     const selectedDate =
                                                                         new Date(
                                                                             e
@@ -1940,7 +1756,7 @@ export default function Receive() {
             </CustomModal>
 
             {/* ========================================== */}
-            {/* RETURN STOCK MODAL */}
+            {/* RETURN STOCK MODAL - UPDATED WITH AUTO-POPULATED ITEMS */}
             {/* ========================================== */}
             <CustomModal
                 isOpen={showReturnModal}
@@ -2018,30 +1834,22 @@ export default function Receive() {
                             </div>
                         </div>
 
-                        {/* Return Items */}
+                        {/* Return Items - Auto-populated from requisition */}
                         <div>
                             <div className="mb-2 flex items-center justify-between">
                                 <Label className="text-sm font-medium text-slate-700 dark:text-slate-300">
                                     Return Items
                                 </Label>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={handleAddReturnItem}
-                                    className="border-blue-200 text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-900/20"
-                                >
-                                    <Plus className="mr-1 h-3 w-3" /> Add Item
-                                </Button>
+                                <span className="text-xs text-slate-500">
+                                    Enter quantities to return
+                                </span>
                             </div>
 
                             {returnItems.length === 0 ? (
                                 <div className="rounded-lg border-2 border-dashed border-slate-300 p-6 text-center text-slate-500 dark:border-slate-600 dark:text-slate-400">
                                     <Package className="mx-auto h-8 w-8 text-slate-400" />
                                     <p className="mt-1 text-sm">
-                                        No return items added yet
-                                    </p>
-                                    <p className="text-xs">
-                                        Click "Add Item" to start
+                                        No items available for return
                                     </p>
                                 </div>
                             ) : (
@@ -2049,64 +1857,90 @@ export default function Receive() {
                                     {returnItems.map((item, index) => (
                                         <div
                                             key={index}
-                                            className="grid grid-cols-1 gap-1 rounded border border-slate-200 p-2 sm:grid-cols-5 dark:border-slate-700"
+                                            className="rounded border border-slate-200 p-3 dark:border-slate-700"
                                         >
-                                            <input
-                                                type="text"
-                                                placeholder="Product"
-                                                className="rounded border border-slate-300 p-1 text-xs dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200"
-                                                value={item.commodity}
-                                                onChange={(e) =>
-                                                    handleUpdateReturnItem(
-                                                        index,
-                                                        'commodity',
-                                                        e.target.value,
-                                                    )
-                                                }
-                                            />
-                                            <input
-                                                type="text"
-                                                placeholder="Batch #"
-                                                className="rounded border border-slate-300 p-1 text-xs dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200"
-                                                value={item.batch_number}
-                                                onChange={(e) =>
-                                                    handleUpdateReturnItem(
-                                                        index,
-                                                        'batch_number',
-                                                        e.target.value,
-                                                    )
-                                                }
-                                            />
-                                            <input
-                                                type="date"
-                                                className="rounded border border-slate-300 p-1 text-xs dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200"
-                                                value={item.expiry_date}
-                                                onChange={(e) =>
-                                                    handleUpdateReturnItem(
-                                                        index,
-                                                        'expiry_date',
-                                                        e.target.value,
-                                                    )
-                                                }
-                                            />
-                                            <input
-                                                type="number"
-                                                placeholder="Qty"
-                                                className="rounded border border-slate-300 p-1 text-xs dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200"
-                                                value={item.quantity || ''}
-                                                onChange={(e) =>
-                                                    handleUpdateReturnItem(
-                                                        index,
-                                                        'quantity',
-                                                        parseFloat(
+                                            <div className="mb-2 flex items-center justify-between">
+                                                <div>
+                                                    <p className="font-medium text-slate-800 dark:text-slate-200">
+                                                        {item.commodity}
+                                                    </p>
+                                                    {item.product_code && (
+                                                        <p className="text-xs text-slate-500">
+                                                            Code: {item.product_code}
+                                                        </p>
+                                                    )}
+                                                    <p className="text-xs text-slate-500">
+                                                        Max: {item.max_quantity}
+                                                    </p>
+                                                </div>
+                                                <button
+                                                    onClick={() =>
+                                                        handleRemoveReturnItem(
+                                                            index,
+                                                        )
+                                                    }
+                                                    className="text-red-500 hover:text-red-700"
+                                                >
+                                                    <X className="h-4 w-4" />
+                                                </button>
+                                            </div>
+
+                                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
+                                                <input
+                                                    type="text"
+                                                    placeholder="Batch #"
+                                                    className="rounded border border-slate-300 p-1.5 text-xs dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200"
+                                                    value={item.batch_number}
+                                                    onChange={(e) =>
+                                                        handleUpdateReturnItem(
+                                                            index,
+                                                            'batch_number',
                                                             e.target.value,
-                                                        ) || 0,
-                                                    )
-                                                }
-                                            />
-                                            <div className="flex gap-1">
+                                                        )
+                                                    }
+                                                />
+                                                <input
+                                                    type="date"
+                                                    className="rounded border border-slate-300 p-1.5 text-xs dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200"
+                                                    value={item.expiry_date}
+                                                    onChange={(e) =>
+                                                        handleUpdateReturnItem(
+                                                            index,
+                                                            'expiry_date',
+                                                            e.target.value,
+                                                        )
+                                                    }
+                                                />
+                                                <input
+                                                    type="number"
+                                                    placeholder="Qty to return"
+                                                    className="rounded border border-slate-300 p-1.5 text-xs dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200"
+                                                    value={item.quantity || ''}
+                                                    onChange={(e) => {
+                                                        const value =
+                                                            parseFloat(
+                                                                e.target.value,
+                                                            ) || 0;
+                                                        if (
+                                                            value >
+                                                            item.max_quantity
+                                                        ) {
+                                                            toast.error(
+                                                                `Cannot return more than ${item.max_quantity}`,
+                                                            );
+                                                            return;
+                                                        }
+                                                        handleUpdateReturnItem(
+                                                            index,
+                                                            'quantity',
+                                                            value,
+                                                        );
+                                                    }}
+                                                    min={0}
+                                                    max={item.max_quantity}
+                                                />
                                                 <select
-                                                    className="flex-1 rounded border border-slate-300 p-1 text-xs dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200"
+                                                    className="rounded border border-slate-300 p-1.5 text-xs dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200"
                                                     value={item.reason}
                                                     onChange={(e) =>
                                                         handleUpdateReturnItem(
@@ -2131,17 +1965,10 @@ export default function Receive() {
                                                     <option value="Quality Issue">
                                                         Quality Issue
                                                     </option>
+                                                    <option value="Other">
+                                                        Other
+                                                    </option>
                                                 </select>
-                                                <button
-                                                    onClick={() =>
-                                                        handleRemoveReturnItem(
-                                                            index,
-                                                        )
-                                                    }
-                                                    className="text-red-500 hover:text-red-700"
-                                                >
-                                                    <X className="h-4 w-4" />
-                                                </button>
                                             </div>
                                         </div>
                                     ))}

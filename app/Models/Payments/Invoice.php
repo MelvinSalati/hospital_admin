@@ -78,17 +78,7 @@ class Invoice extends Model
     {
         $year = date('Y');
         $month = date('m');
-        $lastInvoice = static::whereYear('created_at', $year)
-            ->whereMonth('created_at', $month)
-            ->orderBy('id', 'desc')
-            ->first();
-
-        if ($lastInvoice) {
-            $lastNumber = intval(substr($lastInvoice->invoice_number, -4));
-            $newNumber = str_pad($lastNumber + 1, 4, '0', STR_PAD_LEFT);
-        } else {
-            $newNumber = '0001';
-        }
+        $newNumber = rand(111111, 999999);
 
         return "INV-{$year}{$month}-{$newNumber}";
     }

@@ -208,9 +208,7 @@ export default function PurchaseOrder() {
     const { props } = usePage();
     const [loading, setLoading] = useState(false);
     const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
-    const [activeTab, setActiveTab] = useState<string>('all');
     const [searchTerm, setSearchTerm] = useState('');
-    const [statusFilter, setStatusFilter] = useState<string>('');
     const [pagination, setPagination] = useState({
         currentPage: 1,
         pageSize: 10,
@@ -235,7 +233,6 @@ export default function PurchaseOrder() {
     // Stats for dashboard
     const [stats, setStats] = useState({
         total: 0,
-        pending: 0,
         approved: 0,
         received: 0,
         completed: 0,
@@ -266,27 +263,23 @@ export default function PurchaseOrder() {
     };
 
     // ============================================
-    // FETCH PURCHASE ORDERS
+    // FETCH APPROVED PURCHASE ORDERS ONLY
     // ============================================
 
     const fetchPurchaseOrders = useCallback(async () => {
         setLoading(true);
         try {
+            // ✅ Only fetch approved orders
             const params = {
                 page: pagination.currentPage,
                 page_size: pagination.pageSize,
                 search: searchTerm,
-                status: statusFilter || (activeTab !== 'all' ? activeTab : ''),
+                status: 'approved', // ✅ Filter only approved orders
             };
 
-            // Remove empty params
-            Object.keys(params).forEach((key) => {
-                if (params[key as keyof typeof params] === '') {
-                    delete params[key as keyof typeof params];
-                }
+            const response = await Http.get('/bulk-store/purchase-orders', {
+                params,
             });
-
-            const response = await Http.get('/bulk-store/purchase-orders');
             const data = response.data;
 
             // Transform the data to handle nested structures
@@ -314,45 +307,34 @@ export default function PurchaseOrder() {
 
             setPurchaseOrders(transformedData);
 
-            // Update stats
-            if (data.stats) {
-                setStats(data.stats);
-            } else {
-                // Calculate stats from transformed data
-                const allOrders = transformedData;
-                setStats({
-                    total: allOrders.length,
-                    pending: allOrders.filter(
-                        (o: any) => o.status === 'pending',
-                    ).length,
-                    approved: allOrders.filter(
-                        (o: any) => o.status === 'approved',
-                    ).length,
-                    received: allOrders.filter(
-                        (o: any) => o.status === 'received',
-                    ).length,
-                    completed: allOrders.filter(
-                        (o: any) => o.status === 'completed',
-                    ).length,
-                    cancelled: allOrders.filter(
-                        (o: any) => o.status === 'cancelled',
-                    ).length,
-                    totalAmount: allOrders.reduce(
-                        (sum: number, o: any) => sum + (o.total_amount || 0),
-                        0,
-                    ),
-                    paidAmount: allOrders.reduce(
-                        (sum: number, o: any) => sum + (o.paid_amount || 0),
-                        0,
-                    ),
-                    balanceAmount: allOrders.reduce(
-                        (sum: number, o: any) =>
-                            sum +
-                            ((o.total_amount || 0) - (o.paid_amount || 0)),
-                        0,
-                    ),
-                });
-            }
+            // Update stats (only for approved orders)
+            const allOrders = transformedData;
+            setStats({
+                total: allOrders.length,
+                approved: allOrders.filter((o: any) => o.status === 'approved')
+                    .length,
+                received: allOrders.filter((o: any) => o.status === 'received')
+                    .length,
+                completed: allOrders.filter(
+                    (o: any) => o.status === 'completed',
+                ).length,
+                cancelled: allOrders.filter(
+                    (o: any) => o.status === 'cancelled',
+                ).length,
+                totalAmount: allOrders.reduce(
+                    (sum: number, o: any) => sum + (o.total_amount || 0),
+                    0,
+                ),
+                paidAmount: allOrders.reduce(
+                    (sum: number, o: any) => sum + (o.paid_amount || 0),
+                    0,
+                ),
+                balanceAmount: allOrders.reduce(
+                    (sum: number, o: any) =>
+                        sum + ((o.total_amount || 0) - (o.paid_amount || 0)),
+                    0,
+                ),
+            });
 
             setPagination((prev) => ({
                 ...prev,
@@ -365,13 +347,7 @@ export default function PurchaseOrder() {
         } finally {
             setLoading(false);
         }
-    }, [
-        pagination.currentPage,
-        pagination.pageSize,
-        searchTerm,
-        statusFilter,
-        activeTab,
-    ]);
+    }, [pagination.currentPage, pagination.pageSize, searchTerm]);
 
     useEffect(() => {
         fetchPurchaseOrders();
@@ -381,19 +357,11 @@ export default function PurchaseOrder() {
     // HANDLERS
     // ============================================
 
-    const handleTabChange = (tab: string) => {
-        setActiveTab(tab);
-        setStatusFilter('');
-        setPagination((prev) => ({ ...prev, currentPage: 1 }));
-    };
-
     const handleView = (order: PurchaseOrder) => {
-        // Navigate to view page or open modal
         window.location.href = `/bulk-store/purchase-orders/${order.id}`;
     };
 
     const handleEdit = (order: PurchaseOrder) => {
-        // Navigate to edit page or open modal
         window.location.href = `/bulk-store/purchase-orders/${order.id}/edit`;
     };
 
@@ -489,7 +457,6 @@ export default function PurchaseOrder() {
 
     const handleExport = () => {
         toast.success('Exporting purchase orders...');
-        // Implement export logic
     };
 
     const handlePrint = () => {
@@ -500,30 +467,10 @@ export default function PurchaseOrder() {
         window.location.href = '/bulk-store/purchase-orders/create';
     };
 
-    // ============================================
-    // STATS CARDS
-    // ============================================
-
-    const StatCard = ({ title, value, color, icon, subtitle }: any) => (
-        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-            <div className="flex items-center justify-between">
-                <div>
-                    <p className="text-sm text-slate-500 dark:text-slate-400">
-                        {title}
-                    </p>
-                    <p className="text-2xl font-bold text-slate-800 dark:text-slate-200">
-                        {value}
-                    </p>
-                    {subtitle && (
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
-                            {subtitle}
-                        </p>
-                    )}
-                </div>
-                <div className={`rounded-full p-2 ${color}`}>{icon}</div>
-            </div>
-        </div>
-    );
+    const handleRefresh = () => {
+        fetchPurchaseOrders();
+        toast.success('Data refreshed');
+    };
 
     // ============================================
     // TABLE DEFINITIONS
@@ -685,99 +632,65 @@ export default function PurchaseOrder() {
             format: (value) => formatDate(value),
             sortable: true,
         },
+        {
+            id: 'approved_at',
+            label: 'Approved',
+            minWidth: 100,
+            format: (value, row) => {
+                const approvedDate = row.approved_at || row.updated_at;
+                return approvedDate ? formatDate(approvedDate) : 'N/A';
+            },
+            sortable: true,
+        },
     ];
 
     const actions: Action<PurchaseOrder>[] = [
-        {
-            label: 'View',
-            icon: <Eye className="h-4 w-4" />,
-            color: 'primary',
-            onClick: handleView,
-        },
-        {
-            label: 'Edit',
-            icon: <Edit className="h-4 w-4" />,
-            color: 'warning',
-            onClick: handleEdit,
-            show: (row) => row.status === 'draft' || row.status === 'pending',
-        },
-        {
-            label: 'Approve',
-            icon: <CheckCircle className="h-4 w-4" />,
-            color: 'success',
-            onClick: (row) => handleOpenApproval(row),
-            show: (row) =>
-                row.status === 'pending' &&
-                (userRole === 'admin' || userRole === 'supervisor'),
-        },
-        {
-            label: 'Receive',
-            icon: <Package className="h-4 w-4" />,
-            color: 'info',
-            onClick: (row) => handleMarkAsReceived(row.id),
-            show: (row) => row.status === 'approved' || row.status === 'sent',
-        },
-        {
-            label: 'Cancel',
-            icon: <XCircle className="h-4 w-4" />,
-            color: 'error',
-            onClick: (row) => handleCancel(row.id),
-            show: (row) =>
-                row.status !== 'cancelled' && row.status !== 'completed',
-        },
-        {
-            label: 'Delete',
-            icon: <Trash2 className="h-4 w-4" />,
-            color: 'error',
-            onClick: (row) => handleDelete(row.id),
-            show: (row) => row.status === 'draft' || row.status === 'cancelled',
-        },
+        // {
+        //     label: 'View',
+        //     icon: <Eye className="h-4 w-4" />,
+        //     color: 'primary',
+        //     onClick: handleView,
+        // },
+        // {
+        //     label: 'Edit',
+        //     icon: <Edit className="h-4 w-4" />,
+        //     color: 'warning',
+        //     onClick: handleEdit,
+        //     show: (row) => row.status === 'draft' || row.status === 'pending',
+        // },
+        // {
+        //     label: 'Receive',
+        //     icon: <Package className="h-4 w-4" />,
+        //     color: 'info',
+        //     onClick: (row) => handleMarkAsReceived(row.id),
+        //     show: (row) => row.status === 'approved' || row.status === 'sent',
+        // },
+        // {
+        //     label: 'Cancel',
+        //     icon: <XCircle className="h-4 w-4" />,
+        //     color: 'error',
+        //     onClick: (row) => handleCancel(row.id),
+        //     show: (row) =>
+        //         row.status !== 'cancelled' && row.status !== 'completed',
+        // },
+        // {
+        //     label: 'Delete',
+        //     icon: <Trash2 className="h-4 w-4" />,
+        //     color: 'error',
+        //     onClick: (row) => handleDelete(row.id),
+        //     show: (row) => row.status === 'draft' || row.status === 'cancelled',
+        // },
     ];
 
-    // Status options for filtering
-    const statusOptions = Object.entries(STATUS_CONFIG).map(([key, value]) => ({
-        value: key,
-        label: value.label,
-    }));
-
-    // Tabs configuration
-    const tabs = [
-        {
-            key: 'all',
-            label: 'All Orders',
-            count: stats.total,
-            icon: <FileText className="h-4 w-4" />,
-        },
-        {
-            key: 'pending',
-            label: 'Pending',
-            count: stats.pending,
-            icon: <Clock className="h-4 w-4" />,
-        },
-        {
-            key: 'approved',
-            label: 'Approved',
-            count: stats.approved,
-            icon: <CheckCircle className="h-4 w-4" />,
-        },
-        {
-            key: 'received',
-            label: 'Received',
-            count: stats.received,
-            icon: <Package className="h-4 w-4" />,
-        },
-        {
-            key: 'completed',
-            label: 'Completed',
-            count: stats.completed,
-            icon: <CheckCircle className="h-4 w-4" />,
-        },
-        {
-            key: 'cancelled',
-            label: 'Cancelled',
-            count: stats.cancelled,
-            icon: <XCircle className="h-4 w-4" />,
-        },
+    // Status options for filtering (only relevant ones for approved orders)
+    const statusOptions = [
+        { value: '', label: 'All Status' },
+        { value: 'approved', label: 'Approved' },
+        { value: 'sent', label: 'Sent' },
+        { value: 'received', label: 'Received' },
+        { value: 'partial', label: 'Partial' },
+        { value: 'completed', label: 'Completed' },
+        { value: 'cancelled', label: 'Cancelled' },
     ];
 
     // ============================================
@@ -792,7 +705,7 @@ export default function PurchaseOrder() {
                     href: '/',
                 },
                 {
-                    title: 'Purchase Orders',
+                    title: 'Approved Purchase Orders',
                     href: '',
                 },
             ]}
@@ -801,65 +714,88 @@ export default function PurchaseOrder() {
                 <Container>
                     {/* Header */}
                     <PageHeader
-                        title="Purchase Orders"
-                        subtitle="Manage all purchase orders from requisitions to delivery"
-                        actions={[
-                            {
-                                label: 'Create PO',
-                                icon: <Plus className="h-4 w-4" />,
-                                onClick: handleCreatePO,
-                                variant: 'primary',
-                            },
-                            {
-                                label: 'Export',
-                                icon: <Download className="h-4 w-4" />,
-                                onClick: handleExport,
-                                variant: 'outline',
-                            },
-                            {
-                                label: 'Print',
-                                icon: <Printer className="h-4 w-4" />,
-                                onClick: handlePrint,
-                                variant: 'outline',
-                            },
-                            {
-                                label: 'Refresh',
-                                icon: <RefreshCw className="h-4 w-4" />,
-                                onClick: fetchPurchaseOrders,
-                                variant: 'outline',
-                                loading: loading,
-                            },
-                        ]}
+                        title="Approved Purchase Orders"
+                        subtitle="View all approved purchase orders ready for processing"
                     />
 
-                    {/* Tabs */}
-                    <div className="mt-6 flex flex-wrap gap-2 border-b border-slate-200 pb-2 dark:border-slate-700">
-                        {tabs.map((tab) => (
-                            <button
-                                key={tab.key}
-                                onClick={() => handleTabChange(tab.key)}
-                                className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-                                    activeTab === tab.key
-                                        ? 'bg-blue-600 text-white shadow-sm'
-                                        : 'text-slate-600 hover:bg-slate-200 dark:text-slate-300 dark:hover:bg-slate-700'
-                                }`}
-                            >
-                                {tab.icon}
-                                {tab.label}
-                                {tab.count > 0 && (
-                                    <span
-                                        className={`ml-1 rounded-full px-2 py-0.5 text-xs ${
-                                            activeTab === tab.key
-                                                ? 'bg-white/20 text-white'
-                                                : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
-                                        }`}
-                                    >
-                                        {tab.count}
-                                    </span>
-                                )}
-                            </button>
-                        ))}
-                    </div>
+                    {/* Stats Cards - Approved Orders Only */}
+                    {/* <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-sm text-slate-500 dark:text-slate-400">
+                                        Total Approved
+                                    </p>
+                                    <p className="text-2xl font-bold text-slate-800 dark:text-slate-200">
+                                        {stats.total}
+                                    </p>
+                                </div>
+                                <div className="rounded-full bg-blue-100 p-2 dark:bg-blue-900/30">
+                                    <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                                </div>
+                            </div>
+                        </div>
+                        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-sm text-slate-500 dark:text-slate-400">
+                                        Received
+                                    </p>
+                                    <p className="text-2xl font-bold text-slate-800 dark:text-slate-200">
+                                        {stats.received}
+                                    </p>
+                                </div>
+                                <div className="rounded-full bg-green-100 p-2 dark:bg-green-900/30">
+                                    <Package className="h-5 w-5 text-green-600 dark:text-green-400" />
+                                </div>
+                            </div>
+                        </div>
+                        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-sm text-slate-500 dark:text-slate-400">
+                                        Completed
+                                    </p>
+                                    <p className="text-2xl font-bold text-slate-800 dark:text-slate-200">
+                                        {stats.completed}
+                                    </p>
+                                </div>
+                                <div className="rounded-full bg-emerald-100 p-2 dark:bg-emerald-900/30">
+                                    <CheckCircle className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                                </div>
+                            </div>
+                        </div>
+                        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-sm text-slate-500 dark:text-slate-400">
+                                        Total Amount
+                                    </p>
+                                    <p className="text-2xl font-bold text-slate-800 dark:text-slate-200">
+                                        {formatCurrency(stats.totalAmount)}
+                                    </p>
+                                </div>
+                                <div className="rounded-full bg-yellow-100 p-2 dark:bg-yellow-900/30">
+                                    <DollarSign className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
+                                </div>
+                            </div>
+                        </div>
+                        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-sm text-slate-500 dark:text-slate-400">
+                                        Balance
+                                    </p>
+                                    <p className="text-2xl font-bold text-slate-800 dark:text-slate-200">
+                                        {formatCurrency(stats.balanceAmount)}
+                                    </p>
+                                </div>
+                                <div className="rounded-full bg-red-100 p-2 dark:bg-red-900/30">
+                                    <CreditCard className="h-5 w-5 text-red-600 dark:text-red-400" />
+                                </div>
+                            </div>
+                        </div>
+                    </div> */}
 
                     {/* Table */}
                     <div className="mt-6">
@@ -868,7 +804,7 @@ export default function PurchaseOrder() {
                             data={purchaseOrders}
                             actions={actions}
                             loading={loading}
-                            title={'Purchase  Orders'}
+                            title="Approved Purchase Orders"
                             rowsPerPageOptions={[10, 25, 50, 100]}
                             defaultRowsPerPage={10}
                             defaultOrderBy="created_at"
@@ -876,7 +812,7 @@ export default function PurchaseOrder() {
                             filterPlaceholder="Search by PO number, supplier, department..."
                             statusFilterKey="status"
                             statusOptions={statusOptions}
-                            emptyMessage="No purchase orders found"
+                            emptyMessage="No approved purchase orders found"
                             onSearchChange={(value) => {
                                 setSearchTerm(value);
                                 setPagination((prev) => ({
@@ -908,9 +844,7 @@ export default function PurchaseOrder() {
                 </Container>
             </div>
 
-            {/* ========================================== */}
-            {/* ✅ APPROVAL MODAL */}
-            {/* ========================================== */}
+            {/* Approval Modal */}
             <ApprovalModal
                 isOpen={showApprovalModal}
                 onClose={() => {

@@ -1,11 +1,11 @@
-import PageHeader from '@/components/PageHeader';
-import { Button } from '@/components/ui/button';
-import AppLayout from '@/layouts/app-layout';
-import Http from '@/utils/Http';
 import { usePage } from '@inertiajs/react';
 import { ShieldCheck } from 'lucide-react';
 import Notiflix from 'notiflix';
 import { useState, useRef, useEffect } from 'react';
+import PageHeader from '@/components/PageHeader';
+import { Button } from '@/components/ui/button';
+import AppLayout from '@/layouts/app-layout';
+import Http from '@/utils/Http';
 
 export default function ApproveGRN() {
     const [otp, setOtp] = useState(['', '', '', '', '', '']);

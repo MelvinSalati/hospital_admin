@@ -136,7 +136,7 @@ export default function PageHeader({
 
     return (
         <div
-            className={`mb-4 w-full rounded-lg bg-white p-3 dark:bg-slate-800 ${className}`}
+            className={`mb-4 w-full rounded-lg bg-white p-3 shadow-lg dark:bg-slate-800 ${className}`}
         >
             {/* Breadcrumbs */}
             {breadcrumbs.length > 0 && (

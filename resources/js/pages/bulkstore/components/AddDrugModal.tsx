@@ -1,5 +1,4 @@
-// components/pharmacy/AddDrugModal.tsx
-
+import JsBarcode from 'jsbarcode';
 import {
     X,
     Check,
@@ -8,19 +7,14 @@ import {
     Tag,
     Pill,
     Syringe,
-    DollarSign,
     Shield,
-    AlertCircle,
     Hash,
     Box,
-    Calendar,
     ClipboardList,
-    Building2,
-    User,
     FileText,
     Plus,
-    Minus,
-    Layers,
+    Calendar,
+    QrCode,
 } from 'lucide-react';
 import React, { useState, useEffect, useRef } from 'react';
 
@@ -49,19 +43,12 @@ interface DrugFormData {
     route_of_administration: string;
     unit_of_measure: string;
     pack_size: number;
-    minimum_stock_level: number;
-    maximum_stock_level: number;
-    reorder_level: number;
-    purchase_price: number;
-    selling_price: number;
-    insurance_price: number;
     is_arv: boolean;
     is_tb_drug: boolean;
     is_emergency: boolean;
     is_controlled: boolean;
     track_batches: boolean;
     track_expiry: boolean;
-    allow_negative_stock: boolean;
 }
 
 // ============================================================================
@@ -95,7 +82,7 @@ const FormField: React.FC<{
 }) => {
     return (
         <div className={`space-y-0.5 ${className}`}>
-            <label className="flex items-center gap-1 text-[10px] font-medium tracking-wide text-slate-600 uppercase dark:text-slate-400">
+            <label className="flex items-center gap-1.5 text-xs font-medium tracking-wide text-slate-700 dark:text-slate-300">
                 {icon}
                 {label}
                 {required && <span className="text-red-500">*</span>}
@@ -105,7 +92,7 @@ const FormField: React.FC<{
                     name={name}
                     value={value}
                     onChange={onChange}
-                    className="h-7 w-full rounded border border-slate-200 px-1.5 text-xs focus:border-blue-400 focus:ring-1 focus:ring-blue-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                    className="h-9 w-full rounded-lg border border-slate-200 px-3 text-sm focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                 >
                     <option value="">Select...</option>
                     {options.map((opt) => (
@@ -122,7 +109,7 @@ const FormField: React.FC<{
                     onChange={onChange}
                     placeholder={placeholder}
                     required={required}
-                    className="h-7 w-full rounded border border-slate-200 px-1.5 text-xs focus:border-blue-400 focus:ring-1 focus:ring-blue-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                    className="h-9 w-full rounded-lg border border-slate-200 px-3 text-sm focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                 />
             )}
         </div>
@@ -136,15 +123,15 @@ const CheckboxField: React.FC<{
     onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }> = ({ label, name, checked, onChange }) => {
     return (
-        <label className="flex cursor-pointer items-center gap-1.5">
+        <label className="flex cursor-pointer items-center gap-2">
             <input
                 type="checkbox"
                 name={name}
                 checked={checked}
                 onChange={onChange}
-                className="h-3 w-3 rounded border-slate-300 text-blue-600 focus:ring-blue-500 dark:border-slate-600"
+                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-2 focus:ring-blue-500 dark:border-slate-600"
             />
-            <span className="text-[10px] text-slate-600 dark:text-slate-400">
+            <span className="text-sm text-slate-700 dark:text-slate-300">
                 {label}
             </span>
         </label>
@@ -175,24 +162,48 @@ export default function AddDrugModal({
         route_of_administration: '',
         unit_of_measure: '',
         pack_size: 1,
-        minimum_stock_level: 10,
-        maximum_stock_level: 100,
-        reorder_level: 20,
-        purchase_price: 0,
-        selling_price: 0,
-        insurance_price: 0,
         is_arv: false,
         is_tb_drug: false,
         is_emergency: false,
         is_controlled: false,
         track_batches: true,
         track_expiry: true,
-        allow_negative_stock: false,
     });
 
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [errors, setErrors] = useState<Record<string, string>>({});
+    const [barcodeGenerated, setBarcodeGenerated] = useState(false);
     const modalRef = useRef<HTMLDivElement>(null);
+    const barcodeRef = useRef<SVGSVGElement | null>(null);
+
+    // Generate barcode when barcode value changes
+    useEffect(() => {
+        if (
+            formData.barcode &&
+            formData.barcode.length > 0 &&
+            barcodeRef.current
+        ) {
+            try {
+                JsBarcode(barcodeRef.current, formData.barcode, {
+                    format: 'CODE128',
+                    width: 1.5,
+                    height: 50,
+                    displayValue: true,
+                    fontSize: 14,
+                    font: 'monospace',
+                    textMargin: 4,
+                    background: '#ffffff',
+                    lineColor: '#1e293b',
+                });
+                setBarcodeGenerated(true);
+            } catch (error) {
+                console.error('Error generating barcode:', error);
+                setBarcodeGenerated(false);
+            }
+        } else {
+            setBarcodeGenerated(false);
+        }
+    }, [formData.barcode]);
 
     // Pre-fill drug name from search query
     useEffect(() => {
@@ -271,12 +282,6 @@ export default function AddDrugModal({
         if (!formData.dosage_form) {
             newErrors.dosage_form = 'Dosage form is required';
         }
-        if (formData.purchase_price < 0) {
-            newErrors.purchase_price = 'Price cannot be negative';
-        }
-        if (formData.selling_price < 0) {
-            newErrors.selling_price = 'Price cannot be negative';
-        }
 
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
@@ -311,41 +316,35 @@ export default function AddDrugModal({
                 route_of_administration: '',
                 unit_of_measure: '',
                 pack_size: 1,
-                minimum_stock_level: 10,
-                maximum_stock_level: 100,
-                reorder_level: 20,
-                purchase_price: 0,
-                selling_price: 0,
-                insurance_price: 0,
                 is_arv: false,
                 is_tb_drug: false,
                 is_emergency: false,
                 is_controlled: false,
                 track_batches: true,
                 track_expiry: true,
-                allow_negative_stock: false,
             });
+            setBarcodeGenerated(false);
         }, 1000);
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
             <div
                 ref={modalRef}
-                className="relative max-h-[95vh] w-full max-w-4xl animate-in duration-200 fade-in zoom-in"
+                className="relative w-full max-w-4xl animate-in duration-200 fade-in zoom-in"
             >
                 <div className="overflow-hidden rounded-xl bg-white shadow-2xl dark:bg-slate-800">
                     {/* Header */}
-                    <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2.5 dark:border-slate-700">
-                        <div className="flex items-center gap-2">
-                            <div className="rounded-lg bg-blue-100 p-1.5 dark:bg-blue-900/30">
-                                <Plus className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                    <div className="flex items-center justify-between border-b border-slate-200 px-6 py-3 dark:border-slate-700">
+                        <div className="flex items-center gap-3">
+                            <div className="rounded-lg bg-blue-100 p-2 dark:bg-blue-900/30">
+                                <Plus className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                             </div>
                             <div>
-                                <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                                <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">
                                     Add New Drug
                                 </h3>
-                                <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                                <p className="text-xs text-slate-500 dark:text-slate-400">
                                     Drug not found in inventory - create new
                                     entry
                                 </p>
@@ -353,25 +352,25 @@ export default function AddDrugModal({
                         </div>
                         <button
                             onClick={onClose}
-                            className="rounded p-0.5 transition-colors hover:bg-slate-100 dark:hover:bg-slate-700"
+                            className="rounded p-1 transition-colors hover:bg-slate-100 dark:hover:bg-slate-700"
                         >
-                            <X className="h-4 w-4 text-slate-500" />
+                            <X className="h-5 w-5 text-slate-500" />
                         </button>
                     </div>
 
-                    {/* Form - Scrollable */}
-                    <div className="max-h-[calc(95vh-140px)] overflow-y-auto p-4">
+                    {/* Form - No overflow, fits content */}
+                    <div className="p-6">
                         <form onSubmit={handleSubmit}>
                             {/* Two-Column Grid */}
-                            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                                 {/* Left Column */}
-                                <div className="space-y-2">
-                                    <div className="rounded-lg bg-slate-50 p-2 dark:bg-slate-700/30">
-                                        <h4 className="mb-1.5 flex items-center gap-1 text-[10px] font-semibold text-slate-600 uppercase dark:text-slate-400">
-                                            <Package className="h-3 w-3" />
+                                <div className="space-y-3">
+                                    <div className="rounded-lg bg-slate-50 p-4 dark:bg-slate-700/30">
+                                        <h4 className="mb-2 flex items-center gap-2 text-xs font-semibold text-slate-700 uppercase dark:text-slate-300">
+                                            <Package className="h-4 w-4" />
                                             Basic Information
                                         </h4>
-                                        <div className="space-y-1.5">
+                                        <div className="space-y-3">
                                             <FormField
                                                 label="Drug Name"
                                                 name="drug_name"
@@ -380,7 +379,7 @@ export default function AddDrugModal({
                                                 placeholder="e.g., Amoxicillin 500mg"
                                                 required
                                                 icon={
-                                                    <Pill className="h-3 w-3" />
+                                                    <Pill className="h-4 w-4" />
                                                 }
                                             />
                                             <FormField
@@ -391,7 +390,7 @@ export default function AddDrugModal({
                                                 placeholder="e.g., AMX-001"
                                                 required
                                                 icon={
-                                                    <Hash className="h-3 w-3" />
+                                                    <Hash className="h-4 w-4" />
                                                 }
                                             />
                                             <FormField
@@ -401,7 +400,7 @@ export default function AddDrugModal({
                                                 onChange={handleChange}
                                                 placeholder="e.g., Amoxicillin Trihydrate"
                                                 icon={
-                                                    <FileText className="h-3 w-3" />
+                                                    <FileText className="h-4 w-4" />
                                                 }
                                             />
                                             <FormField
@@ -411,7 +410,7 @@ export default function AddDrugModal({
                                                 onChange={handleChange}
                                                 placeholder="e.g., Amoxil"
                                                 icon={
-                                                    <Tag className="h-3 w-3" />
+                                                    <Tag className="h-4 w-4" />
                                                 }
                                             />
                                             <FormField
@@ -421,18 +420,60 @@ export default function AddDrugModal({
                                                 onChange={handleChange}
                                                 placeholder="Scan or enter barcode"
                                                 icon={
-                                                    <Barcode className="h-3 w-3" />
+                                                    <Barcode className="h-4 w-4" />
+                                                }
+                                            />
+                                            {/* Barcode Display */}
+                                            {barcodeGenerated &&
+                                                formData.barcode && (
+                                                    <div className="mt-2 flex flex-col items-center rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+                                                        <div className="flex items-center gap-2 self-start">
+                                                            <QrCode className="h-4 w-4 text-slate-500" />
+                                                            <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                                                                Generated
+                                                                Barcode
+                                                            </span>
+                                                        </div>
+                                                        <svg
+                                                            ref={barcodeRef}
+                                                            className="mt-1 w-full max-w-[280px]"
+                                                        />
+                                                    </div>
+                                                )}
+                                            {!barcodeGenerated &&
+                                                formData.barcode &&
+                                                formData.barcode.length > 0 && (
+                                                    <div className="mt-2 rounded-lg border border-yellow-200 bg-yellow-50 p-2 text-center dark:border-yellow-900 dark:bg-yellow-950/30">
+                                                        <p className="text-xs text-yellow-700 dark:text-yellow-400">
+                                                            Invalid barcode
+                                                            format. Please enter
+                                                            a valid barcode.
+                                                        </p>
+                                                    </div>
+                                                )}
+                                            <FormField
+                                                label="Strength"
+                                                name="strength"
+                                                value={formData.strength}
+                                                onChange={handleChange}
+                                                placeholder="e.g., 500mg, 10mg/ml"
+                                                icon={
+                                                    <Box className="h-4 w-4" />
                                                 }
                                             />
                                         </div>
                                     </div>
+                                </div>
 
-                                    <div className="rounded-lg bg-slate-50 p-2 dark:bg-slate-700/30">
-                                        <h4 className="mb-1.5 flex items-center gap-1 text-[10px] font-semibold text-slate-600 uppercase dark:text-slate-400">
-                                            <Box className="h-3 w-3" />
+                                {/* Right Column */}
+
+                                <div className="space-y-3">
+                                    <div className="rounded-lg bg-slate-50 p-4 dark:bg-slate-700/30">
+                                        <h4 className="mb-2 flex items-center gap-2 text-xs font-semibold text-slate-700 uppercase dark:text-slate-300">
+                                            <Box className="h-4 w-4" />
                                             Classification
                                         </h4>
-                                        <div className="space-y-1.5">
+                                        <div className="space-y-3">
                                             <FormField
                                                 label="Therapeutic Class"
                                                 name="therapeutic_class"
@@ -442,7 +483,7 @@ export default function AddDrugModal({
                                                 onChange={handleChange}
                                                 placeholder="e.g., Antibiotic"
                                                 icon={
-                                                    <ClipboardList className="h-3 w-3" />
+                                                    <ClipboardList className="h-4 w-4" />
                                                 }
                                             />
                                             <FormField
@@ -452,7 +493,7 @@ export default function AddDrugModal({
                                                 onChange={handleChange}
                                                 placeholder="e.g., Schedule 4"
                                                 icon={
-                                                    <Shield className="h-3 w-3" />
+                                                    <Shield className="h-4 w-4" />
                                                 }
                                             />
                                             <FormField
@@ -460,10 +501,10 @@ export default function AddDrugModal({
                                                 name="dosage_form"
                                                 value={formData.dosage_form}
                                                 onChange={handleChange}
-                                                placeholder="e.g., Tablet, Capsule, Syrup"
+                                                placeholder="Select dosage form"
                                                 required
                                                 icon={
-                                                    <Syringe className="h-3 w-3" />
+                                                    <Syringe className="h-4 w-4" />
                                                 }
                                                 options={[
                                                     {
@@ -498,6 +539,14 @@ export default function AddDrugModal({
                                                         value: 'Powder',
                                                         label: 'Powder',
                                                     },
+                                                    {
+                                                        value: 'Inhaler',
+                                                        label: 'Inhaler',
+                                                    },
+                                                    {
+                                                        value: 'Solution',
+                                                        label: 'Solution',
+                                                    },
                                                 ]}
                                             />
                                             <FormField
@@ -507,7 +556,7 @@ export default function AddDrugModal({
                                                     formData.route_of_administration
                                                 }
                                                 onChange={handleChange}
-                                                placeholder="e.g., Oral, Topical, IV"
+                                                placeholder="Select route"
                                                 options={[
                                                     {
                                                         value: 'Oral',
@@ -541,28 +590,24 @@ export default function AddDrugModal({
                                                         value: 'Otic',
                                                         label: 'Otic',
                                                     },
+                                                    {
+                                                        value: 'Rectal',
+                                                        label: 'Rectal',
+                                                    },
+                                                    {
+                                                        value: 'Vaginal',
+                                                        label: 'Vaginal',
+                                                    },
                                                 ]}
                                             />
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Right Column */}
-                                <div className="space-y-2">
-                                    <div className="rounded-lg bg-slate-50 p-2 dark:bg-slate-700/30">
-                                        <h4 className="mb-1.5 flex items-center gap-1 text-[10px] font-semibold text-slate-600 uppercase dark:text-slate-400">
-                                            <DollarSign className="h-3 w-3" />
-                                            Pricing & Stock
-                                        </h4>
-                                        <div className="space-y-1.5">
                                             <FormField
                                                 label="Unit of Measure"
                                                 name="unit_of_measure"
                                                 value={formData.unit_of_measure}
                                                 onChange={handleChange}
-                                                placeholder="e.g., Tablet, ML, GM"
+                                                placeholder="Select unit"
                                                 icon={
-                                                    <Box className="h-3 w-3" />
+                                                    <Box className="h-4 w-4" />
                                                 }
                                                 options={[
                                                     {
@@ -589,115 +634,24 @@ export default function AddDrugModal({
                                                         value: 'Ampoule',
                                                         label: 'Ampoule',
                                                     },
+                                                    {
+                                                        value: 'Each',
+                                                        label: 'Each',
+                                                    },
+                                                    {
+                                                        value: 'Unit',
+                                                        label: 'Unit',
+                                                    },
                                                 ]}
                                             />
-                                            <FormField
-                                                label="Pack Size"
-                                                name="pack_size"
-                                                value={formData.pack_size}
-                                                onChange={handleChange}
-                                                type="number"
-                                                placeholder="e.g., 10"
-                                                icon={
-                                                    <Layers className="h-3 w-3" />
-                                                }
-                                            />
-                                            <div className="grid grid-cols-2 gap-1.5">
-                                                <FormField
-                                                    label="Min Stock"
-                                                    name="minimum_stock_level"
-                                                    value={
-                                                        formData.minimum_stock_level
-                                                    }
-                                                    onChange={handleChange}
-                                                    type="number"
-                                                    icon={
-                                                        <Minus className="h-3 w-3" />
-                                                    }
-                                                />
-                                                <FormField
-                                                    label="Max Stock"
-                                                    name="maximum_stock_level"
-                                                    value={
-                                                        formData.maximum_stock_level
-                                                    }
-                                                    onChange={handleChange}
-                                                    type="number"
-                                                    icon={
-                                                        <Plus className="h-3 w-3" />
-                                                    }
-                                                />
-                                            </div>
-                                            <FormField
-                                                label="Reorder Level"
-                                                name="reorder_level"
-                                                value={formData.reorder_level}
-                                                onChange={handleChange}
-                                                type="number"
-                                                placeholder="e.g., 20"
-                                                icon={
-                                                    <AlertCircle className="h-3 w-3" />
-                                                }
-                                            />
                                         </div>
                                     </div>
-
-                                    <div className="rounded-lg bg-slate-50 p-2 dark:bg-slate-700/30">
-                                        <h4 className="mb-1.5 flex items-center gap-1 text-[10px] font-semibold text-slate-600 uppercase dark:text-slate-400">
-                                            <DollarSign className="h-3 w-3" />
-                                            Pricing
+                                    {/* <div className="rounded-lg bg-slate-50 p-4 dark:bg-slate-700/30">
+                                        <h4 className="mb-2 flex items-center gap-2 text-xs font-semibold text-slate-700 uppercase dark:text-slate-300">
+                                            <Shield className="h-4 w-4" />
+                                            Drug Classification
                                         </h4>
-                                        <div className="space-y-1.5">
-                                            <div className="grid grid-cols-3 gap-1.5">
-                                                <FormField
-                                                    label="Purchase Price"
-                                                    name="purchase_price"
-                                                    value={
-                                                        formData.purchase_price
-                                                    }
-                                                    onChange={handleChange}
-                                                    type="number"
-                                                    placeholder="0.00"
-                                                    icon={
-                                                        <DollarSign className="h-3 w-3" />
-                                                    }
-                                                />
-                                                <FormField
-                                                    label="Selling Price"
-                                                    name="selling_price"
-                                                    value={
-                                                        formData.selling_price
-                                                    }
-                                                    onChange={handleChange}
-                                                    type="number"
-                                                    placeholder="0.00"
-                                                    icon={
-                                                        <DollarSign className="h-3 w-3" />
-                                                    }
-                                                />
-                                                <FormField
-                                                    label="Insurance Price"
-                                                    name="insurance_price"
-                                                    value={
-                                                        formData.insurance_price
-                                                    }
-                                                    onChange={handleChange}
-                                                    type="number"
-                                                    placeholder="0.00"
-                                                    icon={
-                                                        <DollarSign className="h-3 w-3" />
-                                                    }
-                                                />
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div className="rounded-lg bg-slate-50 p-2 dark:bg-slate-700/30">
-                                        <h4 className="mb-1.5 flex items-center gap-1 text-[10px] font-semibold text-slate-600 uppercase dark:text-slate-400">
-                                            <Shield className="h-3 w-3" />
-                                            Flags & Tracking
-                                        </h4>
-                                        <div className="flex flex-wrap gap-2">
+                                        <div className="grid grid-cols-2 gap-2">
                                             <CheckboxField
                                                 label="ARV Drug"
                                                 name="is_arv"
@@ -711,17 +665,26 @@ export default function AddDrugModal({
                                                 onChange={handleCheckboxChange}
                                             />
                                             <CheckboxField
-                                                label="Emergency"
+                                                label="Emergency Drug"
                                                 name="is_emergency"
                                                 checked={formData.is_emergency}
                                                 onChange={handleCheckboxChange}
                                             />
                                             <CheckboxField
-                                                label="Controlled"
+                                                label="Controlled Substance"
                                                 name="is_controlled"
                                                 checked={formData.is_controlled}
                                                 onChange={handleCheckboxChange}
                                             />
+                                        </div>
+                                    </div> */}
+
+                                    {/* <div className="rounded-lg bg-slate-50 p-4 dark:bg-slate-700/30">
+                                        <h4 className="mb-2 flex items-center gap-2 text-xs font-semibold text-slate-700 uppercase dark:text-slate-300">
+                                            <Calendar className="h-4 w-4" />
+                                            Tracking Options
+                                        </h4>
+                                        <div className="grid grid-cols-2 gap-2">
                                             <CheckboxField
                                                 label="Track Batches"
                                                 name="track_batches"
@@ -734,26 +697,34 @@ export default function AddDrugModal({
                                                 checked={formData.track_expiry}
                                                 onChange={handleCheckboxChange}
                                             />
-                                            <CheckboxField
-                                                label="Allow Negative Stock"
-                                                name="allow_negative_stock"
-                                                checked={
-                                                    formData.allow_negative_stock
-                                                }
-                                                onChange={handleCheckboxChange}
-                                            />
                                         </div>
+                                    </div> */}
+
+                                    <div className="rounded-lg bg-slate-50 p-4 dark:bg-slate-700/30">
+                                        <h4 className="mb-2 flex items-center gap-2 text-xs font-semibold text-slate-700 uppercase dark:text-slate-300">
+                                            <Box className="h-4 w-4" />
+                                            Packaging
+                                        </h4>
+                                        <FormField
+                                            label="Pack Size"
+                                            name="pack_size"
+                                            value={formData.pack_size}
+                                            onChange={handleChange}
+                                            type="number"
+                                            placeholder="e.g., 10"
+                                            icon={<Box className="h-4 w-4" />}
+                                        />
                                     </div>
                                 </div>
                             </div>
 
                             {/* Error Summary */}
                             {Object.keys(errors).length > 0 && (
-                                <div className="mt-2 rounded-lg border border-red-200 bg-red-50 p-1.5 dark:border-red-900 dark:bg-red-950/30">
-                                    <p className="text-[10px] text-red-600 dark:text-red-400">
+                                <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-900 dark:bg-red-950/30">
+                                    <p className="text-sm font-medium text-red-600 dark:text-red-400">
                                         Please fix the following errors:
                                     </p>
-                                    <ul className="list-inside list-disc text-[9px] text-red-500">
+                                    <ul className="list-inside list-disc text-sm text-red-500">
                                         {Object.values(errors).map(
                                             (error, idx) => (
                                                 <li key={idx}>{error}</li>
@@ -763,28 +734,28 @@ export default function AddDrugModal({
                                 </div>
                             )}
 
-                            {/* Actions */}
-                            <div className="mt-3 flex justify-end gap-2 border-t border-slate-200 pt-2.5 dark:border-slate-700">
+                            {/* Footer with buttons - Always visible */}
+                            <div className="mt-4 flex justify-end gap-3 border-t border-slate-200 pt-4 dark:border-slate-700">
                                 <button
                                     type="button"
                                     onClick={onClose}
-                                    className="rounded border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+                                    className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
                                 >
                                     Cancel
                                 </button>
                                 <button
                                     type="submit"
                                     disabled={isSubmitting}
-                                    className="flex items-center gap-1.5 rounded bg-blue-600 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+                                    className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                                 >
                                     {isSubmitting ? (
                                         <>
-                                            <div className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
                                             Saving...
                                         </>
                                     ) : (
                                         <>
-                                            <Check className="h-3.5 w-3.5" />
+                                            <Check className="h-4 w-4" />
                                             Add Drug
                                         </>
                                     )}

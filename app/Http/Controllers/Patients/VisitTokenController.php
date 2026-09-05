@@ -4,17 +4,17 @@ namespace App\Http\Controllers\Patients;
 
 use App\Http\Controllers\Controller;
 use App\Helpers\VisitTokenHelper;
-use App\Models\Patients\Patient;
+use App\Models\Patients\PatientVisitScheme;
 use App\Models\Patients\VisitToken;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class VisitTokenController extends Controller
 {
     /**
-     * Generate a new visit token for a patient
+     * Generate a new visit token for a patient.
      */
     public function generate(Request $request)
     {
@@ -25,47 +25,56 @@ class VisitTokenController extends Controller
             'created_by' => 'required|exists:users,id',
         ]);
 
-        /**
-         * Dearivate previous 
-         */
-
-        VisitToken::where('patient_id',$request->patient_id)
-        ->where('status','active')
-        ->update([
-            'status'=>'expired'
-        ]);
-
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed',
-                'errors' => $validator->errors()
+                'errors' => $validator->errors(),
             ], 422);
         }
 
         try {
             $patientId = $request->patient_id;
-            $paymentMethod = $request->payment_method;
+
+            /*
+             * Expire any previous active visit.
+             */
+            VisitToken::where('patient_id', $patientId)
+                ->where('status', 'active')
+                ->update([
+                    'status' => 'expired',
+                ]);
+
+            /*
+             * Payment method selected by the user.
+             */
             $originalMethod = $request->payment_method;
 
-            // Map 'card' to 'cash' for backend processing
-            if ($paymentMethod === 'card') {
-                $paymentMethod = 'cash';
-            }
+            /*
+             * Card is processed as cash internally,
+             * while original_payment_method preserves "card".
+             */
+            $paymentMethod = $originalMethod === 'card'
+                ? 'cash'
+                : $originalMethod;
 
-            // Check if patient already has an active visit
+            /*
+             * Double-check that there is no active visit.
+             */
             if (VisitTokenHelper::hasActiveVisit($patientId)) {
                 $existingToken = VisitTokenHelper::getActiveToken($patientId);
 
                 return response()->json([
                     'success' => false,
                     'message' => 'Patient already has an active visit',
-                    'token' => $existingToken->token,
-                    'existing' => true
+                    'token' => $existingToken?->token,
+                    'existing' => true,
                 ], 409);
             }
 
-            // Create new token
+            /*
+             * Create visit token.
+             */
             $token = VisitTokenHelper::createToken(
                 $patientId,
                 $request->patient_number,
@@ -74,35 +83,68 @@ class VisitTokenController extends Controller
                 $originalMethod
             );
 
+            /*
+             * Create patient visit scheme.
+             *
+             * One scheme record belongs to this visit token.
+             */
+            $scheme = PatientVisitScheme::create([
+                'uuid' => (string) Str::uuid(),
+                'token' => $token->token,
+                'patient_visit_id' => $token->id,
+                'scheme_id' => 1,
+                'scheme_number' => $request->scheme_number ?? null,
+                'status' => 'active',
+            ]);
             return response()->json([
                 'success' => true,
                 'message' => 'Visit token generated successfully',
+
                 'token' => $token->token,
+
                 'data' => [
                     'id' => $token->id,
                     'token' => $token->token,
                     'patient_id' => $token->patient_id,
                     'patient_number' => $token->patient_number,
+
                     'payment_method' => $token->payment_method,
                     'original_payment_method' => $token->original_payment_method,
+
+                    'scheme' => [
+                        'id' => $scheme->id,
+                        'uuid' => $scheme->uuid,
+                        'patient_id' => $scheme->patient_id,
+                        'token' => $scheme->token,
+                        'scheme_name' => $scheme->scheme_name,
+                        'status' => $scheme->status,
+                    ],
+
                     'status' => $token->status,
                     'started_at' => $token->started_at,
                     'expires_at' => $token->expires_at,
-                ]
+                ],
             ], 201);
-        } catch (\Exception $e) {
-            Log::error('Failed to generate visit token: ' . $e->getMessage());
+
+        } catch (\Throwable $e) {
+
+            Log::error('Failed to generate visit token', [
+                'patient_id' => $request->patient_id,
+                'patient_number' => $request->patient_number,
+                'payment_method' => $request->payment_method,
+                'error' => $e->getMessage(),
+            ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to generate visit token',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
 
     /**
-     * Get active token for a patient
+     * Get active token for a patient.
      */
     public function getActiveToken($patientId)
     {
@@ -112,27 +154,32 @@ class VisitTokenController extends Controller
             if (!$token) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'No active visit token found for this patient'
+                    'message' => 'No active visit token found for this patient',
                 ], 404);
             }
 
             return response()->json([
                 'success' => true,
-                'data' => $token
+                'data' => $token,
             ], 200);
-        } catch (\Exception $e) {
-            Log::error('Failed to fetch active token: ' . $e->getMessage());
+
+        } catch (\Throwable $e) {
+
+            Log::error('Failed to fetch active visit token', [
+                'patient_id' => $patientId,
+                'error' => $e->getMessage(),
+            ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch active token',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
 
     /**
-     * Validate a token
+     * Validate a visit token.
      */
     public function validateToken(Request $request)
     {
@@ -145,20 +192,25 @@ class VisitTokenController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed',
-                'errors' => $validator->errors()
+                'errors' => $validator->errors(),
             ], 422);
         }
 
-        $isValid = VisitTokenHelper::validateToken($request->patient_id, $request->token);
+        $isValid = VisitTokenHelper::validateToken(
+            $request->patient_id,
+            $request->token
+        );
 
         return response()->json([
             'success' => $isValid,
-            'message' => $isValid ? 'Token is valid' : 'Token is invalid or expired'
+            'message' => $isValid
+                ? 'Token is valid'
+                : 'Token is invalid or expired',
         ], $isValid ? 200 : 400);
     }
 
     /**
-     * Complete a visit (end the visit)
+     * Complete a visit.
      */
     public function completeVisit($patientId)
     {
@@ -168,27 +220,42 @@ class VisitTokenController extends Controller
             if (!$completed) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'No active visit found for this patient'
+                    'message' => 'No active visit found for this patient',
                 ], 404);
             }
 
+            /*
+             * Mark the scheme associated with the completed
+             * visit as completed.
+             */
+            PatientVisitScheme::where('patient_id', $patientId)
+                ->where('status', 'active')
+                ->update([
+                    'status' => 'completed',
+                ]);
+
             return response()->json([
                 'success' => true,
-                'message' => 'Visit completed successfully'
+                'message' => 'Visit completed successfully',
             ], 200);
-        } catch (\Exception $e) {
-            Log::error('Failed to complete visit: ' . $e->getMessage());
+
+        } catch (\Throwable $e) {
+
+            Log::error('Failed to complete visit', [
+                'patient_id' => $patientId,
+                'error' => $e->getMessage(),
+            ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to complete visit',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
 
     /**
-     * Cancel a visit
+     * Cancel a visit.
      */
     public function cancelVisit($patientId)
     {
@@ -198,30 +265,46 @@ class VisitTokenController extends Controller
             if (!$token) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'No active visit found for this patient'
+                    'message' => 'No active visit found for this patient',
                 ], 404);
             }
 
             $token->cancel();
+
+            /*
+             * Mark the scheme as cancelled.
+             */
+            PatientVisitScheme::where('patient_id', $patientId)
+                ->where('token', $token->token)
+                ->where('status', 'active')
+                ->update([
+                    'status' => 'cancelled',
+                ]);
+
             VisitTokenHelper::clearFromCache($patientId);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Visit cancelled successfully'
+                'message' => 'Visit cancelled successfully',
             ], 200);
-        } catch (\Exception $e) {
-            Log::error('Failed to cancel visit: ' . $e->getMessage());
+
+        } catch (\Throwable $e) {
+
+            Log::error('Failed to cancel visit', [
+                'patient_id' => $patientId,
+                'error' => $e->getMessage(),
+            ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to cancel visit',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
 
     /**
-     * Get all active tokens (admin)
+     * Get all active tokens.
      */
     public function getAllActiveTokens()
     {
@@ -231,39 +314,59 @@ class VisitTokenController extends Controller
             return response()->json([
                 'success' => true,
                 'data' => $tokens,
-                'count' => $tokens->count()
+                'count' => $tokens->count(),
             ], 200);
-        } catch (\Exception $e) {
-            Log::error('Failed to fetch active tokens: ' . $e->getMessage());
+
+        } catch (\Throwable $e) {
+
+            Log::error('Failed to fetch active tokens', [
+                'error' => $e->getMessage(),
+            ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch active tokens',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
 
     /**
-     * Clean up expired tokens (can be called by cron)
+     * Clean up expired tokens.
      */
     public function cleanupExpired()
     {
         try {
             $count = VisitTokenHelper::cleanupExpiredTokens();
 
+            /*
+             * Also expire schemes whose visit tokens
+             * are no longer active.
+             */
+            PatientVisitScheme::where('status', 'active')
+                ->whereHas('visitToken', function ($query) {
+                    $query->where('status', 'expired');
+                })
+                ->update([
+                    'status' => 'expired',
+                ]);
+
             return response()->json([
                 'success' => true,
                 'message' => "Cleaned up {$count} expired tokens",
-                'count' => $count
+                'count' => $count,
             ], 200);
-        } catch (\Exception $e) {
-            Log::error('Failed to cleanup expired tokens: ' . $e->getMessage());
+
+        } catch (\Throwable $e) {
+
+            Log::error('Failed to cleanup expired tokens', [
+                'error' => $e->getMessage(),
+            ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to cleanup expired tokens',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }

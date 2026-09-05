@@ -322,7 +322,7 @@ export default function Returns() {
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Returns" />
 
-            <div className="p-6">
+            <div className="p-6 bg-blue-50 h-full">
                 <PageHeader
                     icon={<BackpackIcon className="h-6 w-6" />}
                     title="Returns"

@@ -16,12 +16,14 @@ export default function Appointments() {
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
-            <PageHeader
-                title="Appointments"
-                subtitle="Create and view appointments"
-                backurl="/dashboard"
-            />
-            <AppointmentsTable appointments={appointments} />
+            <div className="bg-blue-50 p-6">
+                <PageHeader
+                    title="Appointments"
+                    subtitle="Create and view appointments"
+                    backurl="/dashboard"
+                />
+                <AppointmentsTable appointments={appointments} />
+            </div>
         </AppLayout>
     );
 }

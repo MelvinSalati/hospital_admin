@@ -122,6 +122,11 @@ class Product extends Model
         return $this->hasMany(PurchaseOrderItem::class);
     }
 
+    public function batches()
+    {
+        return $this->hasMany(StockBatch::class, 'product_id');
+    }
+
     /**
      * Prescription items
      */

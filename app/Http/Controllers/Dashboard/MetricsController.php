@@ -14,8 +14,16 @@ use Carbon\Carbon;
 
 class MetricsController extends Controller
 {
-    public function dashboard(Request $request): Response
+    /**
+     * Dashboard method with optional Request parameter
+     */
+    public function dashboard(Request $request = null): Response
     {
+        // If no request is passed, create a new one
+        if ($request === null) {
+            $request = request();
+        }
+
         $today = Carbon::today();
         $yesterday = Carbon::yesterday();
 
@@ -145,8 +153,6 @@ class MetricsController extends Controller
             'invoices'        => $invoices,
         ]);
     }
-
-  
 
     private function mapInvoiceStatus(?string $status): string
     {

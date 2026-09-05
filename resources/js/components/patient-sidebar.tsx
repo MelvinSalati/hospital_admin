@@ -26,6 +26,7 @@ import {
     BabyIcon,
     Scissors,
     Eye,
+    ScissorsIcon,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
@@ -58,7 +59,11 @@ import AppLogo from './app-logo';
 */
 
 const patientNavItems: NavItem[] = [
-    { title: 'Dashboard', href: (id) => `/patients/${id}`, icon: LayoutGrid },
+    {
+        title: 'Dashboard',
+        href: (id) => `/patients/dashboard/${id}`,
+        icon: LayoutGrid,
+    },
     {
         title: 'Admissions',
         href: (id) => `/patients/admissions/${id}`,
@@ -81,9 +86,9 @@ const patientNavItems: NavItem[] = [
         icon: HeartPulse,
     },
     {
-        title: 'Add Vitals',
-        href: (id) => `/patients/vital-signs/create/${id}`,
-        icon: PlusCircleIcon,
+        title: 'Procedures',
+        href: (id) => `/patients/procedures/${id}`,
+        icon: ScissorsIcon,
     },
     {
         title: 'Laboratory',

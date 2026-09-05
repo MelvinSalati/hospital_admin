@@ -1,44 +1,36 @@
 // resources/js/pages/bulkstore/Expiry.tsx
 
 import { Dialog, Transition } from '@headlessui/react';
-import { Head } from '@inertiajs/react';
-import axios from 'axios';
-import { format, differenceInDays, isAfter, isBefore, addDays } from 'date-fns';
+import { Head, usePage, router } from '@inertiajs/react';
+import { format } from 'date-fns';
 import {
     AlertCircle,
     AlertTriangle,
     CheckCircle,
     Clock,
     Calendar,
-    Package,
-    Box,
-    Building2,
     Eye,
     Printer,
     Download,
     RefreshCw,
-    Filter,
-    Search,
     XCircle,
-    TrendingDown,
     AlertOctagon,
-    FileText,
-    Truck,
+    X,
+    Package,
+    Building2,
     Users,
     DollarSign,
-    Hash,
     Tag,
-    Shield,
-    ShieldCheck,
+    TrendingUp,
+    TrendingDown,
 } from 'lucide-react';
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { toast } from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
 import type { Column, Action } from '@/components/ReusableTable';
 import { ReusableTable } from '@/components/ReusableTable';
 import AppLayout from '@/layouts/app-layout';
 import type { BreadcrumbItem } from '@/types';
-import Http from '@/utils/Http';
 
 // ============================================
 // TYPES
@@ -66,10 +58,31 @@ interface ExpiryItem {
     created_at: string;
 }
 
+interface Summary {
+    total_products: number;
+    total_batches: number;
+    expired_batches: number;
+    critical_batches: number;
+    warning_batches: number;
+    ok_batches: number;
+    total_value: number;
+}
+
 interface ExpiryModalProps {
     isOpen: boolean;
     onClose: () => void;
     item: ExpiryItem | null;
+}
+
+// Page Props Type
+interface PageProps {
+    expiryItems: ExpiryItem[];
+    summary: Summary | null;
+    filters?: {
+        search?: string;
+        status?: string;
+    };
+    error?: string;
 }
 
 // ============================================
@@ -102,34 +115,26 @@ function ExpiryDetailsModal({ isOpen, onClose, item }: ExpiryModalProps) {
         }
     };
 
-    const formatCurrency = (amount: number) => {
-        return new Intl.NumberFormat('en-ZM', {
-            style: 'currency',
-            currency: 'ZMW',
-            minimumFractionDigits: 2,
-        }).format(amount || 0);
-    };
-
     const getStatusConfig = (status: string) => {
         const configs = {
             critical: {
                 label: 'Critical',
-                color: 'bg-red-100 text-red-700 border-red-200',
+                color: 'bg-red-50 text-red-700 border-red-200',
                 icon: AlertOctagon,
             },
             warning: {
                 label: 'Warning',
-                color: 'bg-yellow-100 text-yellow-700 border-yellow-200',
+                color: 'bg-yellow-50 text-yellow-700 border-yellow-200',
                 icon: AlertTriangle,
             },
             ok: {
-                label: 'OK',
-                color: 'bg-green-100 text-green-700 border-green-200',
+                label: 'Healthy',
+                color: 'bg-green-50 text-green-700 border-green-200',
                 icon: CheckCircle,
             },
             expired: {
                 label: 'Expired',
-                color: 'bg-gray-100 text-gray-700 border-gray-200',
+                color: 'bg-gray-50 text-gray-700 border-gray-200',
                 icon: XCircle,
             },
         };
@@ -138,6 +143,17 @@ function ExpiryDetailsModal({ isOpen, onClose, item }: ExpiryModalProps) {
 
     const statusConfig = getStatusConfig(item.status);
     const StatusIcon = statusConfig.icon;
+
+    // Status message helper
+    const getStatusMessage = () => {
+        const messages = {
+            critical: `⚠️ Expires in ${item.days_until_expiry} days — Immediate action required!`,
+            warning: `📋 Expires in ${item.days_until_expiry} days — Plan for use or disposal.`,
+            ok: `✅ Expires in ${item.days_until_expiry} days — Stock is healthy.`,
+            expired: `❌ This batch has expired and should be disposed of immediately.`,
+        };
+        return messages[item.status as keyof typeof messages] || messages.ok;
+    };
 
     return (
         <Transition show={isOpen} as={React.Fragment}>
@@ -151,7 +167,7 @@ function ExpiryDetailsModal({ isOpen, onClose, item }: ExpiryModalProps) {
                     leaveFrom="opacity-100"
                     leaveTo="opacity-0"
                 >
-                    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
+                    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" />
                 </Transition.Child>
 
                 <div className="fixed inset-0 overflow-y-auto">
@@ -165,183 +181,175 @@ function ExpiryDetailsModal({ isOpen, onClose, item }: ExpiryModalProps) {
                             leaveFrom="opacity-100 scale-100"
                             leaveTo="opacity-0 scale-95"
                         >
-                            <Dialog.Panel className="relative w-full max-w-2xl transform overflow-hidden rounded-xl bg-white shadow-2xl transition-all">
+                            <Dialog.Panel className="relative w-full max-w-xl transform overflow-hidden rounded-2xl bg-white shadow-2xl transition-all">
                                 {/* Header */}
-                                <div className="rounded-t-xl border-b border-gray-200 bg-white px-6 py-4">
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-3">
-                                            <div
-                                                className={`rounded-lg p-2 ${statusConfig.color}`}
-                                            >
-                                                <StatusIcon className="h-5 w-5" />
-                                            </div>
-                                            <div>
-                                                <Dialog.Title className="text-lg font-semibold text-gray-900">
-                                                    Expiry Details
-                                                </Dialog.Title>
-                                                <p className="text-sm text-gray-500">
-                                                    {item.product_name} •{' '}
-                                                    {item.batch_number}
-                                                </p>
-                                            </div>
-                                        </div>
-                                        <button
-                                            onClick={onClose}
-                                            className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                                <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+                                    <div className="flex items-center gap-3">
+                                        <div
+                                            className={`rounded-lg p-2 ${statusConfig.color}`}
                                         >
-                                            <X className="h-5 w-5" />
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {/* Body */}
-                                <div className="p-6">
-                                    {/* Status Banner */}
-                                    <div
-                                        className={`mb-4 rounded-lg border p-4 ${statusConfig.color}`}
-                                    >
-                                        <div className="flex items-start gap-3">
-                                            <StatusIcon className="mt-0.5 h-5 w-5 flex-shrink-0" />
-                                            <div>
-                                                <h5 className="font-medium">
-                                                    {statusConfig.label} Status
-                                                </h5>
-                                                <p className="text-sm">
-                                                    {item.status ===
-                                                        'critical' &&
-                                                        `Expires in ${item.days_until_expiry} days - Immediate action required!`}
-                                                    {item.status ===
-                                                        'warning' &&
-                                                        `Expires in ${item.days_until_expiry} days - Plan for use or disposal.`}
-                                                    {item.status === 'ok' &&
-                                                        `Expires in ${item.days_until_expiry} days - Stock is healthy.`}
-                                                    {item.status ===
-                                                        'expired' &&
-                                                        'This batch has expired and should be disposed of immediately.'}
-                                                </p>
-                                            </div>
+                                            <StatusIcon className="h-5 w-5" />
                                         </div>
-                                    </div>
-
-                                    {/* Product Info */}
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="rounded-lg border border-gray-200 p-3">
+                                        <div>
+                                            <Dialog.Title className="text-base font-semibold text-gray-900">
+                                                Batch Details
+                                            </Dialog.Title>
                                             <p className="text-xs text-gray-500">
-                                                Product
-                                            </p>
-                                            <p className="text-sm font-medium text-gray-900">
-                                                {item.product_name}
-                                            </p>
-                                            <p className="text-xs text-gray-400">
-                                                Code: {item.product_code}
-                                            </p>
-                                        </div>
-                                        <div className="rounded-lg border border-gray-200 p-3">
-                                            <p className="text-xs text-gray-500">
-                                                Batch Number
-                                            </p>
-                                            <p className="font-mono text-sm font-medium text-gray-900">
+                                                {item.product_name} · #
                                                 {item.batch_number}
                                             </p>
                                         </div>
-                                        <div className="rounded-lg border border-gray-200 p-3">
-                                            <p className="text-xs text-gray-500">
-                                                Supplier
+                                    </div>
+                                    <button
+                                        onClick={onClose}
+                                        className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                                    >
+                                        <X className="h-4 w-4" />
+                                    </button>
+                                </div>
+
+                                {/* Body */}
+                                <div className="space-y-5 p-6">
+                                    {/* Status Banner */}
+                                    <div
+                                        className={`rounded-lg border p-3 ${statusConfig.color}`}
+                                    >
+                                        <p className="text-sm font-medium">
+                                            {getStatusMessage()}
+                                        </p>
+                                    </div>
+
+                                    {/* Info Grid - 3 columns */}
+                                    <div className="grid grid-cols-3 gap-3">
+                                        <div className="rounded-lg bg-gray-50 p-3 text-center">
+                                            <p className="text-[10px] tracking-wider text-gray-500 uppercase">
+                                                Product
                                             </p>
-                                            <p className="text-sm font-medium text-gray-900">
-                                                {item.supplier_name}
+                                            <p className="mt-0.5 truncate text-sm font-semibold text-gray-900">
+                                                {item.product_name}
+                                            </p>
+                                            <p className="text-[10px] text-gray-400">
+                                                {item.product_code}
                                             </p>
                                         </div>
-                                        <div className="rounded-lg border border-gray-200 p-3">
-                                            <p className="text-xs text-gray-500">
-                                                Department
+                                        <div className="rounded-lg bg-gray-50 p-3 text-center">
+                                            <p className="text-[10px] tracking-wider text-gray-500 uppercase">
+                                                Batch
                                             </p>
-                                            <p className="text-sm font-medium text-gray-900">
-                                                {item.department_name}
+                                            <p className="mt-0.5 font-mono text-sm font-semibold text-gray-900">
+                                                {item.batch_number}
                                             </p>
+                                        </div>
+                                        <div className="rounded-lg bg-gray-50 p-3 text-center">
+                                            <p className="text-[10px] tracking-wider text-gray-500 uppercase">
+                                                Status
+                                            </p>
+                                            <span
+                                                className={`mt-0.5 inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${statusConfig.color}`}
+                                            >
+                                                <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                                                {statusConfig.label}
+                                            </span>
                                         </div>
                                     </div>
 
-                                    {/* Stock & Value */}
-                                    <div className="mt-4 grid grid-cols-3 gap-4">
+                                    {/* Info Grid - 2 columns */}
+                                    <div className="grid grid-cols-2 gap-3">
                                         <div className="rounded-lg bg-gray-50 p-3 text-center">
-                                            <p className="text-xs text-gray-500">
-                                                Remaining Quantity
+                                            <p className="text-[10px] tracking-wider text-gray-500 uppercase">
+                                                Supplier
                                             </p>
-                                            <p className="text-lg font-bold text-gray-900">
+                                            <p className="mt-0.5 truncate text-sm font-medium text-gray-900">
+                                                {item.supplier_name}
+                                            </p>
+                                        </div>
+                                        <div className="rounded-lg bg-gray-50 p-3 text-center">
+                                            <p className="text-[10px] tracking-wider text-gray-500 uppercase">
+                                                Quantity
+                                            </p>
+                                            <p className="mt-0.5 text-sm font-semibold text-gray-900">
                                                 {item.remaining_quantity}
-                                            </p>
-                                        </div>
-                                        <div className="rounded-lg bg-gray-50 p-3 text-center">
-                                            <p className="text-xs text-gray-500">
-                                                Total Value
-                                            </p>
-                                            <p className="text-lg font-bold text-gray-900">
-                                                {formatCurrency(
-                                                    item.total_value,
-                                                )}
-                                            </p>
-                                        </div>
-                                        <div className="rounded-lg bg-gray-50 p-3 text-center">
-                                            <p className="text-xs text-gray-500">
-                                                Days Until Expiry
-                                            </p>
-                                            <p
-                                                className={`text-lg font-bold ${
-                                                    item.days_until_expiry < 30
-                                                        ? 'text-red-600'
-                                                        : item.days_until_expiry <
-                                                            90
-                                                          ? 'text-yellow-600'
-                                                          : 'text-green-600'
-                                                }`}
-                                            >
-                                                {item.days_until_expiry}
                                             </p>
                                         </div>
                                     </div>
 
                                     {/* Dates */}
-                                    <div className="mt-4 grid grid-cols-2 gap-4">
-                                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="flex items-center justify-center gap-2 rounded-lg bg-gray-50 p-3">
                                             <Calendar className="h-4 w-4 text-gray-400" />
-                                            <span>
-                                                Expiry Date:{' '}
-                                                <strong>
+                                            <div>
+                                                <p className="text-[10px] tracking-wider text-gray-500 uppercase">
+                                                    Expiry
+                                                </p>
+                                                <p className="text-sm font-medium text-gray-900">
                                                     {formatDate(
                                                         item.expiry_date,
                                                     )}
-                                                </strong>
-                                            </span>
+                                                </p>
+                                            </div>
                                         </div>
-                                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                                        <div className="flex items-center justify-center gap-2 rounded-lg bg-gray-50 p-3">
                                             <Clock className="h-4 w-4 text-gray-400" />
-                                            <span>
-                                                Received:{' '}
-                                                <strong>
+                                            <div>
+                                                <p className="text-[10px] tracking-wider text-gray-500 uppercase">
+                                                    Created
+                                                </p>
+                                                <p className="text-sm font-medium text-gray-900">
                                                     {formatDate(
-                                                        item.received_at,
+                                                        item.created_at,
                                                     )}
-                                                </strong>
-                                            </span>
+                                                </p>
+                                            </div>
                                         </div>
+                                    </div>
+
+                                    {/* Days Left - Full width */}
+                                    <div
+                                        className={`rounded-lg p-3 text-center ${
+                                            item.days_until_expiry < 0
+                                                ? 'bg-gray-100'
+                                                : item.days_until_expiry < 30
+                                                  ? 'bg-red-100'
+                                                  : item.days_until_expiry < 90
+                                                    ? 'bg-yellow-100'
+                                                    : 'bg-green-100'
+                                        }`}
+                                    >
+                                        <p className="text-[10px] tracking-wider text-gray-600 uppercase">
+                                            Days Until Expiry
+                                        </p>
+                                        <p
+                                            className={`text-2xl font-bold ${
+                                                item.days_until_expiry < 0
+                                                    ? 'text-gray-600'
+                                                    : item.days_until_expiry <
+                                                        30
+                                                      ? 'text-red-600'
+                                                      : item.days_until_expiry <
+                                                          90
+                                                        ? 'text-yellow-600'
+                                                        : 'text-green-600'
+                                            }`}
+                                        >
+                                            {item.days_until_expiry < 0
+                                                ? 'Expired'
+                                                : item.days_until_expiry}
+                                        </p>
                                     </div>
                                 </div>
 
                                 {/* Footer */}
-                                <div className="rounded-b-xl border-t border-gray-200 bg-gray-50 px-6 py-4">
-                                    <div className="flex justify-end gap-3">
-                                        <button
-                                            onClick={onClose}
-                                            className="rounded-lg px-6 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100"
-                                        >
-                                            Close
-                                        </button>
-                                        <button className="rounded-lg bg-blue-600 px-6 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700">
-                                            <Printer className="mr-2 inline h-4 w-4" />
-                                            Print
-                                        </button>
-                                    </div>
+                                <div className="flex justify-end gap-2 border-t border-gray-100 bg-gray-50 px-6 py-3">
+                                    <button
+                                        onClick={onClose}
+                                        className="rounded-lg px-4 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-200"
+                                    >
+                                        Close
+                                    </button>
+                                    <button className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700">
+                                        <Printer className="h-3.5 w-3.5" />
+                                        Print
+                                    </button>
                                 </div>
                             </Dialog.Panel>
                         </Transition.Child>
@@ -351,35 +359,62 @@ function ExpiryDetailsModal({ isOpen, onClose, item }: ExpiryModalProps) {
         </Transition>
     );
 }
-
 // ============================================
 // MAIN COMPONENT
 // ============================================
 
 export default function Expiry() {
-    const [items, setItems] = useState<ExpiryItem[]>([]);
-    const [loading, setLoading] = useState(true);
+    // Get data from Inertia props
+    const {
+        expiryItems,
+        summary,
+        filters = {},
+        error,
+    } = usePage<PageProps>().props;
+
+    // State
+    const [items] = useState<ExpiryItem[]>(expiryItems || []);
+    const [loading, setLoading] = useState(false);
     const [selectedItem, setSelectedItem] = useState<ExpiryItem | null>(null);
     const [showModal, setShowModal] = useState(false);
+    const [searchTerm, setSearchTerm] = useState(filters.search || '');
+    const [statusFilter, setStatusFilter] = useState(filters.status || '');
 
-    // Fetch expiry data
-    useEffect(() => {
-        fetchExpiryData();
-    }, []);
-
-    const fetchExpiryData = async () => {
+    // Handle refresh using Inertia
+    const handleRefresh = () => {
         setLoading(true);
-        try {
-            const response = await Http.get('/bulk-store/product-expiry');
-            if (response) {
-                setItems(response.data.data);
-            }
-        } catch (error) {
-            console.error('Failed to fetch expiry data:', error);
-            toast.error('Failed to load expiry data');
-        } finally {
-            setLoading(false);
-        }
+        router.reload({
+            only: ['expiryItems', 'summary', 'filters'],
+            onFinish: () => setLoading(false),
+        });
+    };
+
+    // Handle search
+    const handleSearch = (value: string) => {
+        setSearchTerm(value);
+        router.get(
+            '/bulkstore/expiry',
+            { search: value, status: statusFilter },
+            {
+                preserveState: true,
+                preserveScroll: true,
+                only: ['expiryItems', 'summary', 'filters'],
+            },
+        );
+    };
+
+    // Handle status filter
+    const handleStatusFilter = (value: string) => {
+        setStatusFilter(value);
+        router.get(
+            '/bulkstore/expiry',
+            { search: searchTerm, status: value },
+            {
+                preserveState: true,
+                preserveScroll: true,
+                only: ['expiryItems', 'summary', 'filters'],
+            },
+        );
     };
 
     // Handlers
@@ -443,34 +478,36 @@ export default function Expiry() {
             label: 'Batch #',
             minWidth: 100,
             format: (value) => (
-                <span className="font-mono text-sm text-gray-700">{value}</span>
+                <span className="font-mono text-sm text-gray-700">
+                    {value || 'N/A'}
+                </span>
             ),
         },
         {
             id: 'supplier_name',
             label: 'Supplier',
             minWidth: 120,
+            format: (value) => (
+                <span className="text-sm">{value || 'N/A'}</span>
+            ),
         },
         {
             id: 'remaining_quantity',
             label: 'Qty',
             minWidth: 60,
             align: 'center',
+            format: (value) => (
+                <span className="font-medium">{value || 0}</span>
+            ),
         },
-        {
-            id: 'total_value',
-            label: 'Value',
-            minWidth: 100,
-            align: 'right',
-            format: (value) => formatCurrency(value),
-        },
+
         {
             id: 'expiry_date',
             label: 'Expiry Date',
             minWidth: 100,
             align: 'center',
             sortable: true,
-            format: (value) => formatDate(value),
+            format: (value) => (value ? formatDate(value) : 'N/A'),
         },
         {
             id: 'days_until_expiry',
@@ -478,8 +515,14 @@ export default function Expiry() {
             minWidth: 80,
             align: 'center',
             sortable: true,
-            format: (value, row) => {
+            format: (value) => {
                 const days = Number(value);
+                if (isNaN(days))
+                    return <span className="text-gray-400">N/A</span>;
+                if (days < 0)
+                    return (
+                        <span className="font-bold text-gray-500">Expired</span>
+                    );
                 let color = 'text-green-600';
                 if (days < 30) color = 'text-red-600';
                 else if (days < 90) color = 'text-yellow-600';
@@ -504,6 +547,9 @@ export default function Expiry() {
             id: 'department_name',
             label: 'Department',
             minWidth: 120,
+            format: (value) => (
+                <span className="text-sm">{value || 'Bulk Store'}</span>
+            ),
         },
     ];
 
@@ -516,14 +562,6 @@ export default function Expiry() {
             variant: 'text',
             onClick: handleView,
         },
-        {
-            label: 'Print',
-            icon: <Printer className="h-4 w-4" />,
-            color: 'secondary',
-            variant: 'text',
-            onClick: (row) =>
-                toast.info(`Printing expiry details for ${row.product_name}`),
-        },
     ];
 
     // Status options for filtering
@@ -533,6 +571,35 @@ export default function Expiry() {
         { value: 'ok', label: 'OK' },
         { value: 'expired', label: 'Expired' },
     ];
+
+    // Loading or error state
+    if (error) {
+        return (
+            <AppLayout breadcrumbs={breadcrumbs}>
+                <Head title="Expiry Tracking" />
+                <div className="h-full bg-blue-50">
+                    <div className="p-6">
+                        <div className="rounded-lg bg-white p-8 text-center shadow-sm">
+                            <AlertCircle className="mx-auto h-12 w-12 text-red-500" />
+                            <h3 className="mt-4 text-lg font-medium text-gray-900">
+                                Error
+                            </h3>
+                            <p className="mt-2 text-sm text-gray-500">
+                                {error}
+                            </p>
+                            <button
+                                onClick={handleRefresh}
+                                className="mt-4 inline-flex items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                            >
+                                <RefreshCw className="mr-2 h-4 w-4" />
+                                Retry
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </AppLayout>
+        );
+    }
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
@@ -555,7 +622,7 @@ export default function Expiry() {
                                         className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`}
                                     />
                                 ),
-                                onClick: fetchExpiryData,
+                                onClick: handleRefresh,
                                 variant: 'outline',
                             },
                             {
@@ -574,36 +641,6 @@ export default function Expiry() {
                         ]}
                     />
 
-                    {/* Background Check Notification */}
-                    {/* <div className="mt-6 rounded-lg border border-blue-200 bg-white p-4">
-                        <div className="flex items-start gap-3">
-                            <ShieldCheck className="mt-0.5 h-5 w-5 flex-shrink-0 text-blue-600" />
-                            <div>
-                                <p className="text-sm font-medium text-blue-800">
-                                    Automatic Background Checks Active
-                                </p>
-                                <p className="text-sm text-blue-700">
-                                    The system automatically runs background
-                                    checks on all products to monitor expiry
-                                    dates and stock levels. You will be notified
-                                    when products approach expiry or when stock
-                                    levels are low.
-                                </p>
-                                <div className="mt-2 flex items-center gap-4 text-xs text-blue-600">
-                                    <span className="flex items-center gap-1">
-                                        <Clock className="h-3 w-3" />
-                                        Last check:{' '}
-                                        {new Date().toLocaleString()}
-                                    </span>
-                                    <span className="flex items-center gap-1">
-                                        <CheckCircle className="h-3 w-3" />
-                                        Auto-alerts enabled for critical items
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-                    </div> */}
-
                     {/* Table */}
                     <div className="mt-6 w-full">
                         <div className="overflow-hidden rounded-lg bg-white shadow-sm">
@@ -615,13 +652,17 @@ export default function Expiry() {
                                 statusFilterKey="status"
                                 statusOptions={statusOptions}
                                 onRowClick={(row) => handleView(row)}
-                                rowsPerPageOptions={[10, 25, 50, 100]}
-                                defaultRowsPerPage={10}
+                                rowsPerPageOptions={[5, 15, 30, 50]}
+                                defaultRowsPerPage={5}
                                 defaultOrderBy="days_until_expiry"
                                 defaultOrder="asc"
                                 loading={loading}
                                 emptyMessage="No expiry records found. All stock is healthy."
                                 filterPlaceholder="Search by product, batch, or supplier..."
+                                searchValue={searchTerm}
+                                onSearchChange={handleSearch}
+                                statusValue={statusFilter}
+                                onStatusChange={handleStatusFilter}
                             />
                         </div>
                     </div>

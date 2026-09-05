@@ -6,6 +6,8 @@ namespace App\Models\Bulkstores;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use App\Models\Departments\Department;
+use App\Models\User;
 
 class ProductAdjustment extends Model
 {
@@ -103,7 +105,7 @@ class ProductAdjustment extends Model
 
     public function product()
     {
-        return $this->belongsTo(Product::class);
+        return $this->belongsTo(Product::class,'product_id');
     }
 
     public function department()
@@ -119,6 +121,11 @@ class ProductAdjustment extends Model
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function approvedBy()
+    {
+        return $this->belongsTo(User::class, 'approved_by');
     }
 
     public function requester()

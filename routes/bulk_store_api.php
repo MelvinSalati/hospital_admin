@@ -6,15 +6,28 @@ use App\Http\Controllers\BulkStores\BulkStoreSettingController;
 use App\Http\Controllers\BulkStores\PurchaseRequisitionController;
 use App\Http\Controllers\BulkStores\PurchaseOrderController;
 use App\Http\Controllers\BulkStores\StockPricingController;
-use App\Http\Controllers\BulkStores\GoodsReceivedNoteController; 
+use App\Http\Controllers\BulkStores\GoodsReceivedNoteController;
+use App\Http\Controllers\BulkStores\ProductController;
+use App\Http\Controllers\Reports\BulkStore\AdjustmentController;
+use App\Http\Controllers\Reports\BulkStore\CurrentStockController;
 
 Route::prefix('v1/bulk-store')->group(function () {
-    //verify 
+
+    Route::get('/stock',[ProductController::class,'products']);
+
+    // adjust stockprice
+
+    Route::post('/products/{productId}/pricing',[ProductController::class, 'adjustPrice']);
+
+    //add a product
+    Route::post('/add-product', [ProductController::class,'addProduct']);
+    //verify
     Route::post('/{otp}/verify-token',[GoodsReceivedNoteController::class,'verifyOtp']);
     Route::prefix('/{userId}/')->group(function () {
         Route::post('/verify-approval-code', [GoodsReceivedNoteController::class, 'authorizeApprovalCode']);
     });
-    // GRN Routes
+    Route::get('/products/{uuid}/details',[ProductController::class, 'productDetails']);
+    // GRN Rout'es
     Route::prefix('grns')->group(function () {
         // GET routes
         Route::get('/', [GoodsReceivedNoteController::class, 'index']);
@@ -38,6 +51,12 @@ Route::prefix('v1/bulk-store')->group(function () {
     });
     // Existing routes
     Route::get('/product/search/{barcode}', [\App\Http\Controllers\BulkStores\ProductController::class, 'searchProduct']);
+    /**
+     * Required for fetching a product with stock for product adjustment
+     * return  param @Product
+     *
+     */
+    Route::get('/product/{barcode}', [\App\Http\Controllers\BulkStores\ProductController::class, 'getProductInStock']);
     Route::get('/product/{id}', [\App\Http\Controllers\BulkStores\ProductController::class, 'getProduct']);
     Route::put('/product/{id}', [\App\Http\Controllers\BulkStores\ProductController::class, 'updateProduct']);
     Route::get('/requisition/budget/check-balance/{budget}/{amount}', [RequisitionController::class, 'checkBudget']);
@@ -53,7 +72,7 @@ Route::prefix('v1/bulk-store')->group(function () {
     Route::delete('/requisition/{id}', [RequisitionController::class, 'deleteRequisition']);
     Route::post('/requisition/{id}/approve', [RequisitionController::class, 'approveRequisition']);
     Route::post('/requisition/{id}/reject', [RequisitionController::class, 'rejectRequisition']);
-    //show items to be received 
+    //show items to be received
     Route::get('/purchase-requisitions/approved', [PurchaseOrderController::class, 'approvedPurchaseRequesition'])->name('purchase-requisition');
     Route::post('/receiving', [\App\Http\Controllers\BulkStores\ReceivingController::class, 'receiveProduct']);
     Route::post('/returns',[\App\Http\Controllers\BulkStores\ReturningController::class,'returnProduct']);
@@ -62,9 +81,18 @@ Route::prefix('v1/bulk-store')->group(function () {
     Route::get('/returns/history', [\App\Http\Controllers\BulkStores\ReturningController::class, 'getReturnHistory']);
     // Route::get('/grns/by-requisition/{requisitionId}', [\App\Http\Controllers\BulkStores\GoodsReceivedNoteController::class, 'getByRequisition']);
     /**
-     * Stock Pricing 
+     * Stock Pricing
      */
     Route::get('/products/all', [StockPricingController::class, 'getProducts']);
+
+
+    Route::prefix('/reports')->group(function (){
+        Route::post('/product-adjustment',[AdjustmentController::class,'getAdjustmentReport']);
+        Route::post('/current-stock',[CurrentStockController::class,'getCurrentStock']);
+    }); 
+
+    
+
 
 })->middleware(['auth','verified']);
 

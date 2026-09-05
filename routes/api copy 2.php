@@ -246,20 +246,6 @@ Route::prefix('v1')->group(function () {
     });
     Route::post('patients/{patientId}/theater-order',[TheaterController::class,'orderTheaterServices']);
 
-    Route::prefix('patients')->group(function () {
-        Route::get('/', [PatientController::class, 'index']);
-        Route::post('{patientId}/payment', [PaymentsController::class, 'store']);
-
-        Route::post('search', [PatientController::class, 'search']);
-        Route::get('stats', [PatientController::class, 'getStats']);
-        Route::get('insurance', [PatientController::class, 'getByInsurance']);
-        Route::post('fingerprint', [PatientController::class, 'findByFingerprint']);
-
-        Route::get('{id}', [PatientController::class, 'show']);
-        Route::put('{id}', [PatientController::class, 'update']);
-        Route::delete('{id}', [PatientController::class, 'destroy']);
-        Route::post('{id}/restore', [PatientController::class, 'restore']);
-    });
 
 
 

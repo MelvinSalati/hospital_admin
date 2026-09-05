@@ -94,6 +94,10 @@ class StockLedger extends Model
         return $this->belongsTo(Product::class);
     }
 
+    public function requisitionItem(){
+        return $this->belongsTo(PurchaseRequisitionItem::class,'product_id');
+    }
+
     public function department()
     {
         return $this->belongsTo(Department::class);

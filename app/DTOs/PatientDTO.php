@@ -44,22 +44,24 @@ class PatientDTO
             // Personal Information
             'first_name' => 'required|string|max:100',
             'last_name' => 'required|string|max:100',
-            'gender' => 'required|in:male,female',
+            'gender' => 'required|in:male,female,other',
             'date_of_birth' => 'required|date|before:today',
-            'address' => 'nullable|string',
+            'phone' => 'nullable|string|max:20',
+            'email' => 'nullable|email|max:255',
+            'address' => 'nullable|string|max:500',
 
             // Emergency Contact
             'emergency_contact' => 'nullable|string|max:255',
-            'emergency_phone' => 'nullable|string|max:10',
+            'emergency_phone' => 'nullable|string|max:20',
 
             // Medical Information
             'blood_group' => 'nullable|in:A+,A-,B+,B-,AB+,AB-,O+,O-',
-            'allergies' => 'nullable|string',
-            'chronic_conditions' => 'nullable|string',
-            'current_medications' => 'nullable|string',
-            'medical_history' => 'nullable|string',
-            'surgical_history' => 'nullable|string',
-            'family_history' => 'nullable|string',
+            'allergies' => 'nullable|string|max:1000',
+            'chronic_conditions' => 'nullable|string|max:1000',
+            'current_medications' => 'nullable|string|max:1000',
+            'medical_history' => 'nullable|string|max:1000',
+            'surgical_history' => 'nullable|string|max:1000',
+            'family_history' => 'nullable|string|max:1000',
 
             // Demographic Information
             'marital_status' => 'nullable|in:single,married,divorced,widowed',
@@ -67,8 +69,8 @@ class PatientDTO
             'nationality' => 'nullable|string|max:100',
 
             // Identification
-            'id_type' => 'nullable|in:national_id,passport,driving_license',
-            'id_number' => 'nullable|string|max:15',
+            'id_type' => 'nullable|in:national_id,passport,driving_license,voter_id',
+            'id_number' => 'nullable|string|max:50',
 
             // Insurance Information
             'insurance_provider' => 'nullable|string|max:255',
@@ -79,7 +81,7 @@ class PatientDTO
             // Next of Kin
             'next_of_kin_name' => 'nullable|string|max:255',
             'next_of_kin_relationship' => 'nullable|string|max:255',
-            'next_of_kin_phone' => 'nullable|string|max:10',
+            'next_of_kin_phone' => 'nullable|string|max:20',
 
             // Profile Photo
             'profile_photo' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
@@ -111,7 +113,7 @@ class PatientDTO
             family_history: $data['family_history'] ?? null,
             marital_status: $data['marital_status'] ?? null,
             occupation: $data['occupation'] ?? null,
-            nationality: $data['nationality'] ?? 'Rwandan',
+            nationality: $data['nationality'] ?? 'Zambian',
             id_type: $data['id_type'] ?? null,
             id_number: $data['id_number'] ?? null,
             insurance_provider: $data['insurance_provider'] ?? null,
@@ -125,6 +127,7 @@ class PatientDTO
             status: $data['status'] ?? 'active'
         );
     }
+
     // Add this to your PatientDTO class
     public static function fromModel($patient): self
     {
@@ -148,7 +151,7 @@ class PatientDTO
             family_history: $patient->family_history,
             marital_status: $patient->marital_status,
             occupation: $patient->occupation,
-            nationality: $patient->nationality,
+            nationality: $patient->nationality ?? 'Zambian',
             id_type: $patient->id_type,
             id_number: $patient->id_number,
             insurance_provider: $patient->insurance_provider,
@@ -162,6 +165,7 @@ class PatientDTO
             status: $patient->status
         );
     }
+
     public function toArray(): array
     {
         return get_object_vars($this);

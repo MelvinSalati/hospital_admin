@@ -13,8 +13,12 @@ import {
     AlertTriangle,
     ChevronDown,
     ChevronLeftIcon,
+    PillBottleIcon,
+    Pill,
 } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
+import toast from 'react-hot-toast';
+import PageHeader from '@/components/PageHeader';
 import { Button } from '@/components/ui/button';
 import PatientLayout from '@/layouts/patients/PatientLayout';
 import Http from '@/utils/Http';
@@ -883,6 +887,8 @@ Prescription Details:
             await onSave(cart, scheme);
             setCart([]);
             setSearchTerm('');
+
+            console.log(cart);
             onClose();
         } catch (error) {
             console.error('Error saving:', error);
@@ -912,18 +918,19 @@ Prescription Details:
                 style={{ maxHeight: 'min(90vh, 680px)' }}
             >
                 <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-                    <div>
-                        <h3 className="text-base font-semibold text-gray-900">
-                            New Prescription
-                        </h3>
-                        <p className="mt-0.5 text-xs text-gray-400">
-                            Patient ID: {patientId} |
-                            <span
-                                className={`ml-1 font-medium ${schemeMeta.color}`}
-                            >
-                                Payment Method: {schemeMeta.label}
-                            </span>
-                        </p>
+                    <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-600 text-white shadow-2xl">
+                            <Pill className="h-5 w-5" />
+                        </div>
+
+                        <div>
+                            <h3 className="text-base font-semibold text-gray-900">
+                                New Prescription
+                            </h3>
+                            <p className="text-sm text-gray-500">
+                                Add drugs to cart
+                            </p>
+                        </div>
                     </div>
                     <div className="flex items-center gap-4">
                         <StepIndicator step={step} />
@@ -1660,7 +1667,6 @@ const PrescriptionsTab = ({
                 setLoading(false);
             }
         };
-
         fetchPrescriptions();
     }, [patientId, paymentMethod]);
 
@@ -1676,10 +1682,13 @@ const PrescriptionsTab = ({
                     frequency: item.frequency,
                     route: item.route,
                     notes: item.notes,
+                    price: item.price,
                 })),
                 scheme: scheme,
                 clinical_notes: null,
             });
+
+            console.log('Prescription response:', response.data);
 
             if (response.data.success) {
                 const dated: PrescribedItem[] = items.map((item) => ({
@@ -1689,18 +1698,48 @@ const PrescriptionsTab = ({
                     scheme: normalizeScheme(scheme),
                     patientId,
                 }));
+
                 setPrescriptions((prev) => [...prev, ...dated]);
-                alert('Prescription created successfully!');
+
+                toast.success('Prescription created successfully!');
                 setIsModalOpen(false);
             } else {
-                alert(
+                toast.error(
                     'Error saving prescription: ' +
                         (response.data.message || 'Unknown error'),
                 );
             }
-        } catch (error) {
-            console.error('Error saving:', error);
-            alert('Error saving prescription. Please try again.');
+        } catch (error: any) {
+            if (error.response?.status === 422) {
+                const errors = error.response.data.errors;
+
+                const messages = Object.entries(errors)
+                    .map(([field, messages]) => {
+                        const message = Array.isArray(messages)
+                            ? messages.join(', ')
+                            : String(messages);
+
+                        return `${field}: ${message}`;
+                    })
+                    .join('\n');
+
+                toast.error(`Validation failed:\n\n${messages}`);
+
+                return;
+            }
+
+            if (error.response) {
+                toast.error(
+                    error.response.data?.message ||
+                        `Server error (${error.response.status})`,
+                );
+
+                return;
+            }
+
+            toast.error(
+                'Unable to save prescription. Please check your connection and try again.',
+            );
         }
     };
 
@@ -1709,23 +1748,24 @@ const PrescriptionsTab = ({
             <div className="py-12 text-center">Loading prescriptions...</div>
         );
     }
-
+    const { props } = usePage();
+    console.log(props);
     return (
-        <div className="space-y-6">
-            <div className="flex items-center justify-between border-b p-2">
-                <div>
-                    <h2 className="text-lg font-semibold text-gray-900">
-                        Prescriptions
-                    </h2>
-                </div>
-                <Button
-                    onClick={() => setIsModalOpen(true)}
-                    className="h-9 text-sm"
-                >
-                    <Plus className="mr-1.5 h-4 w-4" />
-                    New prescription
-                </Button>
-            </div>
+        <div className="space-y-6 bg-blue-50">
+            <PageHeader
+                icon={<PillBottleIcon />}
+                title={'Prescriptions'}
+                subtitle={'View and Order prescription'}
+                actions={[
+                    {
+                        label: 'Add Prescription',
+                        onClick() {
+                            setIsModalOpen(true);
+                        },
+                    },
+                ]}
+            />
+
             <PrescribedDrugsTable prescriptions={prescriptions} />
 
             <AddPrescriptionModal
@@ -1743,16 +1783,12 @@ const PrescriptionsTab = ({
 // ─── Root Component ──────────────────────────────────────────────────────────
 
 export default function Prescription() {
-    const { services, patient, payment_method } = usePage().props as {
+    const { services, patientId, payment_method } = usePage().props as {
         services?: Service[];
-        patient?: any;
+        patientId?: any;
         payment_method?: PricingScheme;
     };
-
-    const patientId =
-        patient?.id ||
-        (window.location.pathname.split('/')[2] as unknown as number);
-    const paymentMethod = payment_method || 'cash';
+    console.log('patient id', patientId);
 
     return (
         <PatientLayout
@@ -1761,12 +1797,12 @@ export default function Prescription() {
                 { title: 'Prescription', href: '' },
             ]}
         >
-            <div className="space-y-6 p-2">
+            <div className="h-full space-y-6 bg-blue-50 p-2">
                 <div>
-                    <DrugAdministrationTab
-                        admissionNumber="null"
+                    <PrescriptionsTab
                         patientId={patientId}
                         page={'Prescription'}
+                        services={services}
                     />
                 </div>
             </div>

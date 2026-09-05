@@ -25,7 +25,6 @@ import Http from '@/utils/Http';
 import PurchaseRequisitionModal from './components/modals/PurchaseRequisition';
 import RequisitionDetailsModal from './components/modals/RequisitionDetailsModal';
 
-
 // ============================================
 // TYPES
 // ============================================
@@ -514,7 +513,7 @@ export default function PurchaseRequisitionPage() {
                 },
             ]}
         >
-            <div className="bg-slate-100 px-10">
+            <div className="h-full bg-blue-50 p-6">
                 <PageHeader
                     title="Purchase Requisitions"
                     subtitle="Create and manage purchase requisitions with item status tracking"

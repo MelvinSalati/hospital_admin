@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 
-class PatientRepository implements PatientRepositoryInterface
+class PatientRepository
 {
     protected $model;
 
@@ -39,7 +39,7 @@ class PatientRepository implements PatientRepositoryInterface
      */
     public function find(int $id): ?Patient
     {
-        return $this->model->find($id);
+        return Patient::findOrFail($id);
     }
 
     /**
@@ -95,14 +95,212 @@ class PatientRepository implements PatientRepositoryInterface
     }
 
     /**
-     * Search patients by type (name, phone, email, id)
+     * Search patients by various criteria
+     * 
+     * @param string $query The search term
+     * @param string $type The search type (all, name, phone, email, patient_number, id_number, nrc, passport)
+     * @param string $status Filter by status (all, active, inactive)
+     * @param int $perPage Results per page (0 for all)
+     * @return Collection|LengthAwarePaginator
      */
-    public function search(string $query, string $type = 'all')
+    public function search(string $query, string $type = 'all', string $status = 'all', int $perPage = 0)
     {
-        return $this->model->where('phone', 'like', "%{$query}%")
-            ->orWhere('email', $query)
-            ->orWhere('patient_number', $query)
-            ->get();
+        $patientQuery = $this->model->newQuery();
+
+        // Apply status filter
+        if ($status !== 'all') {
+            $patientQuery->where('status', $status);
+        }
+
+        // Only apply search if query is not empty
+        if (!empty($query)) {
+            switch ($type) {
+                case 'all':
+                    $patientQuery->where(function ($q) use ($query) {
+                        $q->where('patient_number', 'LIKE', "%{$query}%")
+                            ->orWhere('first_name', 'LIKE', "%{$query}%")
+                            ->orWhere('last_name', 'LIKE', "%{$query}%")
+                            ->orWhere(DB::raw("CONCAT(first_name, ' ', last_name)"), 'LIKE', "%{$query}%")
+                            ->orWhere('phone', 'LIKE', "%{$query}%")
+                            ->orWhere('email', 'LIKE', "%{$query}%")
+                            ->orWhere('id_number', 'LIKE', "%{$query}%")
+                            ->orWhere('emergency_phone', 'LIKE', "%{$query}%")
+                            ->orWhere('address', 'LIKE', "%{$query}%")
+                            ->orWhere('nationality', 'LIKE', "%{$query}%")
+                            ->orWhere('occupation', 'LIKE', "%{$query}%");
+                    });
+                    break;
+
+                case 'name':
+                    $patientQuery->where(function ($q) use ($query) {
+                        $q->where('first_name', 'LIKE', "%{$query}%")
+                            ->orWhere('last_name', 'LIKE', "%{$query}%")
+                            ->orWhere(DB::raw("CONCAT(first_name, ' ', last_name)"), 'LIKE', "%{$query}%");
+                    });
+                    break;
+
+                case 'phone':
+                    $patientQuery->where('phone', 'LIKE', "%{$query}%");
+                    break;
+
+                case 'email':
+                    $patientQuery->where('email', 'LIKE', "%{$query}%");
+                    break;
+
+                case 'patient_number':
+                    $patientQuery->where('patient_number', 'LIKE', "%{$query}%");
+                    break;
+
+                case 'id_number':
+                    $patientQuery->where('id_number', 'LIKE', "%{$query}%");
+                    break;
+
+                case 'nrc':
+                    $patientQuery->where(function ($q) use ($query) {
+                        $q->where('id_type', 'LIKE', '%national_id%')
+                            ->orWhere('id_type', 'LIKE', '%nrc%')
+                            ->orWhere('id_type', 'LIKE', '%NRC%');
+                    })->where('id_number', 'LIKE', "%{$query}%");
+                    break;
+
+                case 'passport':
+                    $patientQuery->where('id_type', 'LIKE', '%passport%')
+                        ->where('id_number', 'LIKE', "%{$query}%");
+                    break;
+
+                case 'national_id':
+                    $patientQuery->where('id_type', 'LIKE', '%national_id%')
+                        ->where('id_number', 'LIKE', "%{$query}%");
+                    break;
+
+                case 'alt_phone':
+                    $patientQuery->where('emergency_phone', 'LIKE', "%{$query}%");
+                    break;
+
+                case 'id_type':
+                    $patientQuery->where('id_type', 'LIKE', "%{$query}%");
+                    break;
+
+                default:
+                    // Fallback to basic search
+                    $patientQuery->where(function ($q) use ($query) {
+                        $q->where('phone', 'LIKE', "%{$query}%")
+                            ->orWhere('email', 'LIKE', "%{$query}%")
+                            ->orWhere('patient_number', 'LIKE', "%{$query}%")
+                            ->orWhere('first_name', 'LIKE', "%{$query}%")
+                            ->orWhere('last_name', 'LIKE', "%{$query}%");
+                    });
+                    break;
+            }
+        }
+
+        // Order by created_at descending
+        $patientQuery->orderBy('created_at', 'desc');
+
+        // Return paginated or collection
+        if ($perPage > 0) {
+            return $patientQuery->paginate($perPage);
+        }
+
+        return $patientQuery->get();
+    }
+
+    /**
+     * Advanced search with multiple criteria
+     */
+    public function advancedSearch(array $criteria, int $perPage = 0)
+    {
+        $query = $this->model->newQuery();
+
+        // Apply each criterion
+        foreach ($criteria as $field => $value) {
+            if (empty($value)) continue;
+
+            switch ($field) {
+                case 'search':
+                    $query->where(function ($q) use ($value) {
+                        $q->where('patient_number', 'LIKE', "%{$value}%")
+                            ->orWhere('first_name', 'LIKE', "%{$value}%")
+                            ->orWhere('last_name', 'LIKE', "%{$value}%")
+                            ->orWhere('phone', 'LIKE', "%{$value}%")
+                            ->orWhere('email', 'LIKE', "%{$value}%")
+                            ->orWhere('id_number', 'LIKE', "%{$value}%");
+                    });
+                    break;
+
+                case 'first_name':
+                    $query->where('first_name', 'LIKE', "%{$value}%");
+                    break;
+
+                case 'last_name':
+                    $query->where('last_name', 'LIKE', "%{$value}%");
+                    break;
+
+                case 'patient_number':
+                    $query->where('patient_number', 'LIKE', "%{$value}%");
+                    break;
+
+                case 'phone':
+                    $query->where('phone', 'LIKE', "%{$value}%");
+                    break;
+
+                case 'email':
+                    $query->where('email', 'LIKE', "%{$value}%");
+                    break;
+
+                case 'id_type':
+                    $query->where('id_type', 'LIKE', "%{$value}%");
+                    break;
+
+                case 'id_number':
+                    $query->where('id_number', 'LIKE', "%{$value}%");
+                    break;
+
+                case 'blood_group':
+                    $query->where('blood_group', $value);
+                    break;
+
+                case 'nationality':
+                    $query->where('nationality', 'LIKE', "%{$value}%");
+                    break;
+
+                case 'marital_status':
+                    $query->where('marital_status', $value);
+                    break;
+
+                case 'occupation':
+                    $query->where('occupation', 'LIKE', "%{$value}%");
+                    break;
+
+                case 'status':
+                    $query->where('status', $value);
+                    break;
+
+                case 'gender':
+                    $query->where('gender', $value);
+                    break;
+
+                case 'insurance_provider':
+                    $query->where('insurance_provider', 'LIKE', "%{$value}%");
+                    break;
+
+                case 'date_from':
+                    $query->whereDate('created_at', '>=', $value);
+                    break;
+
+                case 'date_to':
+                    $query->whereDate('created_at', '<=', $value);
+                    break;
+            }
+        }
+
+        $query->orderBy('created_at', 'desc');
+
+        if ($perPage > 0) {
+            return $query->paginate($perPage);
+        }
+
+        return $query->get();
     }
 
     /**
@@ -213,10 +411,8 @@ class PatientRepository implements PatientRepositoryInterface
 
     /**
      * Get patient's vital signs
-     * @param int $patientId
-     * @return Collection
      */
-    public function getVitalSigns($patientId)
+    public function getVitalSigns($patientId): Collection
     {
         return VitalSign::where('patient_id', $patientId)
             ->orderBy('recorded_at', 'desc')
@@ -226,11 +422,8 @@ class PatientRepository implements PatientRepositoryInterface
 
     /**
      * Create patient vital signs
-     * @param array $patientData
-     * @param int $patientId
-     * @return VitalSign
      */
-    public function createPatientVitals(array $patientData, int $patientId)
+    public function createPatientVitals(array $patientData, int $patientId): VitalSign
     {
         $data = array_merge($patientData, [
             'patient_id' => $patientId,
@@ -238,14 +431,64 @@ class PatientRepository implements PatientRepositoryInterface
         ]);
 
         return VitalSign::create($data);
-    } 
+    }
 
-    public function queuePatient(array $data){
+    /**
+     * Queue a patient
+     */
+    public function queuePatient(array $data)
+    {
         return \App\Models\Queue::create($data);
     }
 
-    public function getPatientId($patientNumber){
-        return \App\Models\Patients\Patient::where('patient_number', $patientNumber)
-        ->value('id');
+    /**
+     * Get patient ID by patient number
+     */
+    public function getPatientId($patientNumber)
+    {
+        return $this->model
+            ->where('patient_number', $patientNumber)
+            ->value('id');
+    }
+
+    /**
+     * Search patients by name (first or last)
+     */
+    public function searchByName(string $name, int $perPage = 0)
+    {
+        $query = $this->model->where('first_name', 'LIKE', "%{$name}%")
+            ->orWhere('last_name', 'LIKE', "%{$name}%")
+            ->orWhere(DB::raw("CONCAT(first_name, ' ', last_name)"), 'LIKE', "%{$name}%")
+            ->orderBy('created_at', 'desc');
+
+        return $perPage > 0 ? $query->paginate($perPage) : $query->get();
+    }
+
+    /**
+     * Search patients by phone number
+     */
+    public function searchByPhone(string $phone, int $perPage = 0)
+    {
+        $query = $this->model->where('phone', 'LIKE', "%{$phone}%")
+            ->orWhere('emergency_phone', 'LIKE', "%{$phone}%")
+            ->orderBy('created_at', 'desc');
+
+        return $perPage > 0 ? $query->paginate($perPage) : $query->get();
+    }
+
+    /**
+     * Search patients by ID number (NRC, Passport, National ID)
+     */
+    public function searchByIdNumber(string $idNumber, ?string $idType = null, int $perPage = 0)
+    {
+        $query = $this->model->where('id_number', 'LIKE', "%{$idNumber}%");
+
+        if ($idType) {
+            $query->where('id_type', $idType);
+        }
+
+        $query->orderBy('created_at', 'desc');
+
+        return $perPage > 0 ? $query->paginate($perPage) : $query->get();
     }
 }

@@ -91,6 +91,19 @@ class Patient extends Model
     /**
      * Relationship: Patient's created user (optional)
      */
+    public function interaction(){
+        return $this->hasMany(Interaction::class,'patient_id');
+    } 
+    public function vitalSign(){
+        return $this->hasMany(VitalSign::class,'patient_id');
+    }
+    public function prescription()
+    {
+        return $this->hasMany(PrescriptionItem::class, 'patient_id');
+    }
+    public function laboratory(){
+        return $this->hasMany(LabOrderItem::class,'patient_id');
+    }
     public function createdBy()
     {
         return $this->belongsTo(\App\Models\User::class, 'created_by');

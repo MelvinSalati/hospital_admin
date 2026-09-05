@@ -270,15 +270,15 @@ Route::prefix('v1')->group(function () {
     | Payments
     |--------------------------------------------------------------------------
     */
-    Route::prefix('patients/{patientId}')->group(function () {
-        Route::get('payments', [PaymentsController::class, 'index']);
-        Route::post('payment/process', [PaymentController::class, 'process']);
-        Route::get('payments/{paymentId}', [PaymentsController::class, 'show']);
-        Route::put('payments/{paymentId}', [PaymentsController::class, 'update']);
-        Route::delete('payments/{paymentId}', [PaymentsController::class, 'destroy']);
-        Route::get('payments-summary', [PaymentsController::class, 'summary']);
-        Route::get('payments/{paymentId}/receipt', [PaymentsController::class, 'receipt']);
-    });
+    // Route::prefix('patients/{patientId}')->group(function () {
+    //     Route::get('payments', [PaymentsController::class, 'index']);
+    //     Route::post('payment/process', [PaymentController::class, 'process']);
+    //     Route::get('payments/{paymentId}', [PaymentsController::class, 'show']);
+    //     Route::put('payments/{paymentId}', [PaymentsController::class, 'update']);
+    //     Route::delete('payments/{paymentId}', [PaymentsController::class, 'destroy']);
+    //     Route::get('payments-summary', [PaymentsController::class, 'summary']);
+    //     Route::get('payments/{paymentId}/receipt', [PaymentsController::class, 'receipt']);
+    // });
 
     Route::prefix('/payments')->group(function () {
         Route::post('/process', [PaymentController::class, 'process']);
@@ -300,20 +300,6 @@ Route::prefix('v1')->group(function () {
     });
     Route::post('patients/{patientId}/theater-order', [TheaterController::class, 'orderTheaterServices']);
 
-    Route::prefix('patients')->group(function () {
-        Route::get('/', [PatientController::class, 'index']);
-        Route::post('{patientId}/payment', [PaymentsController::class, 'store']);
-
-        Route::post('search', [PatientController::class, 'search']);
-        Route::get('stats', [PatientController::class, 'getStats']);
-        Route::get('insurance', [PatientController::class, 'getByInsurance']);
-        Route::post('fingerprint', [PatientController::class, 'findByFingerprint']);
-
-        Route::get('{id}', [PatientController::class, 'show']);
-        Route::put('{id}', [PatientController::class, 'update']);
-        Route::delete('{id}', [PatientController::class, 'destroy']);
-        Route::post('{id}/restore', [PatientController::class, 'restore']);
-    });
 
 
 
@@ -371,6 +357,8 @@ Route::prefix('v1/appointments')->group(function () {
 require __DIR__ . '/bulk_store_api.php';
 require __DIR__ . '/notifications_api.php';
 require __DIR__ . '/prescriptions.php';
+require __DIR__ . '/nurses_api.php';
+require __DIR__ . '/patient_api.php';
 require __DIR__ . '/vitals.php';
 require __DIR__ . '/drug.php';
 require __DIR__ . '/lab.php';

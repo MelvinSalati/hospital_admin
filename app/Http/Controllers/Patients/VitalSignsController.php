@@ -29,8 +29,9 @@ class VitalSignsController extends Controller{
      * Store a newly created resource in storage.
      */
 
-    public function createVitalSigns(Request $request, $patientId)
+    public function store(Request $request,int  $patientId)
     {
+       
         try 
         {
             $visitToken   =  VisitTokenHelper::getActiveToken($patientId);
@@ -55,7 +56,7 @@ class VitalSignsController extends Controller{
         }
        
     }
-    public function updateVitalSigns(Request $request, $patientId)
+    public function updateVitalSigns(Request $request, int $patientId)
     {
         return $this->patientService->create($request->all(), $patientId);
     }

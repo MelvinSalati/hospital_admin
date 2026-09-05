@@ -5,25 +5,20 @@ namespace App\Http\Controllers\BulkStores;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\BulkStores\StoreSupplierRequest;
 use App\Http\Requests\BulkStores\UpdateSupplierRequest;
-use App\Models\BulkStores\Supplier;
+use App\Models\Supplier;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-
+use Inertia\Inertia; 
 class SupplierController extends Controller
 {
     // GET /suppliers
-    public function index(Request $request): JsonResponse
+    public function index()
     {
-        $suppliers = Supplier::query()
-            ->when($request->boolean('active_only'), fn ($q) => $q->active())
-            ->when($request->filled('search'), function ($q) use ($request) {
-                $q->where('name', 'like', "%{$request->search}%")
-                  ->orWhere('email', 'like', "%{$request->search}%");
-            })
-            ->latest()
-            ->paginate($request->integer('per_page', 15));
+        $suppliers = Supplier::all();
 
-        return response()->json($suppliers);
+        return Inertia::render('bulkstore/Suppliers',[
+            'suppliers' => $suppliers
+        ]);
     }
 
     // POST /suppliers

@@ -54,9 +54,10 @@ import {
     UserCircle,
     FileTextIcon,
     DownloadIcon,
+    ScissorsIcon,
+    PlusCircle,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-
 import AppLogo from '@/components/app-logo';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -127,7 +128,7 @@ const roleNavItems: Record<string, NavItem[]> = {
             icon: DollarSignIcon,
         },
         {
-            title: 'Purchase Requistions',
+            title: 'Purchase Requisitions',
             href: '/admin/purchase-requisitions',
             icon: BoxesIcon,
         },
@@ -251,56 +252,131 @@ const roleNavItems: Record<string, NavItem[]> = {
         },
     ],
     nurse: [
-        { title: 'Dashboard', href: '/nurses/dashboard', icon: LayoutGrid },
-        { title: 'Nurses Bay', href: '/nurses/queue', icon: ThermometerIcon },
-        { title: 'Vitals', href: '/vitals', icon: HeartPulse },
-        { title: 'Admissions', href: '/admissions', icon: UserPlus },
-        { title: 'Patients', href: '/patients', icon: Users },
+        {
+            title: 'Dashboard',
+            href: '/nurses/dashboard',
+            icon: LayoutGrid,
+        },
+        {
+            title: 'Patients',
+            href: '/nurses/registry',
+            icon: Users,
+        },
+        {
+            title: 'Appointments',
+            href: '/nurses/appointments',
+            icon: Calendar1Icon,
+        },
+        {
+            title: 'Queue & Check-in',
+            href: '/nurses/queue',
+            icon: ClipboardCheck,
+        },
+        {
+            title: 'Visits',
+            href: '/nurses/visits',
+            icon: Stethoscope,
+        },
+        {
+            title: 'Bulk Store',
+            icon: Package,
+            href: '/nurses/bulk-store',
+        },
+        {
+            title: 'Reports',
+            href: '/nurses/reports',
+            icon: BarChart3,
+        },
         {
             title: 'Account',
-            href: `../../${routes.web.user.account}`,
-            icon: UserSquare,
+            href: '/users/manage-account',
+            icon: UserCircle,
         },
     ],
     receptionist: [
-        { title: 'Dashboard', href: '/reception/dashboard', icon: LayoutGrid },
-        { title: 'Registry', href: '/reception/registry', icon: Users },
-        { title: 'Manage Queues', href: '/reception/queue', icon: User2 },
+        {
+            title: 'Dashboard',
+            href: '/reception/dashboard',
+            icon: LayoutGrid,
+        },
+
+        {
+            title: 'Registry',
+            href: '/reception/registry',
+            icon: Users,
+        },
+
         {
             title: 'Add Patient',
             href: '/reception/create',
             icon: UserPlus2Icon,
         },
+
         {
             title: 'Appointments',
             href: '/reception/appointments',
             icon: Calendar1Icon,
         },
+
         {
-            title: 'Reception-Payments',
+            title: 'Queue & Check-in',
+            href: '/reception/queue',
+            icon: ClipboardCheck,
+        },
+
+        {
+            title: 'Visits',
+            href: '/reception/visits',
+            icon: Stethoscope,
+        },
+
+        {
+            title: 'Billing',
             href: '/reception/bills',
             icon: DollarSignIcon,
         },
-        { title: 'Reports', href: '/reception', icon: BarChart2 },
+
+        {
+            title: 'Payments',
+            href: '/reception/payments',
+            icon: CreditCard,
+        },
+
+        {
+            title: 'Insurance & Schemes',
+            href: '/reception/insurance',
+            icon: Shield,
+        },
+        {
+            title: 'User Management',
+            href: '/admin/manage-users',
+            icon: Users,
+            children: [
+                {
+                    title: 'Users',
+                    href: '/admin/manage-users',
+                },
+                {
+                    title: 'Roles & Permissions',
+                    href: '/admin/roles',
+                },
+            ],
+        },
+        {
+            title: 'Add User',
+            href: '/user/create',
+            icon: PlusCircle,
+        },
+        {
+            title: 'Reports',
+            href: '/reception/reports',
+            icon: BarChart2,
+        },
+
         {
             title: 'Account',
             href: `../../${routes.web.user.account}`,
             icon: UserSquare,
-        },
-        {
-            title: 'Consultations',
-            href: '/consultation/queue',
-            icon: Stethoscope,
-        },
-        { title: 'Nurses Bay', href: '/nurses/queue', icon: ThermometerIcon },
-        { title: 'Vitals', href: '/vitals', icon: HeartPulse },
-        { title: 'Admissions', href: '/admissions', icon: UserPlus },
-        { title: 'Patients', href: '/patients', icon: Users },
-        { title: 'Laboratory', href: '/laboratory', icon: FlaskConical },
-        {
-            title: 'Bulk store - Lab',
-            href: '/laboratory/bulk-store',
-            icon: BoxesIcon,
         },
     ],
     pharmacist: [
@@ -340,11 +416,6 @@ const roleNavItems: Record<string, NavItem[]> = {
         { title: 'Issue Stock', href: '/bulkstore/issues', icon: PackageMinus },
         { title: 'Returns', href: '/bulkstore/returns', icon: ArrowLeftCircle },
         {
-            title: 'Transfers',
-            href: '/bulkstore/transfers',
-            icon: ArrowRightLeft,
-        },
-        {
             title: 'Purchase Orders',
             href: '/bulkstore/purchase-orders',
             icon: FileText,
@@ -361,13 +432,7 @@ const roleNavItems: Record<string, NavItem[]> = {
             href: '/bulkstore/expiry',
             icon: CalendarClock,
         },
-        // {
-        //     title: 'Barcode Management',
-        //     href: '/bulkstore/barcode-manage',
-        //     icon: Barcode,
-        // },
         { title: 'Reports', href: '/bulkstore/reports', icon: BarChart3 },
-        { title: 'Audit Trail', href: '/bulkstore/audit-trail', icon: History },
         {
             title: 'Configurations',
             href: '/bulkstore/module-settings',
@@ -514,6 +579,11 @@ export default function AppSidebar() {
         userRole = userRole[0];
     }
 
+    // If no role is found, fallback to 'receptionist' with admin capabilities
+    if (!userRole || userRole === '') {
+        userRole = 'receptionist';
+    }
+
     const roles = props.auth?.user?.profile?.roles || [];
 
     // Fetch order counts - wrapped in try/catch to handle 404
@@ -564,7 +634,14 @@ export default function AppSidebar() {
 
     // Role-based redirect
     useEffect(() => {
-        if (roles.length === 0) return;
+        if (roles.length === 0) {
+            // If no roles, redirect to reception
+            const currentPath = window.location.pathname;
+            if (currentPath === '/' || currentPath === '/dashboard') {
+                router.visit('/reception/dashboard');
+            }
+            return;
+        }
 
         const currentPath = window.location.pathname;
 
@@ -583,6 +660,32 @@ export default function AppSidebar() {
             (currentPath === '/' || currentPath === '/dashboard')
         ) {
             router.visit('/admin/dashboard');
+        } else if (
+            roles.includes('receptionist') &&
+            (currentPath === '/' || currentPath === '/dashboard')
+        ) {
+            router.visit('/reception/dashboard');
+        } else if (
+            roles.includes('pharmacist') &&
+            (currentPath === '/' || currentPath === '/dashboard')
+        ) {
+            router.visit('/pharmacy/dashboard');
+        } else if (
+            roles.includes('bulkstore') &&
+            (currentPath === '/' || currentPath === '/dashboard')
+        ) {
+            router.visit('/bulkstore/dashboard');
+        } else if (
+            roles.includes('lab_technician') &&
+            (currentPath === '/' || currentPath === '/dashboard')
+        ) {
+            router.visit('/laboratory/dashboard');
+        } else if (
+            (currentPath === '/' || currentPath === '/dashboard') &&
+            roles.length > 0
+        ) {
+            // Fallback: if no specific role match, go to reception
+            router.visit('/reception/dashboard');
         }
     }, [roles]);
 
@@ -633,7 +736,6 @@ export default function AppSidebar() {
                 <SidebarMenu>
                     <SidebarMenuItem>
                         <SidebarMenuButton size="lg" asChild>
-                            {/* FIXED: Removed nested Link - AppLogo now handles the link */}
                             <AppLogo />
                         </SidebarMenuButton>
                     </SidebarMenuItem>

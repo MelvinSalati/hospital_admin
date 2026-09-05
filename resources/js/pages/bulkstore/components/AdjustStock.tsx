@@ -1,1116 +1,660 @@
-// components/modals/AdjustStockModal.tsx
+// resources/js/pages/bulkstore/components/AdjustStock.tsx
 
-import { Dialog, Transition } from '@headlessui/react';
 import {usePage} from '@inertiajs/react'
-import { format } from 'date-fns';
 import {
-    SlidersHorizontal,
     X,
     Search,
-    Package,
-    Barcode,
-    Calendar,
-    Clock,
-    TrendingUp,
-    TrendingDown,
     Plus,
-    Minus as MinusIcon,
+    Minus,
+    Package,
+    AlertCircle,
+    Check,
+    FileText,
     Upload,
-    File,
     Image,
-    Loader2,
-    AlertTriangle,
-    Shield,
-    Clock as ClockIcon,
+    File,
+    Trash2,
+    Calendar,
+    Hash,
+    DollarSign,
 } from 'lucide-react';
-import Notiflix from 'notiflix';
-import { useState, useEffect, useRef, Fragment } from 'react';
-import routes from '@/constants/routes';
+import { useState, useEffect, useRef } from 'react';
+import { toast } from 'react-hot-toast';
 import Http from '@/utils/Http';
-// ============================================
-// TYPES
-// ============================================
-
 interface Product {
-    id: number;
-    product_name: string;
+    product_id: number;
+    product_uuid: string;
     product_code: string;
-    barcode?: string;
-    description?: string;
-    current_stock: number;
-    unit?: string;
-    strength?: string;
-    form?: string;
-    category?: string;
-    supplier?: string;
-    last_updated?: string;
-    created_at?: string;
-    price?: number;
+    product_name: string;
+    description: string;
+    strength: string;
+    form: string;
+    unit: string;
+    category_id: number;
+    category_name: string;
+    barcode: string | null;
+    total_stock: number;
+    active_batches: number;
+    nearest_expiry: string | null;
+    days_remaining: number | null;
+    stock_status: string;
+    expiry_status: string;
+    generic_name?: string;
+    brand_name?: string;
     reorder_level?: number;
-    location?: string;
-    batch_number?: string;
-    expiry_date?: string;
-}
-
-interface UploadedFile {
-    id?: string;
-    name: string;
-    size: number;
-    type: string;
-    url?: string;
-    file?: File;
-    uploading?: boolean;
-    progress?: number;
 }
 
 interface AdjustStockModalProps {
     isOpen: boolean;
     onClose: () => void;
     productId?: number;
-    currentStock?: number;
-    onSuccess?: () => void;
+    initialStock?: number;
     productName?: string;
+    onSuccess?: () => void;
 }
-
-// ============================================
-// MAIN COMPONENT
-// ============================================
 
 export default function AdjustStockModal({
     isOpen,
     onClose,
-    productId: initialProductId,
-    currentStock: initialStock,
+    productId,
+    initialStock,
+    productName,
     onSuccess,
-    productName: initialProductName,
 }: AdjustStockModalProps) {
-    // ============================================
-    // STATE
-    // ============================================
-    const {auth} = usePage().props;
+    const [searchTerm, setSearchTerm] = useState('');
+    const [products, setProducts] = useState<Product[]>([]);
     const [loading, setLoading] = useState(false);
-    const [searching, setSearching] = useState(false);
-    const [submitting, setSubmitting] = useState(false);
-    
-    // Product search
-    const [searchQuery, setSearchQuery] = useState('');
-    const [searchResults, setSearchResults] = useState<Product[]>([]);
-    const [showSearchResults, setShowSearchResults] = useState(false);
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-    const searchInputRef = useRef<HTMLInputElement>(null);
-    const fileInputRef = useRef<HTMLInputElement>(null);
-    
-    // Form state
+    const [adjustmentType, setAdjustmentType] = useState<'addition' | 'reduction'>('addition');
     const [newQuantity, setNewQuantity] = useState<number>(0);
-    const [reason, setReason] = useState('');
-    const [adjustmentType, setAdjustmentType] = useState<'add' | 'subtract' | 'set'>('set');
-    const [adjustmentValue, setAdjustmentValue] = useState<number>(0);
     const [adjustmentCategory, setAdjustmentCategory] = useState<string>('correction');
-    const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
-    const [isDragging, setIsDragging] = useState(false);
-    const [showApprovalInfo, setShowApprovalInfo] = useState(false);
-
-    // ============================================
-    // COMPUTED VALUES (DECLARED BEFORE useEffect)
-    // ============================================
-    
-    const currentStock = selectedProduct?.current_stock || 0;
-    const difference = newQuantity - currentStock;
-    const isChanged = difference !== 0;
-    const isNegativeAdjustment = difference < 0;
-
-    // ============================================
-    // EFFECTS
-    // ============================================
-
-    // Auto-load product if ID is provided
-    useEffect(() => {
-        if (isOpen && initialProductId) {
-            loadProduct(initialProductId);
-        }
-    }, [isOpen, initialProductId]);
-
-    // Reset form when modal closes
+    const [reason, setReason] = useState('');
+    const [batchNumber, setBatchNumber] = useState('');
+    const [expiryDate, setExpiryDate] = useState('');
+    const [unitCost, setUnitCost] = useState<number>(0);
+    const [files, setFiles] = useState<File[]>([]);
+    const [submitting, setSubmitting] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const {auth}  = usePage().props;
+    // Reset state when modal closes
     useEffect(() => {
         if (!isOpen) {
-            resetForm();
+            setSelectedProduct(null);
+            setProducts([]);
+            setSearchTerm('');
+            setNewQuantity(0);
+            setReason('');
+            setBatchNumber('');
+            setExpiryDate('');
+            setUnitCost(0);
+            setFiles([]);
         }
     }, [isOpen]);
 
-    // Search products
+    // Fetch products when search term changes
     useEffect(() => {
-        if (searchQuery.length >= 2) {
-            const delay = setTimeout(() => searchProducts(searchQuery), 300);
-            return () => clearTimeout(delay);
-        } else {
-            setSearchResults([]);
-            setShowSearchResults(false);
+        if (searchTerm.trim().length >= 2 && isOpen) {
+            const delayDebounce = setTimeout(() => {
+                searchProducts(searchTerm);
+            }, 300);
+            return () => clearTimeout(delayDebounce);
+        } else if (searchTerm.length === 0) {
+            setProducts([]);
         }
-    }, [searchQuery]);
+    }, [searchTerm, isOpen]);
 
-    // Check if adjustment requires approval
+    // If productId is provided, fetch that product
     useEffect(() => {
-        if (selectedProduct && difference < 0) {
-            setShowApprovalInfo(true);
-        } else {
-            setShowApprovalInfo(false);
+        if (productId && isOpen) {
+            fetchProductById(productId);
         }
-    }, [selectedProduct, difference]);
+    }, [productId, isOpen]);
 
-    // ============================================
-    // HELPERS
-    // ============================================
-
-    const formatCurrency = (amount: number) => {
-        return new Intl.NumberFormat('en-ZM', {
-            style: 'currency',
-            currency: 'ZMW',
-            minimumFractionDigits: 2,
-        }).format(amount);
-    };
-
-    const formatDate = (date: string | undefined) => {
-        if (!date) return 'N/A';
-        try {
-            return format(new Date(date), 'dd MMM yyyy, hh:mm a');
-        } catch {
-            return 'N/A';
+    // If product is passed via props (from Adjustments page)
+    useEffect(() => {
+        if (productId && initialStock !== undefined && productName && isOpen) {
+            const stock = parseFloat(String(initialStock)) || 0;
+            const product: Product = {
+                product_id: productId,
+                product_uuid: '',
+                product_code: '',
+                product_name: productName,
+                description: '',
+                strength: '',
+                form: '',
+                unit: 'Unit',
+                category_id: 0,
+                category_name: '',
+                barcode: null,
+                total_stock: stock,
+                active_batches: 0,
+                nearest_expiry: null,
+                days_remaining: null,
+                stock_status: '',
+                expiry_status: '',
+                reorder_level: 0,
+            };
+            setSelectedProduct(product);
+            setNewQuantity(stock);
         }
-    };
+    }, [productId, initialStock, productName, isOpen]);
 
-    const formatFileSize = (bytes: number): string => {
-        if (bytes === 0) return '0 Bytes';
-        const k = 1024;
-        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-    };
-
-    const resetForm = () => {
-        setSearchQuery('');
-        setSearchResults([]);
-        setSelectedProduct(null);
-        setNewQuantity(0);
-        setReason('');
-        setAdjustmentType('set');
-        setAdjustmentValue(0);
-        setAdjustmentCategory('correction');
-        setUploadedFiles([]);
-        setSubmitting(false);
-        setSearching(false);
-        setShowApprovalInfo(false);
-    };
-
-    // ============================================
-    // API CALLS
-    // ============================================
-
-    const loadProduct = async (id: number) => {
+    const searchProducts = async (query: string) => {
         setLoading(true);
         try {
-            const response = await Http.get(`/api/products/${id}`);
-            if (response.data.success) {
-                setSelectedProduct(response.data.data);
-                setNewQuantity(response.data.data.current_stock || 0);
+            const response = await Http.get(`bulk-store/product/${query}`);
+            console.log('Search response:', response.data);
+            
+            if (response.data) {
+                let productData = response.data.data || response.data;
+                if (!Array.isArray(productData)) {
+                    productData = [productData];
+                }
+                
+                const mappedProducts = productData.map((p: any) => {
+                    const stock = parseFloat(p.total_stock) || 0;
+                    
+                    return {
+                        product_id: p.product_id || p.id,
+                        product_uuid: p.product_uuid || '',
+                        product_code: p.product_code || '',
+                        product_name: p.product_name || p.name || '',
+                        description: p.description || '',
+                        strength: p.strength || '',
+                        form: p.form || p.dosage_form || '',
+                        unit: p.unit || p.unit_of_measure || 'Unit',
+                        category_id: p.category_id || 0,
+                        category_name: p.category_name || '',
+                        barcode: p.barcode || null,
+                        total_stock: stock,
+                        active_batches: parseInt(p.active_batches) || 0,
+                        nearest_expiry: p.nearest_expiry || null,
+                        days_remaining: p.days_remaining ? parseInt(p.days_remaining) : null,
+                        stock_status: p.stock_status || '',
+                        expiry_status: p.expiry_status || '',
+                        generic_name: p.generic_name || '',
+                        brand_name: p.brand_name || '',
+                        reorder_level: p.reorder_level || 0,
+                    };
+                });
+                
+                setProducts(mappedProducts);
             }
         } catch (error) {
-            Notiflix.Notify.failure('Failed to load product details');
-            console.error(error);
+            console.error('Error searching products:', error);
+            toast.error('Failed to search products');
         } finally {
             setLoading(false);
         }
     };
 
-    const searchProducts = async (query: string) => {
-        setSearching(true);
+    const fetchProductById = async (id: number) => {
+        setLoading(true);
         try {
-            const response = await Http.get(`/bulk-store/product/search/${query}`);
-            if (response.data.status === 'success') {
-                setSearchResults(response.data.product);
-                setShowSearchResults(true);
+            const response = await Http.get(`bulk-store/products/${id}`);
+            console.log('Product by ID response:', response.data);
+            
+            if (response.data) {
+                const p = response.data;
+                const stock = parseFloat(p.total_stock) || 0;
+                
+                const mappedProduct: Product = {
+                    product_id: p.product_id || p.id,
+                    product_uuid: p.product_uuid || '',
+                    product_code: p.product_code || '',
+                    product_name: p.product_name || p.name || '',
+                    description: p.description || '',
+                    strength: p.strength || '',
+                    form: p.form || p.dosage_form || '',
+                    unit: p.unit || p.unit_of_measure || 'Unit',
+                    category_id: p.category_id || 0,
+                    category_name: p.category_name || '',
+                    barcode: p.barcode || null,
+                    total_stock: stock,
+                    active_batches: parseInt(p.active_batches) || 0,
+                    nearest_expiry: p.nearest_expiry || null,
+                    days_remaining: p.days_remaining ? parseInt(p.days_remaining) : null,
+                    stock_status: p.stock_status || '',
+                    expiry_status: p.expiry_status || '',
+                    generic_name: p.generic_name || '',
+                    brand_name: p.brand_name || '',
+                    reorder_level: p.reorder_level || 0,
+                };
+                
+                setSelectedProduct(mappedProduct);
+                setNewQuantity(stock);
             }
         } catch (error) {
-            console.error('Search error:', error);
-            setSearchResults([]);
+            console.error('Error fetching product:', error);
+            toast.error('Failed to fetch product details');
         } finally {
-            setSearching(false);
+            setLoading(false);
         }
     };
 
-    const uploadFile = async (file: File): Promise<UploadedFile> => {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('type', 'adjustment_evidence');
-
-        try {
-            const response = await Http.post('/bulk-store/upload/evidence', formData, {
-                headers: { 'Content-Type': 'multipart/form-data' },
-                onUploadProgress: (progressEvent) => {
-                    const progress = Math.round(
-                        (progressEvent.loaded * 100) / (progressEvent.total || 1)
-                    );
-                    setUploadedFiles(prev =>
-                        prev.map(f =>
-                            f.name === file.name ? { ...f, progress, uploading: true } : f
-                        )
-                    );
-                },
-            });
-
-            return {
-                id: response.data.id,
-                name: file.name,
-                size: file.size,
-                type: file.type,
-                url: response.data.url,
-                uploading: false,
-                progress: 100,
-            };
-        } catch (error) {
-            throw new Error('Failed to upload file');
-        }
-    };
-
-    // ============================================
-    // HANDLERS
-    // ============================================
-
-    const handleProductSelect = (product: Product) => {
+    const handleSelectProduct = (product: Product) => {
         setSelectedProduct(product);
-        setNewQuantity(product.current_stock || 0);
-        setSearchQuery(product.product_name);
-        setShowSearchResults(false);
-        if (searchInputRef.current) {
-            searchInputRef.current.blur();
+        setNewQuantity(product.total_stock || 0);
+        setSearchTerm('');
+        setProducts([]);
+    };
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files) {
+            const newFiles = Array.from(e.target.files);
+            const validFiles = newFiles.filter(
+                (file) => file.size <= 5 * 1024 * 1024
+            );
+            if (validFiles.length !== newFiles.length) {
+                toast.error('Some files exceed the 5MB limit');
+            }
+            setFiles((prev) => [...prev, ...validFiles]);
         }
     };
 
-    const handleAdjustmentTypeChange = (type: 'add' | 'subtract' | 'set') => {
-        setAdjustmentType(type);
-        if (type === 'set') {
-            setNewQuantity(selectedProduct?.current_stock || 0);
-        } else {
-            setAdjustmentValue(0);
-        }
+    const handleRemoveFile = (index: number) => {
+        setFiles((prev) => prev.filter((_, i) => i !== index));
     };
 
-    const applyAdjustment = () => {
-        if (!selectedProduct) return;
-        
-        const current = selectedProduct.current_stock || 0;
-        let newValue = current;
-
-        switch (adjustmentType) {
-            case 'add':
-                newValue = current + adjustmentValue;
-                break;
-            case 'subtract':
-                newValue = Math.max(0, current - adjustmentValue);
-                break;
-            case 'set':
-                newValue = newQuantity;
-                break;
-        }
-
-        setNewQuantity(Math.max(0, newValue));
-    };
-
-    const handleFileUpload = (files: FileList | null) => {
-        if (!files) return;
-
-        const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf', 'image/gif'];
-        const maxSize = 5 * 1024 * 1024; // 5MB
-
-        const validFiles = Array.from(files).filter(file => {
-            if (!allowedTypes.includes(file.type)) {
-                Notiflix.Notify.warning(`Invalid file type: ${file.name}`);
-                return false;
-            }
-            if (file.size > maxSize) {
-                Notiflix.Notify.warning(`File too large: ${file.name} (max 5MB)`);
-                return false;
-            }
-            return true;
-        });
-
-        const newFiles = validFiles.map(file => ({
-            id: `temp-${Date.now()}-${Math.random()}`,
-            name: file.name,
-            size: file.size,
-            type: file.type,
-            file: file,
-            uploading: true,
-            progress: 0,
-        }));
-
-        setUploadedFiles(prev => [...prev, ...newFiles]);
-
-        // Upload each file
-        newFiles.forEach(async (uploadFile) => {
-            try {
-                const result = await uploadFile(uploadFile.file!);
-                setUploadedFiles(prev =>
-                    prev.map(f =>
-                        f.id === uploadFile.id ? result : f
-                    )
-                );
-                Notiflix.Notify.success(`Uploaded: ${uploadFile.name}`);
-            } catch (error) {
-                setUploadedFiles(prev =>
-                    prev.filter(f => f.id !== uploadFile.id)
-                );
-                Notiflix.Notify.failure(`Failed to upload: ${uploadFile.name}`);
-            }
-        });
-    };
-
-    const removeFile = (fileId: string) => {
-        setUploadedFiles(prev => prev.filter(f => f.id !== fileId));
-    };
-
-    const handleDragOver = (e: React.DragEvent) => {
-        e.preventDefault();
-        setIsDragging(true);
-    };
-
-    const handleDragLeave = (e: React.DragEvent) => {
-        e.preventDefault();
-        setIsDragging(false);
-    };
-
-    const handleDrop = (e: React.DragEvent) => {
-        e.preventDefault();
-        setIsDragging(false);
-        handleFileUpload(e.dataTransfer.files);
-    };
-
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-
+    const handleSubmit = async () => {
         if (!selectedProduct) {
-            Notiflix.Notify.warning('Please select a product');
-            return;
-        }
-
-        if (newQuantity < 0) {
-            Notiflix.Notify.warning('Quantity cannot be negative');
-            return;
-        }
-
-        const current = selectedProduct.current_stock || 0;
-        if (newQuantity === current) {
-            Notiflix.Notify.warning('No change in quantity');
+            toast.error('Please select a product');
             return;
         }
 
         if (!reason || reason.trim().length < 10) {
-            Notiflix.Notify.warning('Please provide a detailed reason (minimum 10 characters)');
+            toast.error('Please provide a reason (minimum 10 characters)');
             return;
         }
 
-        // For negative adjustments, require evidence if category is damage/expiry
-        if (isNegativeAdjustment && 
-            (adjustmentCategory === 'damage' || adjustmentCategory === 'expiry') && 
-            uploadedFiles.length === 0) {
-            Notiflix.Notify.warning('Please upload evidence for damage or expiry adjustments');
+        const previousQuantity = selectedProduct.total_stock || 0;
+        const difference = newQuantity - previousQuantity;
+
+        if (difference === 0) {
+            toast.error('Quantity must be different from current stock');
             return;
         }
 
         setSubmitting(true);
         try {
             const payload = {
-                product_id: selectedProduct.id,
+                product_id: selectedProduct.product_id,
                 quantity: newQuantity,
                 reason: reason.trim(),
-                previous_quantity: current,
-                adjustment_type: newQuantity > current ? 'addition' : 'reduction',
-                difference: newQuantity - current,
+                previous_quantity: previousQuantity,
+                adjustment_type: adjustmentType,
+                difference: difference,
                 adjustment_category: adjustmentCategory,
-                created_by: auth.user.id,
-                evidence: uploadedFiles.map(f => f.url || f.name),
+                evidence: files.map(file => file.name),
+                batch_number: batchNumber || null,
+                expiry_date: expiryDate || null,
+                unit_cost: unitCost || null,
+                created_by: auth.user.id
             };
 console.log(payload)
             const response = await Http.post('/bulk-store/adjust-stock', payload);
-
-            if (response.data.success) {
-                // Check if adjustment requires approval
-                if (response.data.requires_approval) {
-                    Notiflix.Notify.info(
-                        'Stock adjustment submitted for approval. You will be notified once approved.',
-                        { timeout: 5000 }
-                    );
-                } else {
-                    Notiflix.Notify.success(
-                        `Stock adjusted from ${current} to ${newQuantity} units`
-                    );
-                }
-
-                setSelectedProduct({
-                    ...selectedProduct,
-                    current_stock: newQuantity,
-                    last_updated: new Date().toISOString(),
-                });
-
+         
+            
+            if (response.status === 200) {
+                toast.success('Stock adjusted successfully');
                 if (onSuccess) onSuccess();
-
-                // Close after brief delay
-                setTimeout(() => onClose(), 2000);
-            } else {
-                throw new Error(response.data.message || 'Failed to adjust stock');
+                onClose();
             }
         } catch (error: any) {
-            const message = error.response?.data?.message || 'Failed to adjust stock';
-            Notiflix.Notify.failure(message);
-            console.error(error);
+            console.error('Error adjusting stock:', error);
+            toast.error(error.response?.data?.message || 'Failed to adjust stock');
         } finally {
             setSubmitting(false);
         }
     };
 
-    const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (e.key === 'Enter' && selectedProduct) {
-            e.preventDefault();
-            handleSubmit(e);
-        }
-    };
+    if (!isOpen) return null;
 
-    // ============================================
-    // RENDER
-    // ============================================
+    const currentStock = selectedProduct?.total_stock ?? 0;
+    const displayUnit = selectedProduct?.unit || 'Unit';
+    const difference = newQuantity - currentStock;
 
     return (
-        <Transition show={isOpen} as={Fragment}>
-            <Dialog as="div" className="relative z-50" onClose={onClose}>
-                <Transition.Child
-                    as={Fragment}
-                    enter="ease-out duration-300"
-                    enterFrom="opacity-0"
-                    enterTo="opacity-100"
-                    leave="ease-in duration-200"
-                    leaveFrom="opacity-100"
-                    leaveTo="opacity-0"
-                >
-                    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" />
-                </Transition.Child>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+            <div className="flex w-full max-w-4xl flex-col rounded-xl bg-white shadow-2xl dark:bg-slate-800">
+                {/* Header - Fixed */}
+                <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 dark:border-slate-700">
+                    <div className="flex items-center gap-3">
+                        <div className="rounded-lg bg-blue-100 p-2 dark:bg-blue-900/30">
+                            <Package className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                        </div>
+                        <div>
+                            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">
+                                Adjust Stock
+                            </h3>
+                            <p className="text-sm text-slate-500 dark:text-slate-400">
+                                Manage inventory levels for products
+                            </p>
+                        </div>
+                    </div>
+                    <button
+                        onClick={onClose}
+                        className="rounded-lg p-1.5 transition-colors hover:bg-slate-100 dark:hover:bg-slate-700"
+                    >
+                        <X className="h-5 w-5 text-slate-500" />
+                    </button>
+                </div>
 
-                <div className="fixed inset-0 overflow-y-auto">
-                    <div className="flex min-h-full items-center justify-center p-4">
-                        <Transition.Child
-                            as={Fragment}
-                            enter="ease-out duration-300"
-                            enterFrom="opacity-0 scale-95"
-                            enterTo="opacity-100 scale-100"
-                            leave="ease-in duration-200"
-                            leaveFrom="opacity-100 scale-100"
-                            leaveTo="opacity-0 scale-95"
-                        >
-                            <Dialog.Panel className="relative w-full max-w-6xl transform overflow-hidden rounded-xl bg-white shadow-2xl transition-all max-h-[95vh] flex flex-col">
-                                {/* ========================================== */}
-                                {/* HEADER - Fixed */}
-                                {/* ========================================== */}
-                                <div className="flex-shrink-0 px-6 py-4  bg-white rounded-t-xl">
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-3">
-                                            <div className="rounded-lg bg-blue-50 p-2.5">
-                                                <SlidersHorizontal className="h-5 w-5 text-blue-600 bg-blue-100" />
-                                            </div>
+                {/* Body - Scrollable */}
+                <div className="flex-1 overflow-y-auto p-6">
+                    {!selectedProduct ? (
+                        <div className="space-y-4">
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                                <input
+                                    type="text"
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    placeholder="Search product by name or code..."
+                                    className="h-10 w-full rounded-lg border border-slate-200 pl-10 pr-4 text-sm focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                                />
+                            </div>
+
+                            {loading && (
+                                <div className="flex items-center justify-center py-8">
+                                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
+                                    <span className="ml-2 text-sm text-slate-500">Searching...</span>
+                                </div>
+                            )}
+
+                            {products.length > 0 && (
+                                <div className="max-h-60 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700">
+                                    {products.map((product) => (
+                                        <button
+                                            key={product.product_id}
+                                            onClick={() => handleSelectProduct(product)}
+                                            className="flex w-full items-center justify-between border-b border-slate-100 px-4 py-2.5 text-left transition-colors hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-700/50"
+                                        >
                                             <div>
-                                                <Dialog.Title className="text-lg font-semibold text-blue-900">
-                                                    Adjust Stock
-                                                </Dialog.Title>
-                                                <p className="text-sm text-gray-500">
-                                                    Manage inventory levels for products
+                                                <p className="font-medium text-slate-800 dark:text-slate-100">
+                                                    {product.product_name}
+                                                </p>
+                                                <p className="text-xs text-slate-500 dark:text-slate-400">
+                                                    Code: {product.product_code}
+                                                    {product.strength && ` • ${product.strength}`}
+                                                    {product.form && ` • ${product.form}`}
                                                 </p>
                                             </div>
-                                        </div>
+                                            <div className="text-right">
+                                                <p className="text-sm font-bold text-green-600 dark:text-green-400">
+                                                    {product.total_stock} {product.unit}
+                                                </p>
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+
+                            {!loading && products.length === 0 && searchTerm.length >= 2 && (
+                                <div className="text-center py-8 text-slate-500">
+                                    <p>No products found. Try a different search.</p>
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="space-y-5">
+                            {/* Selected Product Info */}
+                            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-700/30">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <h4 className="font-medium text-slate-800 dark:text-slate-100">
+                                            {selectedProduct.product_name}
+                                        </h4>
+                                        <p className="text-sm text-slate-500 dark:text-slate-400">
+                                            Code: {selectedProduct.product_code}
+                                            {selectedProduct.strength && ` • ${selectedProduct.strength}`}
+                                            {selectedProduct.form && ` • ${selectedProduct.form}`}
+                                        </p>
+                                    </div>
+                                    <button
+                                        onClick={() => {
+                                            setSelectedProduct(null);
+                                            setNewQuantity(0);
+                                            setProducts([]);
+                                        }}
+                                        className="rounded-lg border border-slate-300 px-3 py-1 text-sm transition-colors hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-700"
+                                    >
+                                        Change
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Stock Stats */}
+                            <div className="grid grid-cols-3 gap-3">
+                                <div className="rounded-lg bg-green-50 p-3 dark:bg-green-950/30">
+                                    <p className="text-xs text-green-600 dark:text-green-400">Previous Stock</p>
+                                    <p className="text-xl font-bold text-green-700 dark:text-green-300">
+                                        {currentStock} {displayUnit}
+                                    </p>
+                                </div>
+                                <div className="rounded-lg bg-blue-50 p-3 dark:bg-blue-950/30">
+                                    <p className="text-xs text-blue-600 dark:text-blue-400">New Stock</p>
+                                    <p className="text-xl font-bold text-blue-700 dark:text-blue-300">
+                                        {newQuantity} {displayUnit}
+                                    </p>
+                                </div>
+                                <div className="rounded-lg bg-purple-50 p-3 dark:bg-purple-950/30">
+                                    <p className="text-xs text-purple-600 dark:text-purple-400">Difference</p>
+                                    <p className={`text-xl font-bold ${difference > 0 ? 'text-green-600' : difference < 0 ? 'text-red-600' : 'text-slate-600'}`}>
+                                        {difference > 0 ? `+${difference}` : difference}
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Adjustment Type & Quantity */}
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                                        Adjustment Type
+                                    </label>
+                                    <div className="flex gap-1.5">
                                         <button
-                                            onClick={onClose}
-                                            className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                                            onClick={() => setAdjustmentType('addition')}
+                                            className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                                                adjustmentType === 'addition'
+                                                    ? 'bg-green-600 text-white'
+                                                    : 'border border-slate-300 text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300'
+                                            }`}
                                         >
-                                            <X className="h-5 w-5" />
+                                            <Plus className="inline h-3.5 w-3.5" /> Addition
+                                        </button>
+                                        <button
+                                            onClick={() => setAdjustmentType('reduction')}
+                                            className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                                                adjustmentType === 'reduction'
+                                                    ? 'bg-red-600 text-white'
+                                                    : 'border border-slate-300 text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300'
+                                            }`}
+                                        >
+                                            <Minus className="inline h-3.5 w-3.5" /> Reduction
                                         </button>
                                     </div>
                                 </div>
-
-                                {/* ========================================== */}
-                                {/* BODY - Scrollable with two columns */}
-                                {/* ========================================== */}
-                                <div className="flex-1 overflow-y-auto bg-blue-50 p-6">
-                                    {/* Approval Warning Banner */}
-                                    {showApprovalInfo && isNegativeAdjustment && (
-                                        <div className="mb-4 rounded-lg bg-yellow-50 border border-yellow-200 p-4">
-                                            <div className="flex items-start gap-3">
-                                                <AlertTriangle className="h-5 w-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-                                                <div className="flex-1">
-                                                    <h5 className="text-sm font-semibold text-yellow-800">
-                                                        Approval Required
-                                                    </h5>
-                                                    <p className="text-sm text-yellow-700">
-                                                        This is a <strong>negative adjustment</strong> that will reduce stock by{' '}
-                                                        <strong>{Math.abs(difference)}</strong> units.
-                                                        It requires manager approval before the changes take effect.
-                                                        You will be notified once approved or rejected.
-                                                    </p>
-                                                    <div className="mt-2 flex items-center gap-2 text-xs text-yellow-600">
-                                                        <ClockIcon className="h-3 w-3" />
-                                                        <span>Estimated approval time: 1-2 hours</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-                                        {/* ================================== */}
-                                        {/* LEFT COLUMN - Product Search & Details */}
-                                        {/* ================================== */}
-                                        <div className="space-y-4">
-                                            {/* Product Search */}
-                                            <div className="rounded-lg border bg-white p-4 shadow-sm">
-                                                <label className="mb-2 block text-sm font-medium text-gray-700">
-                                                    Search Product
-                                                </label>
-                                                <div className="relative">
-                                                    <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                                                    <input
-                                                        ref={searchInputRef}
-                                                        type="text"
-                                                        placeholder="Search by name, code, or barcode..."
-                                                        value={searchQuery}
-                                                        onChange={(e) => setSearchQuery(e.target.value)}
-                                                        onFocus={() => searchQuery.length >= 2 && setShowSearchResults(true)}
-                                                        onBlur={() => setTimeout(() => setShowSearchResults(false), 200)}
-                                                        disabled={!!initialProductId}
-                                                        className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-4 text-sm focus:border-yellow-500 focus:ring-2 focus:ring-yellow-500/20 focus:outline-none disabled:bg-gray-100 disabled:cursor-not-allowed"
-                                                    />
-                                                    {searching && (
-                                                        <Loader2 className="absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 animate-spin text-gray-400" />
-                                                    )}
-                                                    {showSearchResults && searchResults.length > 0 && (
-                                                        <div className="absolute top-full left-0 z-10 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg">
-                                                            {searchResults.map((product) => (
-                                                                <div
-                                                                    key={product.id}
-                                                                    className="cursor-pointer px-4 py-2 hover:bg-yellow-50 transition-colors"
-                                                                    onMouseDown={() => handleProductSelect(product)}
-                                                                >
-                                                                    <div className="flex items-center justify-between">
-                                                                        <div>
-                                                                            <div className="font-medium text-gray-900">
-                                                                                {product.product_name}
-                                                                            </div>
-                                                                            <div className="text-xs text-gray-500">
-                                                                                Code: {product.product_code}
-                                                                                {product.barcode && ` • Barcode: ${product.barcode}`}
-                                                                            </div>
-                                                                        </div>
-                                                                        <div className="text-sm font-medium">
-                                                                            <span className={`px-2 py-1 rounded-full text-xs ${
-                                                                                (product.current_stock || 0) > (product.reorder_level || 0)
-                                                                                    ? 'bg-green-100 text-green-700'
-                                                                                    : 'bg-red-100 text-red-700'
-                                                                            }`}>
-                                                                                Stock: {product.current_stock || 0}
-                                                                            </span>
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                                {initialProductId && initialProductName && (
-                                                    <p className="mt-1 text-xs text-gray-500">
-                                                        Editing: <span className="font-medium">{initialProductName}</span>
-                                                    </p>
-                                                )}
-                                            </div>
-
-                                            {/* Product Details */}
-                                            {selectedProduct ? (
-                                                <div className="rounded-lg border bg-white p-4 shadow-sm">
-                                                    <div className="flex items-start justify-between">
-                                                        <div>
-                                                            <h4 className="font-semibold text-gray-900">
-                                                                {selectedProduct.product_name}
-                                                            </h4>
-                                                            <p className="text-xs text-gray-500">
-                                                                Code: {selectedProduct.product_code}
-                                                            </p>
-                                                        </div>
-                                                        {selectedProduct.barcode && (
-                                                            <div className="flex items-center gap-1 text-xs text-gray-500">
-                                                                <Barcode className="h-3 w-3" />
-                                                                {selectedProduct.barcode}
-                                                            </div>
-                                                        )}
-                                                    </div>
-
-                                                    <div className="mt-3 grid grid-cols-2 gap-3">
-                                                        <div className="rounded-lg bg-gray-50 p-2">
-                                                            <p className="text-xs text-gray-500">Current Stock</p>
-                                                            <p className="text-lg font-bold text-gray-900">
-                                                                {selectedProduct.current_stock || 0}
-                                                                {selectedProduct.unit && (
-                                                                    <span className="text-sm font-normal text-gray-500">
-                                                                        {' '}{selectedProduct.unit}
-                                                                    </span>
-                                                                )}
-                                                            </p>
-                                                        </div>
-                                                        <div className="rounded-lg bg-gray-50 p-2">
-                                                            <p className="text-xs text-gray-500">Reorder Level</p>
-                                                            <p className="text-lg font-bold text-gray-900">
-                                                                {selectedProduct.reorder_level || 0}
-                                                                {selectedProduct.unit && (
-                                                                    <span className="text-sm font-normal text-gray-500">
-                                                                        {' '}{selectedProduct.unit}
-                                                                    </span>
-                                                                )}
-                                                            </p>
-                                                        </div>
-                                                        {selectedProduct.strength && (
-                                                            <div className="rounded-lg bg-gray-50 p-2">
-                                                                <p className="text-xs text-gray-500">Strength</p>
-                                                                <p className="text-sm font-medium text-gray-900">
-                                                                    {selectedProduct.strength}
-                                                                </p>
-                                                            </div>
-                                                        )}
-                                                        {selectedProduct.form && (
-                                                            <div className="rounded-lg bg-gray-50 p-2">
-                                                                <p className="text-xs text-gray-500">Form</p>
-                                                                <p className="text-sm font-medium text-gray-900 capitalize">
-                                                                    {selectedProduct.form}
-                                                                </p>
-                                                            </div>
-                                                        )}
-                                                        {selectedProduct.category && (
-                                                            <div className="rounded-lg bg-gray-50 p-2">
-                                                                <p className="text-xs text-gray-500">Category</p>
-                                                                <p className="text-sm font-medium text-gray-900">
-                                                                    {selectedProduct.category}
-                                                                </p>
-                                                            </div>
-                                                        )}
-                                                        {selectedProduct.location && (
-                                                            <div className="rounded-lg bg-gray-50 p-2">
-                                                                <p className="text-xs text-gray-500">Location</p>
-                                                                <p className="text-sm font-medium text-gray-900">
-                                                                    {selectedProduct.location}
-                                                                </p>
-                                                            </div>
-                                                        )}
-                                                        {selectedProduct.supplier && (
-                                                            <div className="col-span-2 rounded-lg bg-gray-50 p-2">
-                                                                <p className="text-xs text-gray-500">Supplier</p>
-                                                                <p className="text-sm font-medium text-gray-900">
-                                                                    {selectedProduct.supplier}
-                                                                </p>
-                                                            </div>
-                                                        )}
-                                                    </div>
-
-                                                    <div className="mt-2 flex items-center gap-4 text-xs text-gray-400">
-                                                        {selectedProduct.last_updated && (
-                                                            <span className="flex items-center gap-1">
-                                                                <Clock className="h-3 w-3" />
-                                                                Updated: {formatDate(selectedProduct.last_updated)}
-                                                            </span>
-                                                        )}
-                                                        {selectedProduct.expiry_date && (
-                                                            <span className={`flex items-center gap-1 ${
-                                                                new Date(selectedProduct.expiry_date) < new Date()
-                                                                    ? 'text-red-500'
-                                                                    : ''
-                                                            }`}>
-                                                                <Calendar className="h-3 w-3" />
-                                                                Expires: {formatDate(selectedProduct.expiry_date)}
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                <div className="rounded-lg border-2 border-dashed border-gray-200 bg-white p-8 text-center">
-                                                    <Package className="mx-auto h-12 w-12 text-gray-300" />
-                                                    <p className="mt-2 text-sm text-gray-500">
-                                                        Search and select a product to adjust
-                                                    </p>
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {/* ================================== */}
-                                        {/* RIGHT COLUMN - Adjustment Form */}
-                                        {/* ================================== */}
-                                        <div className="space-y-4">
-                                            <div className="rounded-lg border bg-white p-4 shadow-sm">
-                                                <h4 className="mb-3 text-sm font-medium text-gray-700">
-                                                    Adjustment Details
-                                                </h4>
-
-                                                {/* Stock Summary */}
-                                                <div className="mb-4 grid grid-cols-3 gap-2 rounded-lg bg-gray-50 p-3">
-                                                    <div className="text-center">
-                                                        <p className="text-xs text-gray-500">Current</p>
-                                                        <p className="text-base font-bold text-gray-900">
-                                                            {currentStock}
-                                                        </p>
-                                                    </div>
-                                                    <div className="text-center">
-                                                        <p className="text-xs text-gray-500">New</p>
-                                                        <p className="text-base font-bold text-gray-900">
-                                                            {newQuantity}
-                                                        </p>
-                                                    </div>
-                                                    <div className="text-center">
-                                                        <p className="text-xs text-gray-500">Change</p>
-                                                        <p className={`text-base font-bold ${
-                                                            difference > 0 ? 'text-green-600' :
-                                                            difference < 0 ? 'text-red-600' :
-                                                            'text-gray-500'
-                                                        }`}>
-                                                            {difference > 0 ? '+' : ''}{difference}
-                                                        </p>
-                                                    </div>
-                                                </div>
-
-                                                {/* Adjustment Type Selector */}
-                                                <div className="mb-4">
-                                                    <label className="mb-1 block text-xs font-medium text-gray-700">
-                                                        Adjustment Type
-                                                    </label>
-                                                    <div className="grid grid-cols-3 gap-2">
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleAdjustmentTypeChange('add')}
-                                                            className={`flex items-center justify-center gap-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                                                                adjustmentType === 'add'
-                                                                    ? 'bg-green-100 text-green-700 ring-2 ring-green-500'
-                                                                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                                            }`}
-                                                            disabled={!selectedProduct}
-                                                        >
-                                                            <Plus className="h-3 w-3" />
-                                                            Add
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleAdjustmentTypeChange('subtract')}
-                                                            className={`flex items-center justify-center gap-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                                                                adjustmentType === 'subtract'
-                                                                    ? 'bg-red-100 text-red-700 ring-2 ring-red-500'
-                                                                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                                            }`}
-                                                            disabled={!selectedProduct}
-                                                        >
-                                                            <MinusIcon className="h-3 w-3" />
-                                                            Subtract
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleAdjustmentTypeChange('set')}
-                                                            className={`flex items-center justify-center gap-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                                                                adjustmentType === 'set'
-                                                                    ? 'bg-blue-100 text-blue-700 ring-2 ring-blue-500'
-                                                                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                                            }`}
-                                                            disabled={!selectedProduct}
-                                                        >
-                                                            Set
-                                                        </button>
-                                                    </div>
-                                                </div>
-
-                                                {/* Adjustment Value Input */}
-                                                {adjustmentType !== 'set' ? (
-                                                    <div className="mb-4">
-                                                        <label className="mb-1 block text-xs font-medium text-gray-700">
-                                                            {adjustmentType === 'add' ? 'Amount to Add' : 'Amount to Subtract'}
-                                                        </label>
-                                                        <div className="flex gap-2">
-                                                            <input
-                                                                type="number"
-                                                                value={adjustmentValue}
-                                                                onChange={(e) => setAdjustmentValue(Math.max(0, Number(e.target.value)))}
-                                                                min="0"
-                                                                step="1"
-                                                                className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-yellow-500 focus:ring-2 focus:ring-yellow-500/20 focus:outline-none"
-                                                                disabled={!selectedProduct}
-                                                                placeholder="Enter amount..."
-                                                            />
-                                                            <button
-                                                                type="button"
-                                                                onClick={applyAdjustment}
-                                                                className="rounded-lg bg-yellow-600 px-4 py-2 text-sm font-medium text-white hover:bg-yellow-700 disabled:opacity-50"
-                                                                disabled={!selectedProduct || adjustmentValue === 0}
-                                                            >
-                                                                Apply
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                ) : (
-                                                    <div className="mb-4">
-                                                        <label className="mb-1 block text-xs font-medium text-gray-700">
-                                                            New Quantity
-                                                        </label>
-                                                        <input
-                                                            type="number"
-                                                            value={newQuantity}
-                                                            onChange={(e) => setNewQuantity(Math.max(0, Number(e.target.value)))}
-                                                            min="0"
-                                                            step="1"
-                                                            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-yellow-500 focus:ring-2 focus:ring-yellow-500/20 focus:outline-none"
-                                                            disabled={!selectedProduct}
-                                                            placeholder="Enter new quantity..."
-                                                            onKeyDown={handleKeyDown}
-                                                        />
-                                                    </div>
-                                                )}
-
-                                                {/* Adjustment Category */}
-                                                <div className="mb-4">
-                                                    <label className="mb-1 block text-xs font-medium text-gray-700">
-                                                        Adjustment Category
-                                                    </label>
-                                                    <select
-                                                        value={adjustmentCategory}
-                                                        onChange={(e) => setAdjustmentCategory(e.target.value)}
-                                                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-yellow-500 focus:ring-2 focus:ring-yellow-500/20 focus:outline-none"
-                                                        disabled={!selectedProduct}
-                                                    >
-                                                        <option value="correction">Correction</option>
-                                                        <option value="damage">Damage</option>
-                                                        <option value="expiry">Expiry</option>
-                                                        <option value="shortage">Shortage</option>
-                                                        <option value="surplus">Surplus</option>
-                                                        <option value="quality_issue">Quality Issue</option>
-                                                    </select>
-                                                </div>
-
-                                                {/* Reason */}
-                                                <div className="mb-4">
-                                                    <label className="mb-1 block text-xs font-medium text-gray-700">
-                                                        Reason for Adjustment *
-                                                    </label>
-                                                    <textarea
-                                                        value={reason}
-                                                        onChange={(e) => setReason(e.target.value)}
-                                                        rows={3}
-                                                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-yellow-500 focus:ring-2 focus:ring-yellow-500/20 focus:outline-none resize-none"
-                                                        placeholder="Explain why this adjustment is needed..."
-                                                        disabled={!selectedProduct}
-                                                        onKeyDown={(e) => {
-                                                            if (e.key === 'Enter' && e.ctrlKey) {
-                                                                handleSubmit(e);
-                                                            }
-                                                        }}
-                                                    />
-                                                    <p className="mt-1 text-xs text-gray-400">
-                                                        Minimum 10 characters. Press Ctrl+Enter to submit.
-                                                    </p>
-                                                </div>
-
-                                                {/* File Upload - Evidence */}
-                                                <div className="mb-4">
-                                                    <label className="mb-1 block text-xs font-medium text-gray-700">
-                                                        Upload Evidence
-                                                        {isNegativeAdjustment && (adjustmentCategory === 'damage' || adjustmentCategory === 'expiry') && (
-                                                            <span className="text-red-500 ml-1">*</span>
-                                                        )}
-                                                    </label>
-                                                    <div
-                                                        className={`relative rounded-lg border-2 border-dashed p-4 transition-colors ${
-                                                            isDragging
-                                                                ? 'border-yellow-500 bg-yellow-50'
-                                                                : 'border-gray-300 hover:border-gray-400'
-                                                        }`}
-                                                        onDragOver={handleDragOver}
-                                                        onDragLeave={handleDragLeave}
-                                                        onDrop={handleDrop}
-                                                        onClick={() => fileInputRef.current?.click()}
-                                                    >
-                                                        <input
-                                                            ref={fileInputRef}
-                                                            type="file"
-                                                            multiple
-                                                            accept="image/*,.pdf"
-                                                            className="hidden"
-                                                            onChange={(e) => handleFileUpload(e.target.files)}
-                                                            disabled={!selectedProduct}
-                                                        />
-                                                        <div className="text-center">
-                                                            <Upload className="mx-auto h-8 w-8 text-gray-400" />
-                                                            <p className="mt-1 text-sm text-gray-500">
-                                                                Drag & drop files here, or click to browse
-                                                            </p>
-                                                            <p className="text-xs text-gray-400">
-                                                                Supports images and PDF (Max 5MB each)
-                                                            </p>
-                                                            {isNegativeAdjustment && (adjustmentCategory === 'damage' || adjustmentCategory === 'expiry') && (
-                                                                <p className="text-xs text-red-500 mt-1">
-                                                                    Evidence required for damage/expiry adjustments
-                                                                </p>
-                                                            )}
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Uploaded Files */}
-                                                    {uploadedFiles.length > 0 && (
-                                                        <div className="mt-2 space-y-1">
-                                                            {uploadedFiles.map((file) => (
-                                                                <div
-                                                                    key={file.id}
-                                                                    className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2"
-                                                                >
-                                                                    <div className="flex items-center gap-2">
-                                                                        {file.type.startsWith('image/') ? (
-                                                                            <Image className="h-4 w-4 text-gray-500" />
-                                                                        ) : (
-                                                                            <File className="h-4 w-4 text-gray-500" />
-                                                                        )}
-                                                                        <span className="text-sm text-gray-700 truncate max-w-[150px]">
-                                                                            {file.name}
-                                                                        </span>
-                                                                        <span className="text-xs text-gray-400">
-                                                                            {formatFileSize(file.size)}
-                                                                        </span>
-                                                                        {file.uploading && (
-                                                                            <div className="flex items-center gap-2">
-                                                                                <Loader2 className="h-3 w-3 animate-spin text-yellow-500" />
-                                                                                <span className="text-xs text-yellow-500">
-                                                                                    {file.progress}%
-                                                                                </span>
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => removeFile(file.id!)}
-                                                                        className="text-gray-400 hover:text-red-500 transition-colors"
-                                                                        disabled={file.uploading}
-                                                                    >
-                                                                        <X className="h-4 w-4" />
-                                                                    </button>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    )}
-                                                </div>
-
-                                                {/* Status Indicator */}
-                                                {selectedProduct && isChanged && (
-                                                    <div className={`mt-3 rounded-lg p-2 text-sm ${
-                                                        difference > 0
-                                                            ? 'bg-green-50 text-green-700'
-                                                            : 'bg-red-50 text-red-700'
-                                                    }`}>
-                                                        <div className="flex items-center gap-2">
-                                                            {difference > 0 ? (
-                                                                <TrendingUp className="h-4 w-4" />
-                                                            ) : (
-                                                                <TrendingDown className="h-4 w-4" />
-                                                            )}
-                                                            <span>
-                                                                {difference > 0 ? 'Increasing' : 'Decreasing'} stock by{' '}
-                                                                <strong>{Math.abs(difference)}</strong> units
-                                                                {difference > 0 ? ' (+)' : ' (-)'}
-                                                                from {currentStock} to {newQuantity}
-                                                            </span>
-                                                        </div>
-                                                        {isNegativeAdjustment && (
-                                                            <div className="mt-1 flex items-center gap-1 text-xs text-yellow-600">
-                                                                <Shield className="h-3 w-3" />
-                                                                <span>This change requires approval</span>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
+                                <div>
+                                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                                        New Quantity
+                                    </label>
+                                    <input
+                                        type="number"
+                                        value={newQuantity}
+                                        onChange={(e) => setNewQuantity(parseFloat(e.target.value) || 0)}
+                                        min="0"
+                                        className="h-9 w-full rounded-lg border border-slate-200 px-3 text-sm focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                                    />
                                 </div>
+                            </div>
 
-                                {/* ========================================== */}
-                                {/* FOOTER - Fixed */}
-                                {/* ========================================== */}
-                                <div className="flex-shrink-0 px-6 py-4 border-t border-gray-200 bg-white rounded-b-xl">
-                                    <div className="flex items-center justify-between">
-                                        <div className="text-sm text-gray-500">
-                                            {selectedProduct && (
-                                                <span>
-                                                    Adjusting <strong>{selectedProduct.product_name}</strong>
-                                                    {selectedProduct.unit && ` (${selectedProduct.unit})`}
-                                                    {isNegativeAdjustment && (
-                                                        <span className="ml-2 inline-flex items-center gap-1 text-yellow-600">
-                                                            <Shield className="h-3 w-3" />
-                                                            Requires Approval
-                                                        </span>
-                                                    )}
-                                                </span>
-                                            )}
-                                            {!selectedProduct && 'Select a product to begin'}
-                                        </div>
-                                        <div className="flex items-center gap-3 border-none">
-                                            <button
-                                                type="button"
-                                                onClick={onClose}
-                                                className="rounded-lg px-4 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100"
-                                                disabled={submitting}
-                                            >
-                                                Cancel
-                                            </button>
-                                            <button
-                                                type="submit"
-                                                onClick={handleSubmit}
-                                                disabled={
-                                                    !selectedProduct ||
-                                                    submitting ||
-                                                    !isChanged ||
-                                                    !reason.trim() ||
-                                                    reason.trim().length < 10 ||
-                                                    (isNegativeAdjustment && 
-                                                     (adjustmentCategory === 'damage' || adjustmentCategory === 'expiry') && 
-                                                     uploadedFiles.length === 0)
-                                                }
-                                                className={`flex items-center gap-2 rounded-lg px-6 py-2 text-sm font-medium text-white transition-colors ${
-                                                    !selectedProduct || submitting || !isChanged || !reason.trim() || reason.trim().length < 10 ||
-                                                    (isNegativeAdjustment && (adjustmentCategory === 'damage' || adjustmentCategory === 'expiry') && uploadedFiles.length === 0)
-                                                        ? 'bg-blue-600 cursor-not-allowed'
-                                                        : isNegativeAdjustment
-                                                        ? 'bg-yellow-600 hover:bg-yellow-700'
-                                                        : 'bg-green-600 hover:bg-green-700'
-                                                }`}
-                                                title={
-                                                    isNegativeAdjustment && (adjustmentCategory === 'damage' || adjustmentCategory === 'expiry') && uploadedFiles.length === 0
-                                                        ? 'Evidence required for damage/expiry adjustments'
-                                                        : ''
-                                                }
-                                            >
-                                                {submitting ? (
-                                                    <>
-                                                        <Loader2 className="h-4 w-4 animate-spin" />
-                                                        Processing...
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        {isNegativeAdjustment ? (
-                                                            <Shield className="h-4 w-4" />
-                                                        ) : (
-                                                            <SlidersHorizontal className="h-4 w-4" />
-                                                        )}
-                                                        {isNegativeAdjustment ? 'Request Adjustment' : 'Confirm Adjustment'}
-                                                    </>
-                                                )}
-                                            </button>
-                                        </div>
-                                    </div>
+                            {/* Category & Reason */}
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                                        Adjustment Category
+                                    </label>
+                                    <select
+                                        value={adjustmentCategory}
+                                        onChange={(e) => setAdjustmentCategory(e.target.value)}
+                                        className="h-9 w-full rounded-lg border border-slate-200 px-3 text-sm focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                                    >
+                                        <option value="correction">Correction</option>
+                                        <option value="damage">Damage</option>
+                                        <option value="expiry">Expiry</option>
+                                        <option value="shortage">Shortage</option>
+                                        <option value="surplus">Surplus</option>
+                                        <option value="quality_issue">Quality Issue</option>
+                                    </select>
                                 </div>
-                            </Dialog.Panel>
-                        </Transition.Child>
-                    </div>
+                                <div>
+                                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                                        Reason <span className="text-red-500">*</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={reason}
+                                        onChange={(e) => setReason(e.target.value)}
+                                        placeholder="Minimum 10 characters..."
+                                        className="h-9 w-full rounded-lg border border-slate-200 px-3 text-sm focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Batch, Expiry, Unit Cost */}
+                            <div className="grid grid-cols-3 gap-4">
+                                <div>
+                                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                                        <Hash className="inline h-3.5 w-3.5 mr-1" />
+                                        Batch Number
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={batchNumber}
+                                        onChange={(e) => setBatchNumber(e.target.value)}
+                                        placeholder="Optional"
+                                        className="h-9 w-full rounded-lg border border-slate-200 px-3 text-sm focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                                        <Calendar className="inline h-3.5 w-3.5 mr-1" />
+                                        Expiry Date
+                                    </label>
+                                    <input
+                                        type="date"
+                                        value={expiryDate}
+                                        onChange={(e) => setExpiryDate(e.target.value)}
+                                        className="h-9 w-full rounded-lg border border-slate-200 px-3 text-sm focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                                        <DollarSign className="inline h-3.5 w-3.5 mr-1" />
+                                        Unit Cost
+                                    </label>
+                                    <input
+                                        type="number"
+                                        value={unitCost}
+                                        onChange={(e) => setUnitCost(parseFloat(e.target.value) || 0)}
+                                        min="0"
+                                        step="0.01"
+                                        placeholder="0.00"
+                                        className="h-9 w-full rounded-lg border border-slate-200 px-3 text-sm focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* File Upload - Compact */}
+                            <div>
+                                <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                                    Upload Evidence
+                                </label>
+                                <div
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className="cursor-pointer rounded-lg border-2 border-dashed border-slate-300 p-4 text-center transition-colors hover:border-blue-400 dark:border-slate-600"
+                                >
+                                    <Upload className="mx-auto h-6 w-6 text-slate-400" />
+                                    <p className="mt-1 text-sm text-slate-500">
+                                        Click to upload or drag & drop
+                                    </p>
+                                    <p className="text-xs text-slate-400">
+                                        Images & PDF (Max 5MB each)
+                                    </p>
+                                    <input
+                                        ref={fileInputRef}
+                                        type="file"
+                                        multiple
+                                        accept="image/*,.pdf"
+                                        onChange={handleFileChange}
+                                        className="hidden"
+                                    />
+                                </div>
+                                {files.length > 0 && (
+                                    <div className="mt-2 space-y-1">
+                                        {files.map((file, index) => (
+                                            <div
+                                                key={index}
+                                                className="flex items-center justify-between rounded-lg border border-slate-200 p-2 dark:border-slate-700"
+                                            >
+                                                <div className="flex items-center gap-2">
+                                                    {file.type.startsWith('image/') ? (
+                                                        <Image className="h-4 w-4 text-slate-500" />
+                                                    ) : (
+                                                        <File className="h-4 w-4 text-slate-500" />
+                                                    )}
+                                                    <span className="text-sm text-slate-700 dark:text-slate-300">
+                                                        {file.name}
+                                                    </span>
+                                                    <span className="text-xs text-slate-500">
+                                                        ({(file.size / 1024).toFixed(1)} KB)
+                                                    </span>
+                                                </div>
+                                                <button
+                                                    onClick={() => handleRemoveFile(index)}
+                                                    className="rounded p-1 hover:bg-slate-100 dark:hover:bg-slate-700"
+                                                >
+                                                    <Trash2 className="h-4 w-4 text-red-500" />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
                 </div>
-            </Dialog>
-        </Transition>
+
+                {/* Footer - Fixed with buttons */}
+                <div className="flex items-center justify-end gap-3 border-t border-slate-200 px-6 py-4 dark:border-slate-700">
+                    <button
+                        onClick={onClose}
+                        className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+                    >
+                        Cancel
+                    </button>
+                    {selectedProduct && (
+                        <button
+                            onClick={handleSubmit}
+                            disabled={submitting}
+                            className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {submitting ? (
+                                <>
+                                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                                    Processing...
+                                </>
+                            ) : (
+                                <>
+                                    <Check className="h-4 w-4" />
+                                    Confirm Adjustment
+                                </>
+                            )}
+                        </button>
+                    )}
+                </div>
+            </div>
+        </div>
     );
 }

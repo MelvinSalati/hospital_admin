@@ -11,6 +11,7 @@ use App\Models\Departments\Department;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\Log;
+use App\Jobs\SendUserRegistrationJob;
 
 class AdminController extends Controller
 {
@@ -42,7 +43,7 @@ class AdminController extends Controller
     public function store(Request $request)
     {
         try {
-           
+
             $users = $request->input('data', []);
 
             if (!is_array($users)) {
@@ -71,11 +72,16 @@ class AdminController extends Controller
 
             // Validation failure
             if ($validator->fails()) {
-                return response()->json([
+           response()->json([
                     'status' => false,
                     'message' => 'Validation failed',
                     'errors' => $validator->errors(),
                 ], 422);
+                Log::info('array od user data',[
+                    'status' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors(),
+                ]);
             }
 
             $userRole = is_array($role) ? implode(', ', $role) : (string)$role;
@@ -83,27 +89,32 @@ class AdminController extends Controller
             // Merge generated password
             $data = array_merge($users, [
                 'self_gen_password' => PasswordGenerator::generate(8),
-                
+
             ]);
-            
-            
+
+
             // Call service
             $response = $this->userService->create($data);
-            
+
             $email = [
                 "email"  => $users['email'],
                 'self_gen_password' => $data['self_gen_password'],
                 'name' => $users['first_name'],
                 'role' => $userRole,
-                'department_id' => $request->deaprtment_id
+                'department_id' => $request->department_id
             ];
 
              /**
-              * EMail verification 
+              * EMail verification
               */
-            
+
             SendPasswordEmailJob::dispatch($email);
-        
+
+
+            $message   =  "Dear {$users['first_name']},\n\nYour account has been created successfully.\n\nHere are your login credentials:\nEmail: {$users['email']}\nPassword: {$data['self_gen_password']}\nRole: {$userRole}\n\nPlease log in and change your password immediately for security reasons.\n\nThank you.";
+            $phoneNumber = $users['mobile_phone_number'];
+            dispatch(new SendUserRegistrationJob($message, $phoneNumber));
+
             return $response;
 
         } catch (\Illuminate\Database\QueryException $e) {
@@ -124,7 +135,7 @@ class AdminController extends Controller
                 'error' => config('app.debug') ? $e->getMessage() : null
             ], 500);
         }
-    } 
+    }
 
     /**
      * Display the specified resource.
