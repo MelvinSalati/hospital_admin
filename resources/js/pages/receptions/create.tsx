@@ -13,20 +13,15 @@ import {
     ChevronRight,
     ChevronLeft,
     IdCard,
-    Activity,
-    Scissors,
-    Stethoscope,
-    Fingerprint,
-    Shield,
-    CheckCircle2,
-    AlertTriangle,
     Camera,
     Loader2,
-    Stethoscope as StethoscopeIcon,
-    ShieldCheck,
     UserPlus,
-    UserCircle,
     Eye,
+    Upload,
+    Globe,
+    File,
+    Activity,
+    CheckCircle,
 } from 'lucide-react';
 import Notiflix from 'notiflix';
 import { useState } from 'react';
@@ -34,6 +29,7 @@ import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
 import AppLayout from '@/layouts/app-layout';
 import Http from '@/utils/Http';
+import ReusableTable from '@/components/ReusableTable';
 
 interface FormData {
     // Personal Information
@@ -86,18 +82,197 @@ interface FormData {
     profile_photo: File | null;
 }
 
+interface RecentPatient {
+    id: number;
+    patient_number: string;
+    first_name: string;
+    last_name: string;
+    gender: string;
+    phone: string;
+    status: string;
+    created_at: string;
+}
+
+// --- Helpers ---------------------------------------------------------------
+const hasValue = (value: unknown): boolean =>
+    value !== null && value !== undefined && value !== '';
+
+const formatDate = (dateString: string): string => {
+    if (!dateString) return '—';
+    return new Date(dateString).toLocaleDateString('en-ZM', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+    });
+};
+
+// --- Table columns (aligned with getTableColumns pattern) ------------------
+const getRecentPatientColumns = (
+    onView: (patient: RecentPatient) => void,
+    onEdit: (patient: RecentPatient) => void,
+) => [
+    {
+        id: 'patient_number',
+        label: 'Patient #',
+        sortable: true,
+        render: (patient: RecentPatient) => (
+            <span className="font-mono text-sm font-medium text-blue-600 dark:text-blue-400">
+                {hasValue(patient.patient_number)
+                    ? patient.patient_number
+                    : '—'}
+            </span>
+        ),
+    },
+    {
+        id: 'first_name',
+        label: 'Firstname',
+        sortable: true,
+        render: (patient: RecentPatient) => (
+            <div className="flex items-center">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-blue-600 text-sm font-medium text-white">
+                    {hasValue(patient.first_name) ? patient.first_name[0] : '?'}
+                    {hasValue(patient.last_name) ? patient.last_name[0] : '?'}
+                </div>
+                <div className="ml-3">
+                    <div className="text-sm font-medium text-gray-900 dark:text-white">
+                        {hasValue(patient.first_name) ? patient.first_name : ''}{' '}
+                        {hasValue(patient.last_name) ? patient.last_name : ''}
+                        {!hasValue(patient.first_name) &&
+                            !hasValue(patient.last_name) &&
+                            '—'}
+                    </div>
+                    <div className="text-xs text-gray-400 capitalize">
+                        {hasValue(patient.gender) ? patient.gender : '—'}
+                    </div>
+                </div>
+            </div>
+        ),
+    },
+    {
+        id: 'last_name',
+        label: 'Surname',
+        sortable: true,
+        render: (patient: RecentPatient) => (
+            <div className="flex items-center">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-blue-600 text-sm font-medium text-white">
+                    {hasValue(patient.first_name) ? patient.first_name[0] : '?'}
+                    {hasValue(patient.last_name) ? patient.last_name[0] : '?'}
+                </div>
+                <div className="ml-3">
+                    <div className="text-sm font-medium text-gray-900 dark:text-white">
+                        {hasValue(patient.first_name) ? patient.first_name : ''}{' '}
+                        {hasValue(patient.last_name) ? patient.last_name : ''}
+                        {!hasValue(patient.first_name) &&
+                            !hasValue(patient.last_name) &&
+                            '—'}
+                    </div>
+                    <div className="text-xs text-gray-400 capitalize">
+                        {hasValue(patient.gender) ? patient.gender : '—'}
+                    </div>
+                </div>
+            </div>
+        ),
+    },
+    {
+        id: 'phone',
+        label: 'Contact',
+        sortable: false,
+        render: (patient: RecentPatient) => (
+            <div className="space-y-0.5 text-sm text-gray-600 dark:text-slate-400">
+                <div className="flex items-center gap-1.5">
+                    <span className="text-gray-400">✉</span>
+                    <span className="text-sm">
+                        {hasValue(patient.phone) ? patient.email : '—'}
+                    </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                    <span className="text-gray-400">📱</span>
+                    <span>{hasValue(patient.phone) ? patient.phone : '—'}</span>
+                </div>
+                {hasValue(patient.alt_phone) && (
+                    <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                        <span>📞</span>
+                        <span>{patient.alt_phone}</span>
+                    </div>
+                )}
+            </div>
+        ),
+    },
+
+    {
+        id: 'status',
+        label: 'Status',
+        sortable: true,
+        render: (patient: RecentPatient) => (
+            <span
+                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
+                    patient.status === 'active'
+                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                        : 'bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-slate-400'
+                }`}
+            >
+                <span
+                    className={`h-1.5 w-1.5 rounded-full ${
+                        patient.status === 'active'
+                            ? 'bg-green-500'
+                            : 'bg-gray-400'
+                    }`}
+                />
+                {patient.status === 'active' ? 'Active' : 'Inactive'}
+            </span>
+        ),
+    },
+    {
+        id: 'created_at',
+        label: 'Registered',
+        sortable: true,
+        render: (patient: RecentPatient) => (
+            <span className="text-sm text-gray-500 dark:text-slate-400">
+                {hasValue(patient.created_at)
+                    ? formatDate(patient.created_at)
+                    : '—'}
+            </span>
+        ),
+    },
+];
+
+const activeActions = [
+    {
+        label: 'View',
+        icon: <File size={16} />,
+        color: 'info',
+        onClick: (row) => handleViewPatient(row.id),
+    },
+    {
+        label: 'Invoices',
+        icon: <File size={16} />,
+        color: 'warning',
+        show: (row) => row.unpaid_invoices && row.unpaid_invoices.length > 0,
+        onClick: (row) => handleViewInvoice(row.patient.id, row.patient.name),
+    },
+    {
+        label: 'Start',
+        icon: <Activity size={16} />,
+        color: 'success',
+        show: (row) => (row.status).label === 'Waiting',
+        onClick: (row) => handleStartConsultation(row.id),
+    },
+    {
+        label: 'Complete',
+        icon: <CheckCircle size={16} />,
+        color: 'success',
+        show: (row) => (row.status).label === 'In Progress',
+        onClick: (row) => handleCompleteVisit(row.id),
+    },
+];
+
 export default function Create() {
-    const { auth, insuranceProviders } = usePage().props as any;
+    const { auth, insuranceProviders, recentPatients } = usePage().props as any;
     const [activeTab, setActiveTab] = useState('personal');
     const [showPreview, setShowPreview] = useState(false);
     const [imagePreview, setImagePreview] = useState<string | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
-
-    // Biometrics state
-    const [selectedFinger, setSelectedFinger] = useState<string | null>(null);
-    const [registeredFingers, setRegisteredFingers] = useState<string[]>([]);
-    const [isScanning, setIsScanning] = useState(false);
-
+    console.log(recentPatients);
     // Use Inertia's useForm hook
     const {
         data,
@@ -108,7 +283,6 @@ export default function Create() {
         reset,
         recentlySuccessful,
     } = useForm<FormData>({
-        // Personal Information
         patient_number: '',
         first_name: '',
         last_name: '',
@@ -117,12 +291,8 @@ export default function Create() {
         phone: '',
         email: '',
         address: '',
-
-        // Emergency Contact
         emergency_contact: '',
         emergency_phone: '',
-
-        // Medical Information
         blood_group: '',
         allergies: '',
         chronic_conditions: '',
@@ -130,31 +300,19 @@ export default function Create() {
         medical_history: '',
         surgical_history: '',
         family_history: '',
-
-        // Demographic Information
         marital_status: '',
         occupation: '',
         nationality: 'Zambian',
-
-        // Identification
         id_type: '',
         id_number: '',
-
-        // Insurance Information
         insurance_provider: '',
         insurance_number: '',
         insurance_expiry: '',
         insurance_status: '',
-
-        // Next of Kin
         next_of_kin_name: '',
         next_of_kin_relationship: '',
         next_of_kin_phone: '',
-
-        // Status
         status: 'active',
-
-        // File
         profile_photo: null,
     });
 
@@ -176,7 +334,6 @@ export default function Create() {
                 Notiflix.Notify.failure(response.data.message);
             }
         } catch (error: any) {
-            // console.log(error);
             toast.error('Some required field(s) are empty!');
         }
     };
@@ -211,25 +368,12 @@ export default function Create() {
         }
     };
 
-    // Simulate fingerprint scanning
-    const handleFingerprintScan = (finger: string) => {
-        setIsScanning(true);
-        setSelectedFinger(finger);
-
-        setTimeout(() => {
-            const mockFingerprintData = `fingerprint_${finger}_${Date.now()}`;
-            const fingerKey = `fingerprint_${finger}` as keyof FormData;
-            setData(fingerKey, mockFingerprintData as any);
-            setRegisteredFingers((prev) => [...prev, finger]);
-            setIsScanning(false);
-            setSelectedFinger(null);
-        }, 2000);
+    const handleViewPatient = (patient: RecentPatient) => {
+        router.visit(`/patients/${patient.id}`);
     };
 
-    const removeFingerprint = (finger: string) => {
-        const fingerKey = `fingerprint_${finger}` as keyof FormData;
-        setData(fingerKey, null as any);
-        setRegisteredFingers((prev) => prev.filter((f) => f !== finger));
+    const handleEditPatient = (patient: RecentPatient) => {
+        router.visit(`/patients/${patient.id}/edit`);
     };
 
     const breadcrumbs = [
@@ -256,7 +400,11 @@ export default function Create() {
         { value: 'voter_id', label: 'Voter ID' },
     ];
 
-    console.log(insuranceProviders);
+    const recentPatientColumns = getRecentPatientColumns(
+        handleViewPatient,
+        handleEditPatient,
+    );
+
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Patient Registration" />
@@ -275,23 +423,6 @@ export default function Create() {
                         },
                     ]}
                 />
-
-                {/* <div className="mx-auto w-[800px] justify-center rounded-xl bg-white shadow-lg">
-                    <div className="mx-auto flex gap-2">
-                        <div className="border-r-1">
-                            <UserCircle className="h-30 w-30" />
-                        </div>
-                        <div className="">
-                            <h1 className="text-2xl font-bold text-slate-600">
-                                Altaf Memorial Hospital
-                            </h1>
-                            <p>
-                                The Hospital will send the delivery important
-                                information to patient via whats app{' '}
-                            </p>
-                        </div>
-                    </div>
-                </div> */}
 
                 {/* Modal */}
                 {isModalOpen && (
@@ -333,7 +464,6 @@ export default function Create() {
 
                             {/* Modal Body */}
                             <div className="flex-1 overflow-y-auto bg-slate-100 dark:bg-slate-900">
-                                {/* Display errors if any */}
                                 {Object.keys(errors).length > 0 && (
                                     <div className="mb-4 rounded-lg bg-red-50 p-4 px-6 py-4 text-sm text-red-800 dark:bg-red-900/30 dark:text-red-400">
                                         <h3 className="font-medium">
@@ -351,20 +481,18 @@ export default function Create() {
                                     </div>
                                 )}
 
-                                {/* Success message */}
                                 {recentlySuccessful && (
                                     <div className="mb-4 rounded-lg bg-green-50 p-4 text-sm text-green-800 dark:bg-green-900/30 dark:text-green-400">
                                         Patient registered successfully!
                                     </div>
                                 )}
 
-                                {/* Main Form */}
                                 <form
                                     onSubmit={handleSubmit}
                                     className="space-y-6"
                                     encType="multipart/form-data"
                                 >
-                                    {/* Full Width Tabs Navigation */}
+                                    {/* Tabs Navigation */}
                                     <div className="overflow-x-auto border-b border-slate-200 bg-white px-1 dark:border-slate-700 dark:bg-slate-800">
                                         <div className="flex min-w-full gap-0">
                                             {tabs.map((tab) => {
@@ -966,36 +1094,35 @@ export default function Create() {
                                                         <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
                                                             Insurance Provider
                                                         </label>
-
                                                         <select
+                                                            name="insurance_provider"
+                                                            value={
+                                                                data.insurance_provider
+                                                            }
                                                             onChange={
                                                                 handleInputChange
                                                             }
                                                             className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none dark:border-slate-700 dark:bg-slate-900"
                                                         >
-                                                            <optgroup label="Insurance Providers">
-                                                                <option value="">
-                                                                    Select
-                                                                    Provider
-                                                                </option>
-
-                                                                {insuranceProviders.map(
-                                                                    (item) => (
-                                                                        <option
-                                                                            key={
-                                                                                item.id
-                                                                            }
-                                                                            value={
-                                                                                item.id
-                                                                            }
-                                                                        >
-                                                                            {
-                                                                                item.name
-                                                                            }
-                                                                        </option>
-                                                                    ),
-                                                                )}
-                                                            </optgroup>
+                                                            <option value="">
+                                                                Select Provider
+                                                            </option>
+                                                            {insuranceProviders?.map(
+                                                                (item: any) => (
+                                                                    <option
+                                                                        key={
+                                                                            item.id
+                                                                        }
+                                                                        value={
+                                                                            item.id
+                                                                        }
+                                                                    >
+                                                                        {
+                                                                            item.name
+                                                                        }
+                                                                    </option>
+                                                                ),
+                                                            )}
                                                         </select>
                                                     </div>
 
@@ -1255,8 +1382,13 @@ export default function Create() {
                                                     Provider:
                                                 </dt>
                                                 <dd className="text-slate-900 dark:text-white">
-                                                    {data.insurance_provider ||
-                                                        'Not provided'}
+                                                    {insuranceProviders?.find(
+                                                        (p: any) =>
+                                                            String(p.id) ===
+                                                            String(
+                                                                data.insurance_provider,
+                                                            ),
+                                                    )?.name || 'Not provided'}
                                                 </dd>
                                             </div>
                                             <div className="flex justify-between">
@@ -1293,6 +1425,54 @@ export default function Create() {
                         </div>
                     </div>
                 )}
+
+                {/* Recent Patients Section */}
+                <div className="mt-8 px-6 pb-8">
+                    <div className="rounded-xl bg-white p-6 shadow-lg dark:bg-slate-800">
+                        <div className="mb-4 flex items-center justify-between">
+                            <div>
+                                <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
+                                    Recent Patient Registrations
+                                </h3>
+                                <p className="text-sm text-slate-500 dark:text-slate-400">
+                                    Showing the last 10 registered patients
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => router.visit('/patients')}
+                                className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                            >
+                                View All →
+                            </button>
+                        </div>
+
+                        {(recentPatients?.length ?? 0) > 0 ? (
+                            <ReusableTable
+                                data={recentPatients}
+                                columns={recentPatientColumns}
+                                actions={activeActions}
+                                searchable={true}
+                                searchPlaceholder="Search patients..."
+                                onRowClick={(patient: RecentPatient) =>
+                                    router.visit(`/patients/${patient.id}`)
+                                }
+                                emptyMessage="No patients found"
+                                className="rounded-xl border border-gray-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800"
+                            />
+                        ) : (
+                            <div className="py-8 text-center text-slate-500 dark:text-slate-400">
+                                <Users className="mx-auto h-12 w-12 text-slate-300 dark:text-slate-600" />
+                                <p className="mt-2">
+                                    No patients registered yet
+                                </p>
+                                <p className="text-sm">
+                                    Click the "Register" button to add your
+                                    first patient
+                                </p>
+                            </div>
+                        )}
+                    </div>
+                </div>
             </div>
         </AppLayout>
     );

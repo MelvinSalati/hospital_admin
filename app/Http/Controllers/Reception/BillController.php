@@ -36,20 +36,7 @@ class BillController extends Controller
 
     public function pendingBills () : array {
         return [
-            'bills' => [
-                [
-                    'id' => 1,
-                    'patient_name' => 'John Doe',
-                    'amount' => 100.00,
-                    'status' => 'Pending',
-                ],
-                [
-                    'id' => 2,
-                    'patient_name' => 'Jane Smith',
-                    'amount' => 200.00,
-                    'status' => 'Pending',
-                ],
-            ]
+            'bills' => Invoice::with(['patient'])->where('status','<>','paid')->get()
         ];
     }
 }

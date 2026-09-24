@@ -14,6 +14,7 @@ use App\Models\Services\Service;
 use App\Models\Payments\Invoice;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
+use App\Models\Patients\PatientVisitScheme;
 
 class TheaterController extends Controller
 {
@@ -24,11 +25,21 @@ class TheaterController extends Controller
     public function index($patientId)
     {
         try {
+            // Get active visit token for payment scheme
             $activeToken   = VisitTokenHelper::getActiveTokenArray($patientId);
             $paymentMethod = $activeToken['payment_method'] ?? 'cash';
 
+            // ── Resolve scheme_id from the active visit token (same as LaboratoryController) ──
+            $schemeSelected = PatientVisitScheme::where('token', $activeToken['token'])
+                ->value('scheme_id');
+
+            // ── Load theater services filtered by scheme_type, exactly like laboratory ──
+            $theaterServices = Service::where('scheme_type', $schemeSelected)
+                ->whereIn('service_category', ['Theater', 'Theatre', 'Surgery', 'Procedures'])
+                ->get();
+
+            // Optional: keep pricing helper available for any downstream formatting
             $pricingHelper = new ServicePricingHelper($paymentMethod);
-            $theaterServices = $pricingHelper->getProcedures($patientId);
 
             // Get previous theater/procedure orders
             $previousOrders = DB::table('theater_order_items')
@@ -54,7 +65,10 @@ class TheaterController extends Controller
                 'previousOrders' => $previousOrders,
             ]);
         } catch (\Exception $e) {
-            Log::error('Theater Index Error: ' . $e->getMessage());
+            Log::error('Theater Index Error: ' . $e->getMessage(), [
+                'trace'      => $e->getTraceAsString(),
+                'patient_id' => $patientId,
+            ]);
 
             return Inertia::render('patients/theater', [
                 'patientId'      => $patientId,
@@ -117,7 +131,7 @@ class TheaterController extends Controller
             $patient     = Patient::findOrFail($patientId);
             $serviceType = 'theater';
             $totalAmount = 0;
-            $invoiceItems   = [];
+            $invoiceItems      = [];
             $theaterOrderItems = [];
 
             foreach ($request->input('services') as $service) {
@@ -185,7 +199,6 @@ class TheaterController extends Controller
                 // Handle items properly - could be string or array depending on model cast
                 $existingItems = $existingInvoice->items;
 
-                // Parse existing items if they're a string, otherwise use as array
                 if (is_string($existingItems)) {
                     $parsedExisting = json_decode($existingItems, true) ?: [];
                 } elseif (is_array($existingItems)) {
@@ -196,7 +209,7 @@ class TheaterController extends Controller
 
                 // Merge new items with existing
                 $mergedItems = array_merge($parsedExisting, $invoiceItems);
-                $newTotal = $existingInvoice->total + $totalAmount;
+                $newTotal    = $existingInvoice->total + $totalAmount;
 
                 $existingInvoice->update([
                     'items'      => $mergedItems,
@@ -205,7 +218,7 @@ class TheaterController extends Controller
                     'due_amount' => $existingInvoice->due_amount + $totalAmount,
                 ]);
 
-                $invoice = $existingInvoice->fresh();
+                $invoice    = $existingInvoice->fresh();
                 $isAppended = true;
 
                 Log::info('Theater: appended to existing invoice', [

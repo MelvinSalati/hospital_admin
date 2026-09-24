@@ -44,7 +44,7 @@ class DispensingController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'items' => 'required|array',
-            'items.*.drug_id' => 'required|exists:drug_items,id',
+            'items.*.drug_id' => 'required|exists:services,id',
             'items.*.drug_name' => 'required|string',
             'items.*.quantity_dispensed' => 'required|integer|min:0',
             'items.*.quantity_prescribed' => 'required|integer|min:1',
@@ -85,9 +85,8 @@ class DispensingController extends Controller
             $patientId = $prescription->patient_id;
 
             // ============================================
-            // STEP 1: Validate pharmacy stock availability
+            // STEP 1: Gather stock data (no validation)
             // ============================================
-            $stockErrors = [];
             $stockData = [];
 
             foreach ($request->items as $index => $item) {
@@ -95,16 +94,7 @@ class DispensingController extends Controller
 
                 if ($quantityDispensed > 0) {
                     $drug = DrugItem::find($item['drug_id']);
-                    if (!$drug) {
-                        $stockErrors[] = [
-                            'index' => $index,
-                            'drug_name' => $item['drug_name'],
-                            'message' => 'Drug not found in inventory'
-                        ];
-                        continue;
-                    }
 
-                    // Get current stock in pharmacy department
                     $currentStock = DepartmentStock::where('product_id', $item['drug_id'])
                         ->where('department_id', $pharmacyDepartmentId)
                         ->value('stock_balance') ?? 0;
@@ -115,28 +105,7 @@ class DispensingController extends Controller
                         'requested' => $quantityDispensed,
                         'allow_negative' => $drug->allow_negative_stock ?? false,
                     ];
-
-                    if (!$drug->allow_negative_stock && $currentStock < $quantityDispensed) {
-                        $stockErrors[] = [
-                            'index' => $index,
-                            'drug_id' => $item['drug_id'],
-                            'drug_name' => $item['drug_name'],
-                            'current_stock' => $currentStock,
-                            'requested' => $quantityDispensed,
-                            'message' => "Insufficient stock in pharmacy. Available: {$currentStock}, Requested: {$quantityDispensed}"
-                        ];
-                    }
                 }
-            }
-
-            if (!empty($stockErrors)) {
-                DB::rollBack();
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Stock validation failed',
-                    'errors' => $stockErrors,
-                    'stock_data' => $stockData
-                ], 422);
             }
 
             // ============================================

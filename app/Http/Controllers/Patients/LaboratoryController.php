@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
 use App\Models\Patients\PatientVisitScheme;
 use Illuminate\Support\Facades\Str;
+use App\Models\Patients\LabOrder;
 
 class LaboratoryController extends Controller
 {
@@ -34,16 +35,16 @@ class LaboratoryController extends Controller
             $schemeSelected = PatientVisitScheme::where('token', $activeToken['token'])
                 ->value('scheme_id');
             $laboratoryServices =  Service::where('scheme_type', $schemeSelected)
-                ->where('service_category','Laboratory')
+                ->where('service_category', 'Laboratory')
                 ->get();
 
-                // Get previous laboratory orders - GROUPED and DISTINCT
-                $previousOrders = $this->getGroupedPreviousOrders($patientId);
+            // Get previous laboratory orders - GROUPED and DISTINCT
+            $previousOrders = $this->getGroupedPreviousOrders($patientId);
 
             return Inertia::render('patients/laboratory', [
                 'patientId' => $patientId,
                 'services' => $laboratoryServices,
-                'previousOrders' => $previousOrders,
+                'previousOrders' => LabOrder::with('item')->where('patient_id',$patientId)->get(),
             ]);
         } catch (\Exception $e) {
             Log::error('Laboratory Index Error: ' . $e->getMessage(), [
@@ -74,58 +75,58 @@ class LaboratoryController extends Controller
                 ->orderByDesc('created_at')
                 ->get();
 
-            // Group by order_number if available, otherwise by id
-            $grouped = [];
-            foreach ($labOrders as $order) {
-                $key = $order->order_number ?? $order->id;
-                if (!isset($grouped[$key])) {
-                    $grouped[$key] = $order;
-                }
-            }
-
-            // Convert back to array
-            $orders = array_values($grouped);
+            // ✅ Return each row as-is — do NOT deduplicate by order_number
+            $orders = $labOrders->map(function ($order) {
+                return [
+                    'id' => $order->id,
+                    'order_number' => $order->order_number ?? 'LAB-' . $order->id,
+                    'service_name' => $order->service_name ?? 'Laboratory Test',
+                    'service_category' => $order->service_category ?? 'Laboratory',
+                    'quantity' => $order->quantity ?? 1,
+                    'unit_price' => $order->unit_price ?? 0,
+                    'total_price' => $order->total_price ?? 0,
+                    'status' => $order->status ?? 'pending',
+                    'priority' => $order->priority ?? 'routine',
+                    'created_at' => $order->created_at ?? now(),
+                    'result_value' => $order->result_value ?? null,
+                    'performed_by' => $order->performed_by ?? null,
+                    'result_date' => $order->result_date ?? null,
+                    'rejection_reason' => $order->rejection_reason ?? null,
+                ];
+            })->all();
         }
 
-        // If no orders found, try LabOrderItem
+        // If no orders found, fall back to LabOrderItem
         if (empty($orders)) {
             $labOrderItems = \App\Models\Patients\LabOrderItem::where('patient_id', $patientId)
                 ->latest()
                 ->get();
 
-            // Group by order_number or invoice_id
-            $grouped = [];
-            foreach ($labOrderItems as $item) {
-                $key = $item->order_number ?? $item->invoice_id ?? $item->id;
-                if (!isset($grouped[$key])) {
-                    $grouped[$key] = (object) [
-                        'id' => $item->id,
-                        'order_number' => $item->order_number ?? 'LAB-' . random(8),
-                        'service_name' => $item->service_name ?? 'Laboratory Test',
-                        'service_category' => $item->service_category ?? 'Laboratory',
-                        'quantity' => $item->quantity ?? 1,
-                        'unit_price' => $item->unit_price ?? 0,
-                        'total_price' => $item->total_price ?? 0,
-                        'status' => $item->status ?? 'pending',
-                        'priority' => $item->priority ?? 'routine',
-                        'created_at' => $item->created_at ?? now(),
-                        'result_value' => $item->result_value ?? null,
-                        'performed_by' => $item->performed_by ?? null,
-                        'result_date' => $item->result_date ?? null,
-                    ];
-                } else {
-                    // Aggregate quantities if same order
-                    $grouped[$key]->quantity += ($item->quantity ?? 1);
-                    $grouped[$key]->total_price += ($item->total_price ?? 0);
-                    // Append service name if multiple
-                    if ($grouped[$key]->service_name !== $item->service_name) {
-                        $grouped[$key]->service_name .= ', ' . ($item->service_name ?? '');
-                    }
-                }
-            }
-
-            $orders = array_values($grouped);
+            // ✅ Return each item individually — no grouping, no concatenation
+            $orders = $labOrderItems->map(function ($item) {
+                return [
+                    'id' => $item->id,
+                    'order_number' => $item->order_number ?? 'LAB-' . $item->id,
+                    'service_name' => $item->service_name ?? 'Laboratory Test',
+                    'service_category' => $item->service_category ?? 'Laboratory',
+                    'quantity' => $item->quantity ?? 1,
+                    'unit_price' => $item->unit_price ?? 0,
+                    'total_price' => $item->total_price ?? 0,
+                    'status' => $item->status ?? 'pending',
+                    'priority' => $item->priority ?? 'routine',
+                    'created_at' => $item->created_at ?? now(),
+                    'result_value' => $item->result_value ?? null,
+                    'performed_by' => $item->performed_by ?? null,
+                    'result_date' => $item->result_date ?? null,
+                    'rejection_reason' => $item->rejection_reason ?? null,
+                ];
+            })->all();
         }
+
+        // ✅ Sort by newest first
+        usort($orders, function ($a, $b) {
+            return strtotime($b['created_at']) <=> strtotime($a['created_at']);
+        });
 
         return collect($orders);
     }

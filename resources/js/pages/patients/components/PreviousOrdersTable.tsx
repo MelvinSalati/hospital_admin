@@ -1,7 +1,8 @@
 // pages/patients/components/PreviousOrdersTable.tsx
 import { EyeIcon } from '@heroicons/react/24/outline';
+import { Plus, ClipboardList, Calendar, Package } from 'lucide-react';
 import Notiflix from 'notiflix';
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -9,16 +10,9 @@ import {
     DialogContent,
     DialogHeader,
     DialogTitle,
-    DialogTrigger,
 } from '@/components/ui/dialog';
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from '@/components/ui/table';
+import type { Column } from '@/components/ReusableTable';
+import ReusableTable from '@/components/ReusableTable';
 import { ServiceModal } from './ServiceModal';
 
 export interface CartItem {
@@ -66,9 +60,15 @@ interface PreviousOrdersTableProps {
     onSaveOrder: (items: CartItem[], identifier: string) => Promise<void>;
     orderLabel?: string;
     customFields?: any;
+    /** Controlled modal — when provided, the internal "Order" button is hidden */
+    isOrderModalOpen?: boolean;
+    onOrderModalClose?: () => void;
+    /** Set false to hide unit price / total columns (e.g. Dispensation contexts) */
+    showPricing?: boolean;
 }
 
-// Helper function to get status color
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
 const getStatusColor = (status: string): string => {
     const colors: Record<string, string> = {
         pending: 'bg-yellow-100 text-yellow-800',
@@ -83,7 +83,6 @@ const getStatusColor = (status: string): string => {
     return colors[status?.toLowerCase()] || 'bg-gray-100 text-gray-800';
 };
 
-// Helper function to get priority color
 const getPriorityColor = (priority: string): string => {
     const colors: Record<string, string> = {
         routine: 'bg-gray-100 text-gray-800',
@@ -94,94 +93,26 @@ const getPriorityColor = (priority: string): string => {
     return colors[priority?.toLowerCase()] || 'bg-gray-100 text-gray-800';
 };
 
-// Order Row Component
-const OrderRow = ({
-    order,
-    index,
-    onViewDetails,
-}: {
-    order: any;
-    index: number;
-    onViewDetails?: (order: any) => void;
-}) => {
-    // Safe value extraction with defaults
-    const safeOrder = {
-        order_number: order?.order_number || 'N/A',
-        service_name: order?.service_name || 'N/A',
-        service_category: order?.service_category || 'N/A',
-        quantity: order?.quantity ?? 1,
-        unit_price: order?.unit_price ?? 0,
-        total_price: order?.total_price ?? 0,
-        status: order?.status || 'pending',
-        priority: order?.priority || 'routine',
-        created_at: order?.created_at,
-        modality: order?.modality,
-        body_part: order?.body_part,
-    };
-    console.log(safeOrder);
-
-    return (
-        <TableRow className="hover:bg-gray-50">
-            <TableCell className="text-sm text-gray-900">{index + 1}</TableCell>
-            <TableCell className="text-sm font-medium text-gray-900">
-                {safeOrder.order_number}
-            </TableCell>
-            <TableCell className="text-sm text-gray-900">
-                {safeOrder.service_name}
-            </TableCell>
-            <TableCell className="text-sm text-gray-900">
-                {safeOrder.service_category}
-            </TableCell>
-            <TableCell className="text-center text-sm text-gray-900">
-                {safeOrder.quantity}
-            </TableCell>
-            <TableCell className="text-right text-sm text-gray-900">
-                ZMW {Number(safeOrder.unit_price).toFixed(2)}
-            </TableCell>
-            <TableCell className="text-right text-sm text-gray-900">
-                ZMW {Number(safeOrder.total_price).toFixed(2)}
-            </TableCell>
-            <TableCell>
-                <div className="flex items-center gap-2">
-                    <Badge className={getStatusColor(safeOrder.status)}>
-                        {safeOrder.status}
-                    </Badge>
-                    {safeOrder.priority && safeOrder.priority !== 'routine' && (
-                        <Badge className={getPriorityColor(safeOrder.priority)}>
-                            {safeOrder.priority}
-                        </Badge>
-                    )}
-                </div>
-            </TableCell>
-            <TableCell className="text-sm text-gray-900">
-                {safeOrder.created_at
-                    ? new Date(safeOrder.created_at).toLocaleDateString()
-                    : 'N/A'}
-            </TableCell>
-            {safeOrder.modality && (
-                <TableCell className="text-sm text-gray-900">
-                    {safeOrder.modality}
-                </TableCell>
-            )}
-            {safeOrder.body_part && (
-                <TableCell className="text-sm text-gray-900">
-                    {safeOrder.body_part}
-                </TableCell>
-            )}
-            {onViewDetails && (
-                <TableCell>
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => onViewDetails(order)}
-                    >
-                        <EyeIcon className="h-4 w-4" />
-                    </Button>
-                </TableCell>
-            )}
-        </TableRow>
-    );
+const formatCurrency = (amount: number | string): string => {
+    const num = typeof amount === 'string' ? parseFloat(amount) : amount;
+    if (isNaN(num)) return 'ZMW 0.00';
+    return `ZMW ${num.toFixed(2)}`;
 };
+
+const formatDate = (dateStr?: string): string => {
+    if (!dateStr) return 'N/A';
+    try {
+        return new Date(dateStr).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+        });
+    } catch {
+        return 'N/A';
+    }
+};
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export default function PreviousOrdersTable({
     patientId,
@@ -190,11 +121,66 @@ export default function PreviousOrdersTable({
     onSaveOrder,
     orderLabel = 'Service',
     customFields,
+    isOrderModalOpen,
+    onOrderModalClose,
+    showPricing = true,
 }: PreviousOrdersTableProps) {
-    const [isServiceModalOpen, setIsServiceModalOpen] = useState(false);
+    // Controlled / uncontrolled modal
+    const [internalOpen, setInternalOpen] = useState(false);
+    const isControlled = isOrderModalOpen !== undefined;
+    const serviceModalOpen = isControlled ? isOrderModalOpen : internalOpen;
+
     const [selectedOrder, setSelectedOrder] = useState<any>(null);
     const [isViewModalOpen, setIsViewModalOpen] = useState(false);
-    console.log(services);
+
+    // Transform services to match CartItem structure
+    const mappedServices = useMemo(
+        () =>
+            (services || []).map((service) => ({
+                id: service.id,
+                service_name: service.service_name,
+                service_category: service.service_category,
+                price:
+                    typeof service.price === 'string'
+                        ? parseFloat(service.price)
+                        : service.price,
+                description: service.description,
+                modality: service.modality,
+            })),
+        [services],
+    );
+
+    // Normalize previous orders
+    const safePreviousOrders = useMemo(
+        () =>
+            (previousOrders || []).map((order) => ({
+                ...order,
+                quantity: order.quantity ?? 1,
+                unit_price: order.unit_price ?? 0,
+                total_price: order.total_price ?? 0,
+                priority: order.priority || 'routine',
+                status: order.status || 'pending',
+            })),
+        [previousOrders],
+    );
+
+    // Determine which optional columns to show
+    const hasModality = safePreviousOrders.some((o) => o.modality);
+    const hasBodyPart = safePreviousOrders.some((o) => o.body_part);
+
+    const handleOpenModal = () => {
+        if (isControlled) return; // parent controls it
+        setInternalOpen(true);
+    };
+
+    const handleCloseModal = () => {
+        if (isControlled) {
+            onOrderModalClose?.();
+        } else {
+            setInternalOpen(false);
+        }
+    };
+
     const handleViewDetails = (order: any) => {
         setSelectedOrder(order);
         setIsViewModalOpen(true);
@@ -206,7 +192,7 @@ export default function PreviousOrdersTable({
             Notiflix.Notify.success(
                 `${items.length} ${orderLabel}(s) ordered successfully`,
             );
-            setIsServiceModalOpen(false);
+            handleCloseModal();
         } catch (error) {
             Notiflix.Notify.failure(
                 error instanceof Error ? error.message : 'Failed to save order',
@@ -214,49 +200,174 @@ export default function PreviousOrdersTable({
         }
     };
 
-    // Transform services to match CartItem structure
-    const mappedServices = services.map((service) => ({
-        id: service.id,
-        service_name: service.service_name,
-        service_category: service.service_category,
-        price:
-            typeof service.price === 'string'
-                ? parseFloat(service.price)
-                : service.price,
-        description: service.description,
-        modality: service.modality,
-    }));
-    console.log('services in previous orders', mappedServices);
+    // ─── Table columns ───────────────────────────────────────────────────────
 
-    // Ensure previousOrders has safe values
-    const safePreviousOrders =
-        previousOrders?.map((order) => ({
-            ...order,
-            quantity: order.quantity ?? 1,
-            unit_price: order.unit_price ?? 0,
-            total_price: order.total_price ?? 0,
-        })) || [];
+    const columns: Column<any>[] = useMemo(() => {
+        const base: Column<any>[] = [
+            {
+                id: 'order_number',
+                label: 'Order #',
+                sortable: true,
+                format: (value) => (
+                    <span className="font-mono text-[11px] font-medium text-slate-700 dark:text-slate-300">
+                        {value || 'N/A'}
+                    </span>
+                ),
+            },
+            {
+                id: 'service_name',
+                label: 'Service',
+                sortable: true,
+                format: (value, row) => (
+                    <div className="flex items-center gap-2">
+                        <div className="flex h-6 w-6 items-center justify-center rounded-md bg-blue-50 dark:bg-blue-950/40">
+                            <ClipboardList
+                                size={12}
+                                className="text-blue-500 dark:text-blue-400"
+                            />
+                        </div>
+                        <span className="text-[11px] font-medium text-slate-800 dark:text-slate-200">
+                            {value || 'N/A'}
+                        </span>
+                        {row.priority && row.priority !== 'routine' && (
+                            <Badge
+                                className={`${getPriorityColor(row.priority)} px-1.5 py-0 text-[9px]`}
+                            >
+                                {row.priority}
+                            </Badge>
+                        )}
+                    </div>
+                ),
+            },
+            {
+                id: 'service_category',
+                label: 'Category',
+                sortable: true,
+                format: (value) => (
+                    <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600 dark:bg-slate-700 dark:text-slate-400">
+                        {value || '—'}
+                    </span>
+                ),
+            },
+            {
+                id: 'quantity',
+                label: 'Qty',
+                sortable: true,
+                format: (value) => (
+                    <span className="text-[11px] text-slate-700 tabular-nums dark:text-slate-300">
+                        {value ?? 1}
+                    </span>
+                ),
+            },
+        ];
+
+        if (showPricing) {
+            base.push(
+                {
+                    id: 'unit_price',
+                    label: 'Unit Price',
+                    sortable: true,
+                    format: (value) => (
+                        <span className="text-[11px] text-slate-600 tabular-nums dark:text-slate-400">
+                            {formatCurrency(value)}
+                        </span>
+                    ),
+                },
+                {
+                    id: 'total_price',
+                    label: 'Total',
+                    sortable: true,
+                    format: (value) => (
+                        <span className="text-[11px] font-semibold text-slate-800 tabular-nums dark:text-slate-200">
+                            {formatCurrency(value)}
+                        </span>
+                    ),
+                },
+            );
+        }
+
+        if (hasModality) {
+            base.push({
+                id: 'modality',
+                label: 'Modality',
+                sortable: true,
+                format: (value) => (
+                    <span className="text-[11px] text-slate-600 dark:text-slate-400">
+                        {value || '—'}
+                    </span>
+                ),
+            });
+        }
+
+        if (hasBodyPart) {
+            base.push({
+                id: 'body_part',
+                label: 'Body Part',
+                sortable: true,
+                format: (value) => (
+                    <span className="text-[11px] text-slate-600 dark:text-slate-400">
+                        {value || '—'}
+                    </span>
+                ),
+            });
+        }
+
+        base.push(
+            {
+                id: 'status',
+                label: 'Status',
+                sortable: true,
+                filterable: true,
+                filterType: 'status',
+                format: (value) => (
+                    <Badge className={`${getStatusColor(value)} capitalize`}>
+                        {value || 'pending'}
+                    </Badge>
+                ),
+            },
+            {
+                id: 'created_at',
+                label: 'Date',
+                sortable: true,
+                format: (value) => (
+                    <div className="flex items-center gap-1.5">
+                        <Calendar size={12} className="text-slate-400" />
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                            {formatDate(value)}
+                        </span>
+                    </div>
+                ),
+            },
+        );
+
+        return base;
+    }, [showPricing, hasModality, hasBodyPart]);
+
+    // ─── Render ──────────────────────────────────────────────────────────────
 
     return (
-        <div className="space-y-6">
-            {/* Order Button */}
-            <div className="flex justify-end">
-                <Button
-                    onClick={() => setIsServiceModalOpen(true)}
-                    disabled={mappedServices.length === 0}
-                    className="bg-blue-600 hover:bg-blue-700"
-                >
-                    + Order {orderLabel}
-                </Button>
-            </div>
+        <div className="space-y-4">
+            {/* Internal order button — only shown when NOT controlled */}
+            {!isControlled && (
+                <div className="flex justify-end">
+                    <Button
+                        onClick={handleOpenModal}
+                        disabled={mappedServices.length === 0}
+                        className="bg-blue-600 hover:bg-blue-700"
+                    >
+                        <Plus className="mr-1.5 h-4 w-4" />
+                        Order {orderLabel}
+                    </Button>
+                </div>
+            )}
 
             {/* No services warning */}
             {mappedServices.length === 0 && (
-                <div className="rounded-md bg-yellow-50 p-4">
+                <div className="rounded-md border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/30">
                     <div className="flex">
-                        <div className="flex-shrink-0">
+                        <div className="shrink-0">
                             <svg
-                                className="h-5 w-5 text-yellow-400"
+                                className="h-5 w-5 text-amber-400"
                                 viewBox="0 0 20 20"
                                 fill="currentColor"
                             >
@@ -268,10 +379,10 @@ export default function PreviousOrdersTable({
                             </svg>
                         </div>
                         <div className="ml-3">
-                            <h3 className="text-sm font-medium text-yellow-800">
+                            <h3 className="text-sm font-medium text-amber-800 dark:text-amber-400">
                                 No services available
                             </h3>
-                            <div className="mt-2 text-sm text-yellow-700">
+                            <div className="mt-2 text-sm text-amber-700 dark:text-amber-300">
                                 <p>
                                     Please add {orderLabel.toLowerCase()}{' '}
                                     services to the system first.
@@ -284,67 +395,50 @@ export default function PreviousOrdersTable({
 
             {/* Previous Orders Table */}
             {safePreviousOrders.length > 0 && (
-                <div className="rounded-lg border border-gray-200">
-                    <div className="overflow-x-auto">
-                        <Table>
-                            <TableHeader>
-                                <TableRow className="bg-gray-50">
-                                    <TableHead className="w-12">#</TableHead>
-                                    <TableHead>Order #</TableHead>
-                                    <TableHead>Service</TableHead>
-                                    <TableHead>Category</TableHead>
-                                    <TableHead className="text-center">
-                                        Qty
-                                    </TableHead>
-                                    <TableHead className="text-right">
-                                        Unit Price
-                                    </TableHead>
-                                    <TableHead className="text-right">
-                                        Total
-                                    </TableHead>
-                                    <TableHead>Status</TableHead>
-                                    <TableHead>Date</TableHead>
-                                    {safePreviousOrders[0]?.modality && (
-                                        <TableHead>Modality</TableHead>
-                                    )}
-                                    {safePreviousOrders[0]?.body_part && (
-                                        <TableHead>Body Part</TableHead>
-                                    )}
-                                    <TableHead></TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {safePreviousOrders.map((order, index) => (
-                                    <OrderRow
-                                        key={order.id || index}
-                                        order={order}
-                                        index={index}
-                                        onViewDetails={handleViewDetails}
-                                    />
-                                ))}
-                            </TableBody>
-                        </Table>
-                    </div>
-                </div>
+                <ReusableTable
+                    title={`Previous ${orderLabel} Orders`}
+                    columns={columns}
+                    data={safePreviousOrders}
+                    actions={[]}
+                    loading={false}
+                    filterPlaceholder={`Search ${orderLabel.toLowerCase()} orders...`}
+                    statusFilterKey="status"
+                    statusOptions={[
+                        { value: 'pending', label: 'Pending' },
+                        { value: 'scheduled', label: 'Scheduled' },
+                        { value: 'in_progress', label: 'In Progress' },
+                        { value: 'completed', label: 'Completed' },
+                        { value: 'cancelled', label: 'Cancelled' },
+                    ]}
+                    rowsPerPageOptions={[5, 10, 25]}
+                    defaultRowsPerPage={5}
+                    defaultOrderBy="created_at"
+                    emptyMessage={`No previous ${orderLabel.toLowerCase()} orders found`}
+                    onRowClick={handleViewDetails}
+                    className="border-0 shadow-none"
+                />
             )}
 
             {/* No orders message */}
             {safePreviousOrders.length === 0 && mappedServices.length > 0 && (
-                <div className="rounded-lg border border-gray-200 bg-gray-50 py-12 text-center">
-                    <p className="text-gray-500">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 py-12 text-center dark:border-slate-700 dark:bg-slate-800/50">
+                    <Package className="mx-auto h-10 w-10 text-slate-300 dark:text-slate-600" />
+                    <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
                         No previous {orderLabel.toLowerCase()} orders found.
                     </p>
-                    <p className="mt-1 text-sm text-gray-400">
-                        Click the "Order {orderLabel}" button to create one.
+                    <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                        {isControlled
+                            ? `Use the "Order ${orderLabel}" button at the top of the page to create one.`
+                            : `Click the "Order ${orderLabel}" button above to create one.`}
                     </p>
                 </div>
             )}
 
             {/* Service Modal */}
-            {isServiceModalOpen && mappedServices.length > 0 && (
+            {serviceModalOpen && mappedServices.length > 0 && (
                 <ServiceModal
-                    isOpen={isServiceModalOpen}
-                    onClose={() => setIsServiceModalOpen(false)}
+                    isOpen={serviceModalOpen}
+                    onClose={handleCloseModal}
                     onSave={handleSave}
                     identifier={patientId}
                     services={mappedServices}
@@ -437,28 +531,30 @@ export default function PreviousOrdersTable({
                                         {selectedOrder.quantity}
                                     </span>
                                 </div>
-                                <div className="mt-2 flex justify-between">
-                                    <span className="text-sm text-gray-500">
-                                        Unit Price
-                                    </span>
-                                    <span className="font-medium">
-                                        ZMW{' '}
-                                        {Number(
-                                            selectedOrder.unit_price,
-                                        ).toFixed(2)}
-                                    </span>
-                                </div>
-                                <div className="mt-2 flex justify-between">
-                                    <span className="text-sm text-gray-500">
-                                        Total Amount
-                                    </span>
-                                    <span className="text-lg font-bold">
-                                        ZMW{' '}
-                                        {Number(
-                                            selectedOrder.total_price,
-                                        ).toFixed(2)}
-                                    </span>
-                                </div>
+                                {showPricing && (
+                                    <>
+                                        <div className="mt-2 flex justify-between">
+                                            <span className="text-sm text-gray-500">
+                                                Unit Price
+                                            </span>
+                                            <span className="font-medium">
+                                                {formatCurrency(
+                                                    selectedOrder.unit_price,
+                                                )}
+                                            </span>
+                                        </div>
+                                        <div className="mt-2 flex justify-between">
+                                            <span className="text-sm text-gray-500">
+                                                Total Amount
+                                            </span>
+                                            <span className="text-lg font-bold">
+                                                {formatCurrency(
+                                                    selectedOrder.total_price,
+                                                )}
+                                            </span>
+                                        </div>
+                                    </>
+                                )}
                             </div>
 
                             <div className="pt-2 text-xs text-gray-400">

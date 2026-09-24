@@ -1,5 +1,4 @@
 // components/OrderModal.tsx
-import { usePage } from '@inertiajs/react';
 import {
     ShoppingCart,
     Search,
@@ -11,15 +10,17 @@ import {
     Loader2,
     Package,
     X,
+    Check,
 } from 'lucide-react';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { toast } from 'react-hot-toast';
 import Http from '@/utils/Http';
 
 // ============================================
 // TYPES
 // ============================================
-interface LedgerStockItem {
+
+interface StockItem {
     id: number;
     product_id: number;
     product_name: string;
@@ -30,241 +31,43 @@ interface LedgerStockItem {
     available_balance: number;
     batch_number: string | null;
     expiry_date: string | null;
-    _original?: any;
 }
 
-interface CartItem extends LedgerStockItem {
+interface CartItem extends StockItem {
     quantity: number;
-}
-
-interface OrderPayload {
-    items: {
-        product_id: number;
-        quantity: number;
-        unit_price: number;
-        batch_number?: string | null;
-        expiry_date?: string | null;
-    }[];
 }
 
 interface OrderModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSuccess?: () => void;
-    aggregateDuplicates?: boolean;
 }
 
 // ============================================
-// ADAPTER / MAPPER FUNCTIONS
+// UTILITIES
 // ============================================
 
-/**
- * Helper function to generate product code from name and ID
- */
-const generateProductCode = (
-    productName: string,
-    productId: number,
-): string => {
-    // Take first 3 letters of each word, max 6 chars
-    const code = productName
-        .split(' ')
-        .map((word) => word.substring(0, 3))
-        .join('')
-        .toUpperCase()
-        .substring(0, 8);
-
-    return `${code}-${productId}`;
-};
-
-/**
- * Helper function to generate barcode
- */
-const generateBarcode = (id: number, productId: number): string => {
-    return `BAR${String(id).padStart(6, '0')}${String(productId).padStart(4, '0')}`;
-};
-
-/**
- * Helper function to determine unit of measure based on product type
- */
-const determineUnitOfMeasure = (productName: string): string => {
-    const lowercase = productName.toLowerCase();
-
-    // Common medication units
-    if (lowercase.includes('saline') || lowercase.includes('solution')) {
-        return 'mL';
-    }
-    if (lowercase.includes('tablet') || lowercase.includes('pill')) {
-        return 'Tablet';
-    }
-    if (lowercase.includes('capsule')) {
-        return 'Capsule';
-    }
-    if (lowercase.includes('syrup') || lowercase.includes('liquid')) {
-        return 'mL';
-    }
-    if (lowercase.includes('ointment') || lowercase.includes('cream')) {
-        return 'g';
-    }
-    if (lowercase.includes('injection') || lowercase.includes('ampoule')) {
-        return 'Ampoule';
-    }
-    if (lowercase.includes('patch')) {
-        return 'Patch';
-    }
-
-    return 'Unit';
-};
-
-/**
- * Extracts the stock data array from various response formats
- */
-const extractStockData = (response: any): any[] => {
-    // If response is null or undefined
-    if (!response) {
-        console.error('Response is null or undefined');
-        return [];
-    }
-
-    // If response is already an array
-    if (Array.isArray(response)) {
-        return response;
-    }
-
-    // If response has a data property
-    if (response.data) {
-        // If response.data is an array
-        if (Array.isArray(response.data)) {
-            return response.data;
-        }
-        // If response.data has a data property that is an array (nested)
-        if (response.data.data && Array.isArray(response.data.data)) {
-            return response.data.data;
-        }
-    }
-
-    // If response has a data property that's a string (maybe JSON)
-    if (response.data && typeof response.data === 'string') {
-        try {
-            const parsed = JSON.parse(response.data);
-            if (Array.isArray(parsed)) {
-                return parsed;
-            }
-            if (parsed.data && Array.isArray(parsed.data)) {
-                return parsed.data;
-            }
-        } catch (e) {
-            console.error('Failed to parse response data as JSON:', e);
-        }
-    }
-
-    // Log the response structure for debugging
-    console.error('Unable to extract stock data from response:', response);
+const normalizeResponse = (res: any): StockItem[] => {
+    if (!res) return [];
+    if (Array.isArray(res)) return res;
+    const data = res.data;
+    if (Array.isArray(data)) return data;
+    if (data?.data && Array.isArray(data.data)) return data.data;
     return [];
 };
 
-/**
- * Maps the raw API response to the LedgerStockItem format expected by the component
- */
-const mapStockData = (apiData: any[]): LedgerStockItem[] => {
-    if (!Array.isArray(apiData)) {
-        console.error('mapStockData received non-array:', apiData);
-        return [];
-    }
-
-    return apiData.map((item) => ({
-        id: item.id,
-        product_id: item.product_id,
-        product_name: item.product_name,
-        product_code: generateProductCode(item.product_name, item.product_id),
-        barcode: generateBarcode(item.id, item.product_id),
-        unit_of_measure: determineUnitOfMeasure(item.product_name),
-        unit_price: item.unit_price || 0,
-        available_balance: item.quantity || 0,
-        batch_number: item.batch_number || null,
-        expiry_date: item.expiry_date || null,
-        _original: item,
-    }));
-};
-
-/**
- * Aggregates duplicate products by product_id
- * Useful when same product appears with different batches/quantities
- */
-const aggregateStockData = (apiData: any[]): LedgerStockItem[] => {
-    // Ensure apiData is an array
-    if (!Array.isArray(apiData)) {
-        console.error('aggregateStockData received non-array:', apiData);
-        return [];
-    }
-
-    const productMap = new Map<
-        number,
-        {
-            id: number;
-            product_id: number;
-            product_name: string;
-            quantity: number;
-            unit_price: number | null;
-            batch_numbers: (string | null)[];
-            expiry_dates: (string | null)[];
-            originalIds: number[];
-        }
-    >();
-
-    apiData.forEach((item) => {
-        const key = item.product_id;
-
-        if (productMap.has(key)) {
-            const existing = productMap.get(key)!;
-            existing.quantity += item.quantity || 0;
-            existing.batch_numbers.push(item.batch_number || null);
-            existing.expiry_dates.push(item.expiry_date || null);
-            existing.originalIds.push(item.id);
-
-            // Keep the lowest unit price (or average if you prefer)
-            if (
-                item.unit_price !== null &&
-                (existing.unit_price === null ||
-                    item.unit_price < existing.unit_price)
-            ) {
-                existing.unit_price = item.unit_price;
-            }
-        } else {
-            productMap.set(key, {
-                id: item.id,
-                product_id: item.product_id,
-                product_name: item.product_name,
-                quantity: item.quantity || 0,
-                unit_price: item.unit_price || null,
-                batch_numbers: [item.batch_number || null],
-                expiry_dates: [item.expiry_date || null],
-                originalIds: [item.id],
-            });
-        }
-    });
-
-    // Convert aggregated data to LedgerStockItem format
-    return Array.from(productMap.values()).map((item) => ({
-        id: item.id,
-        product_id: item.product_id,
-        product_name: item.product_name,
-        product_code: generateProductCode(item.product_name, item.product_id),
-        barcode: generateBarcode(item.id, item.product_id),
-        unit_of_measure: determineUnitOfMeasure(item.product_name),
-        unit_price: item.unit_price || 0,
-        available_balance: item.quantity,
-        batch_number:
-            item.batch_numbers.length === 1 ? item.batch_numbers[0] : null,
-        expiry_date:
-            item.expiry_dates.length === 1 ? item.expiry_dates[0] : null,
-        _original: {
-            ...item,
-            batch_numbers: item.batch_numbers,
-            expiry_dates: item.expiry_dates,
-            original_ids: item.originalIds,
-        },
-    }));
-};
+const mapItem = (item: any): StockItem => ({
+    id: item.id,
+    product_id: item.product_id,
+    product_name: item.product_name,
+    product_code: item.product_code || `P${String(item.id).padStart(6, '0')}`,
+    barcode: item.barcode || `BAR${String(item.id).padStart(8, '0')}`,
+    unit_of_measure: item.unit_of_measure || 'Unit',
+    unit_price: item.unit_price || 0,
+    available_balance: item.available_balance || item.quantity || 0,
+    batch_number: item.batch_number || null,
+    expiry_date: item.expiry_date || null,
+});
 
 // ============================================
 // MAIN COMPONENT
@@ -274,681 +77,506 @@ export default function OrderModal({
     isOpen,
     onClose,
     onSuccess,
-    aggregateDuplicates = true,
+    authenticated,
 }: OrderModalProps) {
-    const { auth, department, items } = usePage().props;
-    const [availableItems, setAvailableItems] = useState<LedgerStockItem[]>([]);
-    const [filteredItems, setFilteredItems] = useState<LedgerStockItem[]>([]);
-    const [searchTerm, setSearchTerm] = useState('');
+    // ─── State ──────────────────────────────────────────
+    const [items, setItems] = useState<StockItem[]>([]);
+    const [search, setSearch] = useState('');
     const [cart, setCart] = useState<CartItem[]>([]);
-    const [selectedItem, setSelectedItem] = useState<LedgerStockItem | null>(
-        null,
-    );
-    const [quantity, setQuantity] = useState(1);
-    const [isSubmitting, setIsSubmitting] = useState(false);
-    const [validationError, setValidationError] = useState<string | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
-    const searchInputRef = useRef<HTMLInputElement>(null);
-    const barcodeInputRef = useRef<HTMLInputElement>(null);
-    const [barcodeBuffer, setBarcodeBuffer] = useState('');
-    const [barcodeTimeout, setBarcodeTimeout] = useState<NodeJS.Timeout | null>(
-        null,
+    const [selected, setSelected] = useState<StockItem | null>(null);
+    const [qty, setQty] = useState(1);
+    const [loading, setLoading] = useState(true);
+    const [submitting, setSubmitting] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const searchRef = useRef<HTMLInputElement>(null);
+    const barcodeRef = useRef<HTMLInputElement>(null);
+
+    // ─── Derived ────────────────────────────────────────
+    const remainingMap = useMemo(() => {
+        const map = new Map<number, number>();
+        items.forEach((i) => {
+            const reserved = cart.find((c) => c.id === i.id)?.quantity || 0;
+            map.set(i.id, i.available_balance - reserved);
+        });
+        return map;
+    }, [items, cart]);
+
+    const getRemaining = (id: number) => remainingMap.get(id) || 0;
+
+    const filtered = useMemo(() => {
+        const q = search.toLowerCase().trim();
+        return q
+            ? items.filter(
+                  (i) =>
+                      i.product_name.toLowerCase().includes(q) ||
+                      i.product_code.toLowerCase().includes(q) ||
+                      i.barcode.toLowerCase().includes(q),
+              )
+            : items;
+    }, [search, items]);
+
+    const summary = useMemo(
+        () => ({
+            count: cart.length,
+            qty: cart.reduce((s, i) => s + i.quantity, 0),
+            total: cart.reduce((s, i) => s + i.quantity * i.unit_price, 0),
+        }),
+        [cart],
     );
 
-    // Load available stock
+    // ─── Effects ────────────────────────────────────────
     useEffect(() => {
-        if (isOpen) {
-            fetchAvailableStock();
-        }
+        if (isOpen) fetchStock();
     }, [isOpen]);
 
-    // Filter items based on search
-    useEffect(() => {
-        const filtered = availableItems.filter(
-            (item) =>
-                item.product_name
-                    .toLowerCase()
-                    .includes(searchTerm.toLowerCase()) ||
-                item.product_code
-                    .toLowerCase()
-                    .includes(searchTerm.toLowerCase()) ||
-                item.barcode.toLowerCase().includes(searchTerm.toLowerCase()),
-        );
-        setFilteredItems(filtered);
-    }, [searchTerm, availableItems]);
-
-    // Handle barcode scanning
-    useEffect(() => {
-        const handleKeyPress = (e: KeyboardEvent) => {
-            if (!isOpen) return;
-
-            // Don't intercept if focused on search input
-            if (e.target instanceof HTMLInputElement) {
-                // If focused on barcode input, let it handle normally
-                if (e.target === barcodeInputRef.current) {
-                    return;
-                }
-                // If focused on search input, let it handle normally
-                if (e.target === searchInputRef.current) {
-                    return;
-                }
-            }
-
-            // If it's the Enter key and we have a barcode buffer
-            if (e.key === 'Enter' && barcodeBuffer.length > 0) {
-                e.preventDefault();
-                setSearchTerm(barcodeBuffer);
-                setBarcodeBuffer('');
-                if (barcodeTimeout) {
-                    clearTimeout(barcodeTimeout);
-                    setBarcodeTimeout(null);
-                }
-                return;
-            }
-
-            // Accumulate barcode characters (only alphanumeric and dash)
-            if (e.key.length === 1 && e.key.match(/[a-zA-Z0-9\-]/)) {
-                e.preventDefault();
-                setBarcodeBuffer((prev) => prev + e.key);
-
-                // Reset buffer after 100ms of inactivity
-                if (barcodeTimeout) {
-                    clearTimeout(barcodeTimeout);
-                }
-                const timeout = setTimeout(() => {
-                    setBarcodeBuffer('');
-                }, 100);
-                setBarcodeTimeout(timeout);
-            }
-        };
-
-        window.addEventListener('keydown', handleKeyPress);
-        return () => {
-            window.removeEventListener('keydown', handleKeyPress);
-            if (barcodeTimeout) {
-                clearTimeout(barcodeTimeout);
-            }
-        };
-    }, [isOpen, barcodeBuffer, barcodeTimeout]);
-
-    const fetchAvailableStock = async () => {
-        setIsLoading(true);
+    // ─── API ────────────────────────────────────────────
+    const fetchStock = async () => {
+        setLoading(true);
         try {
-            const response = await Http.get('/nurses/stock');
-            console.log('Full response:', response);
-
-            // Extract the stock data array from the response
-            const stockData = extractStockData(response);
-            console.log('Extracted stock data:', stockData);
-
-            if (!Array.isArray(stockData) || stockData.length === 0) {
-                console.warn('No stock data found or empty array');
-                setAvailableItems([]);
-                setFilteredItems([]);
-                setIsLoading(false);
-                return;
-            }
-
-            let mappedData: LedgerStockItem[];
-
-            if (aggregateDuplicates) {
-                mappedData = aggregateStockData(stockData);
-                console.log('Aggregated stock data:', mappedData);
-            } else {
-                mappedData = mapStockData(stockData);
-                console.log('Mapped stock data:', mappedData);
-            }
-
-            setAvailableItems(mappedData);
-            setFilteredItems(mappedData);
-        } catch (error) {
-            console.error('Error fetching available stock:', error);
-            toast.error('Error fetching available stock');
-            setAvailableItems([]);
-            setFilteredItems([]);
+            const res = await Http.get('/nurses/stock');
+            setItems(normalizeResponse(res).map(mapItem));
+        } catch {
+            toast.error('Failed to load stock');
         } finally {
-            setIsLoading(false);
+            setLoading(false);
         }
     };
 
-    const getRemainingStock = useCallback(
-        (itemId: number) => {
-            const cartItem = cart.find((item) => item.id === itemId);
-            const stockItem = availableItems.find((item) => item.id === itemId);
-            if (!stockItem) return 0;
-            const cartQuantity = cartItem?.quantity || 0;
-            return stockItem.available_balance - cartQuantity;
-        },
-        [cart, availableItems],
-    );
-
-    const handleItemSelect = (item: LedgerStockItem) => {
-        setSelectedItem(item);
-        const remaining = getRemainingStock(item.id);
-        setQuantity(Math.min(1, remaining));
-        setValidationError(null);
-    };
-
-    const handleQuantityChange = (value: number) => {
-        if (!selectedItem) return;
-        const remaining = getRemainingStock(selectedItem.id);
-
-        if (value < 1) {
-            setValidationError('Quantity must be at least 1');
-            setQuantity(1);
+    const submitOrder = async () => {
+        if (!cart.length) {
+            toast.error('Cart is empty');
             return;
         }
 
-        if (value > remaining) {
-            setValidationError(
-                `Only ${remaining} units are available in BulkStore`,
-            );
-            setQuantity(remaining);
-            return;
-        }
-
-        setValidationError(null);
-        setQuantity(value);
-    };
-
-    const handleAddToCart = () => {
-        if (!selectedItem) return;
-        const remaining = getRemainingStock(selectedItem.id);
-
-        if (quantity > remaining) {
-            setValidationError(
-                `Only ${remaining} units are available in BulkStore`,
-            );
-            return;
-        }
-
-        const existingItem = cart.find((item) => item.id === selectedItem.id);
-        if (existingItem) {
-            setCart(
-                cart.map((item) =>
-                    item.id === selectedItem.id
-                        ? { ...item, quantity: item.quantity + quantity }
-                        : item,
-                ),
-            );
-        } else {
-            setCart([
-                ...cart,
-                {
-                    ...selectedItem,
-                    quantity: quantity,
-                },
-            ]);
-        }
-
-        setSelectedItem(null);
-        setQuantity(1);
-        setValidationError(null);
-        toast.success(`${selectedItem.product_name} added to order`);
-    };
-
-    const handleCartQuantityChange = (itemId: number, newQuantity: number) => {
-        const stockItem = availableItems.find((item) => item.id === itemId);
-        if (!stockItem) return;
-
-        if (newQuantity < 1) {
-            toast.error('Quantity must be at least 1');
-            return;
-        }
-
-        if (newQuantity > stockItem.available_balance) {
-            toast.error(
-                `Only ${stockItem.available_balance} units are available`,
-            );
-            return;
-        }
-
-        setCart(
-            cart.map((item) =>
-                item.id === itemId ? { ...item, quantity: newQuantity } : item,
-            ),
-        );
-    };
-
-    const handleRemoveFromCart = (itemId: number) => {
-        setCart(cart.filter((item) => item.id !== itemId));
-        toast.error('Item removed from order');
-    };
-
-    const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
-    const totalAmount = cart.reduce(
-        (sum, item) => sum + item.quantity * item.unit_price,
-        0,
-    );
-
-    const handleSubmit = async () => {
-        if (cart.length === 0) {
-            toast.error('Please add items to your order');
-            return;
-        }
-
-        setIsSubmitting(true);
-        setValidationError(null);
-
-        const payload: OrderPayload = {
-            items: cart.map((item) => ({
-                product_id: item.product_id,
-                quantity: item.quantity,
-                unit_price: item.unit_price,
-                batch_number: item.batch_number,
-                expiry_date: item.expiry_date,
-            })),
-        };
+        setSubmitting(true);
+        setError(null);
 
         try {
-            const response = await Http.post('/bulkstore/order/items', {
-                payload,
-            });
-
+            const payload = {
+                requestedBy: authenticated.user.id ?? 0,
+                department: authenticated.user.departmentId ?? 0,
+                items: cart.map((i) => ({
+                    product_id: i.product_id,
+                    quantity: i.quantity,
+                    unit_price: i.unit_price,
+                    batch_number: i.batch_number,
+                    expiry_date: i.expiry_date,
+                })),
+            };
             console.log(payload);
 
-            if (!response) {
-                if (response.data.errors) {
-                    const errorMessages = Object.values(response.data.errors).flat();
-                    const errorMessage = errorMessages.join(', ');
-                    setValidationError(errorMessage);
-                    toast.error('Please correct the highlighted errors');
+            const res = await Http.post('/bulk-store/order/items', payload);
 
-                    if (
-                        errorMessages.some((msg) =>
-                            msg.toLowerCase().includes('stock'),
-                        )
-                    ) {
-                        await fetchAvailableStock();
-                    }
-                    return;
-                }
-
-                throw new Error(data.message || 'Failed to submit order');
+            if (res.status === 200 || res.status === 201) {
+                toast.success('Order submitted');
+                setCart([]);
+                setSelected(null);
+                setSearch('');
+                onSuccess?.();
+                onClose();
             }
-
-            toast.success('Order submitted successfully');
-            setCart([]);
-            setSelectedItem(null);
-            setQuantity(1);
-            setSearchTerm('');
-            if (onSuccess) onSuccess();
-            onClose();
-        } catch (error: any) {
-            const errorMessage =
-                error.message ||
-                'Unable to submit the order. Please try again.';
-            setValidationError(errorMessage);
-            toast.error(errorMessage);
+        } catch (err: any) {
+            const msg = err.response?.data?.message || 'Submission failed';
+            setError(msg);
+            toast.error(msg);
+            if (err.response?.status === 422) await fetchStock();
         } finally {
-            setIsSubmitting(false);
+            setSubmitting(false);
         }
     };
 
+    // ─── Cart Actions ────────────────────────────────────
+    const addToCart = () => {
+        if (!selected) return;
+        const remaining = getRemaining(selected.id);
+        if (qty > remaining) {
+            setError(`Only ${remaining} available`);
+            return;
+        }
+
+        setCart((prev) => {
+            const existing = prev.find((c) => c.id === selected.id);
+            return existing
+                ? prev.map((c) =>
+                      c.id === selected.id
+                          ? { ...c, quantity: c.quantity + qty }
+                          : c,
+                  )
+                : [...prev, { ...selected, quantity: qty }];
+        });
+
+        setSelected(null);
+        setQty(1);
+        setError(null);
+        toast.success(`${selected.product_name} added`);
+    };
+
+    const updateQty = (id: number, val: number) => {
+        if (val < 1) return;
+        const stock = items.find((i) => i.id === id);
+        if (stock && val > stock.available_balance) {
+            toast.error(`Max ${stock.available_balance}`);
+            return;
+        }
+        setCart((prev) =>
+            prev.map((c) => (c.id === id ? { ...c, quantity: val } : c)),
+        );
+    };
+
+    const removeItem = (id: number) => {
+        setCart((prev) => prev.filter((c) => c.id !== id));
+        toast.success('Removed');
+    };
+
+    const clearCart = () => {
+        if (cart.length) {
+            setCart([]);
+            toast.info('Cart cleared');
+        }
+    };
+
+    // ─── Render ──────────────────────────────────────────
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-            <div className="relative flex max-h-[95vh] w-full max-w-6xl flex-col rounded-xl bg-white shadow-2xl">
-                {/* Header */}
-                <div className="flex shrink-0 items-center justify-between border-b border-gray-200 p-6">
-                    <div>
-                        <h2 className="text-xl font-semibold text-gray-900">
-                            Create BulkStore Order
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-2">
+            <div className="relative flex max-h-[90vh] w-full max-w-5xl flex-col rounded-lg bg-white shadow-xl">
+                {/* ─── Header ──────────────────────────── */}
+                <div className="flex shrink-0 items-center justify-between border-b border-gray-200 px-5 py-3">
+                    <div className="flex items-center gap-3">
+                        <ShoppingCart className="h-5 w-5 text-blue-600" />
+                        <h2 className="text-base font-semibold text-gray-900">
+                            Request Products
                         </h2>
-                        <p className="text-sm text-gray-500">
-                            Select products and specify the quantities required
-                        </p>
+                        <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-sm font-medium text-blue-700">
+                            {summary.count}
+                        </span>
                     </div>
-                    <div className="flex items-center gap-4">
-                        <div className="flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-1.5">
-                            <ShoppingCart className="h-5 w-5 text-blue-600" />
-                            <span className="text-sm font-medium text-blue-600">
-                                {totalItems}
-                            </span>
-                        </div>
+                    <div className="flex items-center gap-3">
+                        {cart.length > 0 && (
+                            <button
+                                onClick={clearCart}
+                                className="text-sm text-red-500 hover:text-red-700"
+                            >
+                                Clear
+                            </button>
+                        )}
                         <button
                             onClick={onClose}
-                            className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                            className="rounded p-1.5 text-gray-400 hover:bg-gray-100"
                         >
                             <X className="h-5 w-5" />
                         </button>
                     </div>
                 </div>
 
-                {/* Main Content - Rest of the component remains the same */}
-                <div className="flex flex-1 flex-col overflow-hidden lg:flex-row">
-                    {/* Left Column - Available Stock */}
-                    <div className="max-h-[60vh] w-full overflow-y-auto border-r border-gray-200 p-6 lg:max-h-[calc(95vh-180px)] lg:w-1/2">
+                {/* ─── Body (600px max height) ────────── */}
+                <div className="flex h-[600px] max-h-[600px] flex-col overflow-hidden lg:flex-row">
+                    {/* Left: Products (60%) */}
+                    <div className="flex flex-1 flex-col overflow-hidden border-r border-gray-200 p-4 lg:w-3/5">
                         {/* Search */}
-                        <div className="mb-4 space-y-2">
-                            <div className="relative">
+                        <div className="flex gap-2">
+                            <div className="relative flex-1">
                                 <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-gray-400" />
                                 <input
-                                    ref={searchInputRef}
+                                    ref={searchRef}
                                     type="text"
-                                    placeholder="Search by name, code, or barcode"
-                                    value={searchTerm}
-                                    onChange={(e) =>
-                                        setSearchTerm(e.target.value)
-                                    }
-                                    className="w-full rounded-lg border border-gray-300 py-2.5 pr-4 pl-10 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                                    placeholder="Search products..."
+                                    value={search}
+                                    onChange={(e) => setSearch(e.target.value)}
+                                    className="w-full rounded border border-gray-300 py-2 pr-3 pl-9 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                                 />
                             </div>
-                            <div className="relative">
+                            <div className="relative w-36">
                                 <Barcode className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-gray-400" />
                                 <input
-                                    ref={barcodeInputRef}
+                                    ref={barcodeRef}
                                     type="text"
-                                    placeholder="Scan barcode here..."
-                                    className="w-full rounded-lg border border-gray-300 py-2.5 pr-4 pl-10 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                                    placeholder="Scan barcode"
+                                    className="w-full rounded border border-gray-300 py-2 pr-3 pl-9 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                                     onChange={(e) => {
-                                        const value = e.target.value;
-                                        if (value) {
-                                            setSearchTerm(value);
+                                        const val = e.target.value.trim();
+                                        if (val) {
+                                            setSearch(val);
                                             e.target.value = '';
+                                            const match = items.find(
+                                                (i) => i.barcode === val,
+                                            );
+                                            if (match) setSelected(match);
                                         }
                                     }}
                                 />
                             </div>
                         </div>
 
-                        {/* Stock Items */}
-                        {isLoading ? (
-                            <div className="flex items-center justify-center py-12">
-                                <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
-                            </div>
-                        ) : filteredItems.length === 0 ? (
-                            <div className="py-12 text-center">
-                                <Package className="mx-auto mb-3 h-12 w-12 text-gray-300" />
-                                <p className="text-gray-500">
-                                    No products found
-                                </p>
-                            </div>
-                        ) : (
-                            <div className="space-y-2">
-                                {filteredItems.map((item) => {
-                                    const remaining = getRemainingStock(
-                                        item.id,
-                                    );
-                                    const isSelected =
-                                        selectedItem?.id === item.id;
-                                    const isOutOfStock = remaining === 0;
+                        {/* Product List */}
+                        <div className="mt-3 flex-1 overflow-y-auto">
+                            {loading ? (
+                                <div className="flex items-center justify-center py-10">
+                                    <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+                                </div>
+                            ) : filtered.length === 0 ? (
+                                <div className="py-10 text-center">
+                                    <Package className="mx-auto mb-3 h-10 w-10 text-gray-300" />
+                                    <p className="text-sm text-gray-500">
+                                        No products found
+                                    </p>
+                                </div>
+                            ) : (
+                                <div className="space-y-2">
+                                    {filtered.map((item) => {
+                                        const remaining = getRemaining(item.id);
+                                        const isSelected =
+                                            selected?.id === item.id;
+                                        const outOfStock = remaining === 0;
 
-                                    return (
-                                        <div
-                                            key={item.id}
-                                            onClick={() =>
-                                                !isOutOfStock &&
-                                                handleItemSelect(item)
-                                            }
-                                            className={`cursor-pointer rounded-lg border p-4 transition-all ${
-                                                isSelected
-                                                    ? 'border-blue-500 bg-blue-50 shadow-sm'
-                                                    : isOutOfStock
-                                                      ? 'cursor-not-allowed border-gray-200 bg-gray-50 opacity-60'
-                                                      : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50/50'
-                                            }`}
-                                        >
-                                            <div className="flex items-start justify-between">
-                                                <div className="min-w-0 flex-1">
-                                                    <h4 className="truncate text-sm font-medium text-gray-900">
-                                                        {item.product_name}
-                                                    </h4>
-                                                    <p className="truncate text-xs text-gray-500">
-                                                        Code:{' '}
-                                                        {item.product_code} |
-                                                        Barcode: {item.barcode}
-                                                    </p>
-                                                    {item._original
-                                                        ?.batch_numbers &&
-                                                        item._original
-                                                            .batch_numbers
-                                                            .length > 1 && (
-                                                            <p className="text-xs text-amber-600">
-                                                                Multiple batches
-                                                                available
-                                                            </p>
-                                                        )}
-                                                    <div className="mt-1 flex items-center gap-4">
-                                                        <span
-                                                            className={`text-sm font-medium ${
-                                                                remaining === 0
-                                                                    ? 'text-red-600'
-                                                                    : 'text-green-600'
-                                                            }`}
-                                                        >
-                                                            {remaining === 0
-                                                                ? 'Out of Stock'
-                                                                : `${remaining} available`}
-                                                        </span>
-                                                        <span className="text-xs text-gray-500">
-                                                            {
-                                                                item.unit_of_measure
-                                                            }
-                                                        </span>
-                                                        <span className="text-xs text-gray-500">
-                                                            $
-                                                            {item.unit_price.toFixed(
-                                                                2,
-                                                            )}{' '}
-                                                            /{' '}
-                                                            {
-                                                                item.unit_of_measure
-                                                            }
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                                {isOutOfStock && (
-                                                    <AlertCircle className="h-5 w-5 shrink-0 text-red-500" />
-                                                )}
-                                            </div>
-
-                                            {/* Quantity Controls - shown when selected */}
-                                            {isSelected && !isOutOfStock && (
-                                                <div className="mt-3 border-t border-blue-200 pt-3">
-                                                    <div className="flex items-center gap-3">
-                                                        <span className="text-sm text-gray-600">
-                                                            Quantity to Order:
-                                                        </span>
-                                                        <div className="flex items-center gap-2">
-                                                            <button
-                                                                onClick={(
-                                                                    e,
-                                                                ) => {
-                                                                    e.stopPropagation();
-                                                                    handleQuantityChange(
-                                                                        quantity -
-                                                                            1,
-                                                                    );
-                                                                }}
-                                                                className="rounded p-1 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
-                                                                disabled={
-                                                                    quantity <=
-                                                                    1
+                                        return (
+                                            <div
+                                                key={item.id}
+                                                onClick={() =>
+                                                    !outOfStock &&
+                                                    setSelected(item)
+                                                }
+                                                className={`cursor-pointer rounded border p-3 transition-all ${
+                                                    isSelected
+                                                        ? 'border-blue-500 bg-blue-50'
+                                                        : outOfStock
+                                                          ? 'cursor-not-allowed border-gray-200 bg-gray-50 opacity-50'
+                                                          : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50/50'
+                                                }`}
+                                            >
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <div className="min-w-0 flex-1">
+                                                        <div className="flex items-center gap-3">
+                                                            <h4 className="truncate text-sm font-medium text-gray-900">
+                                                                {
+                                                                    item.product_name
                                                                 }
+                                                            </h4>
+                                                            <span
+                                                                className={`text-sm font-medium ${outOfStock ? 'text-red-500' : 'text-green-600'}`}
                                                             >
-                                                                <Minus className="h-4 w-4" />
-                                                            </button>
-                                                            <input
-                                                                type="number"
-                                                                value={quantity}
-                                                                onChange={(
-                                                                    e,
-                                                                ) => {
-                                                                    const val =
-                                                                        parseInt(
-                                                                            e
-                                                                                .target
-                                                                                .value,
-                                                                        );
-                                                                    if (
-                                                                        !isNaN(
-                                                                            val,
-                                                                        )
-                                                                    ) {
-                                                                        handleQuantityChange(
-                                                                            val,
-                                                                        );
-                                                                    }
-                                                                }}
-                                                                className="w-16 rounded border border-gray-300 py-1 text-center text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
-                                                                min={1}
-                                                                max={remaining}
-                                                            />
-                                                            <button
-                                                                onClick={(
-                                                                    e,
-                                                                ) => {
-                                                                    e.stopPropagation();
-                                                                    handleQuantityChange(
-                                                                        quantity +
-                                                                            1,
-                                                                    );
-                                                                }}
-                                                                className="rounded p-1 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
-                                                                disabled={
-                                                                    quantity >=
-                                                                    remaining
-                                                                }
-                                                            >
-                                                                <Plus className="h-4 w-4" />
-                                                            </button>
+                                                                {outOfStock
+                                                                    ? 'Out'
+                                                                    : remaining}
+                                                            </span>
                                                         </div>
+                                                        <div className="flex flex-wrap items-center gap-2 text-sm text-gray-500">
+                                                            <span>
+                                                                {
+                                                                    item.product_code
+                                                                }
+                                                            </span>
+                                                            <span>·</span>
+                                                            <span>
+                                                                $
+                                                                {item.unit_price.toFixed(
+                                                                    2,
+                                                                )}
+                                                            </span>
+                                                            <span>·</span>
+                                                            <span>
+                                                                {
+                                                                    item.unit_of_measure
+                                                                }
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                    {!outOfStock && (
                                                         <button
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
-                                                                handleAddToCart();
+                                                                setSelected(
+                                                                    item,
+                                                                );
                                                             }}
-                                                            disabled={
-                                                                quantity >
-                                                                    remaining ||
-                                                                quantity < 1
-                                                            }
-                                                            className="ml-auto rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                                            className="rounded bg-blue-100 px-3 py-1 text-sm font-medium text-blue-700 hover:bg-blue-200"
                                                         >
-                                                            Add to Order
+                                                            Add
                                                         </button>
-                                                    </div>
-                                                    {validationError && (
-                                                        <p className="mt-2 flex items-center gap-1 text-sm text-red-600">
-                                                            <AlertCircle className="h-4 w-4" />
-                                                            {validationError}
-                                                        </p>
                                                     )}
                                                 </div>
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        )}
+
+                                                {/* Quick quantity controls */}
+                                                {isSelected && !outOfStock && (
+                                                    <div className="mt-3 flex items-center gap-3 border-t border-blue-100 pt-3">
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setQty(
+                                                                    Math.max(
+                                                                        1,
+                                                                        qty - 1,
+                                                                    ),
+                                                                );
+                                                            }}
+                                                            className="rounded border border-gray-300 px-2 py-1 text-sm hover:bg-gray-100 disabled:opacity-50"
+                                                            disabled={qty <= 1}
+                                                        >
+                                                            <Minus className="h-4 w-4" />
+                                                        </button>
+                                                        <input
+                                                            type="number"
+                                                            value={qty}
+                                                            onChange={(e) => {
+                                                                const val =
+                                                                    parseInt(
+                                                                        e.target
+                                                                            .value,
+                                                                    );
+                                                                if (
+                                                                    !isNaN(
+                                                                        val,
+                                                                    ) &&
+                                                                    val > 0
+                                                                ) {
+                                                                    setQty(
+                                                                        Math.min(
+                                                                            val,
+                                                                            remaining,
+                                                                        ),
+                                                                    );
+                                                                }
+                                                            }}
+                                                            className="w-16 rounded border border-gray-300 py-1 text-center text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                                            min={1}
+                                                            max={remaining}
+                                                        />
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setQty(
+                                                                    Math.min(
+                                                                        remaining,
+                                                                        qty + 1,
+                                                                    ),
+                                                                );
+                                                            }}
+                                                            className="rounded border border-gray-300 px-2 py-1 text-sm hover:bg-gray-100 disabled:opacity-50"
+                                                            disabled={
+                                                                qty >= remaining
+                                                            }
+                                                        >
+                                                            <Plus className="h-4 w-4" />
+                                                        </button>
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                addToCart();
+                                                            }}
+                                                            disabled={
+                                                                qty >
+                                                                    remaining ||
+                                                                qty < 1
+                                                            }
+                                                            className="ml-auto rounded bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                                                        >
+                                                            Add to Cart
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
                     </div>
 
-                    {/* Right Column - Order Cart */}
-                    <div className="max-h-[60vh] w-full overflow-y-auto bg-gray-50 p-6 lg:max-h-[calc(95vh-180px)] lg:w-1/2">
-                        <div className="mb-4 flex items-center justify-between">
-                            <h3 className="font-medium text-gray-900">
-                                Order Cart
+                    {/* Right: Cart (40%) */}
+                    <div className="flex w-full flex-col bg-gray-50 p-4 lg:w-2/5">
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-sm font-medium text-gray-900">
+                                Cart
                             </h3>
                             <span className="text-sm text-gray-500">
-                                {totalItems} items
+                                {summary.qty} units · $
+                                {summary.total.toFixed(2)}
                             </span>
                         </div>
 
                         {cart.length === 0 ? (
-                            <div className="flex h-64 flex-col items-center justify-center">
-                                <ShoppingCart className="mb-4 h-16 w-16 text-gray-300" />
-                                <p className="font-medium text-gray-500">
-                                    Your order is empty
-                                </p>
-                                <p className="text-sm text-gray-400">
-                                    Search for a product and add items to your
-                                    order
-                                </p>
+                            <div className="flex flex-1 items-center justify-center">
+                                <div className="text-center">
+                                    <ShoppingCart className="mx-auto mb-3 h-12 w-12 text-gray-300" />
+                                    <p className="text-sm text-gray-500">
+                                        Cart is empty
+                                    </p>
+                                    <p className="text-sm text-gray-400">
+                                        Add items from the left
+                                    </p>
+                                </div>
                             </div>
                         ) : (
                             <>
-                                <div className="mb-4 space-y-3">
+                                <div className="mt-3 flex-1 space-y-2 overflow-y-auto">
                                     {cart.map((item) => (
                                         <div
                                             key={item.id}
-                                            className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm"
+                                            className="rounded border border-gray-200 bg-white p-3"
                                         >
-                                            <div className="flex items-start justify-between">
-                                                <div>
-                                                    <h4 className="text-sm font-medium text-gray-900">
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div className="min-w-0 flex-1">
+                                                    <h4 className="truncate text-sm font-medium text-gray-900">
                                                         {item.product_name}
                                                     </h4>
-                                                    <p className="text-xs text-gray-500">
-                                                        {item.product_code}
-                                                    </p>
-                                                    <p className="mt-1 text-sm text-blue-600">
-                                                        $
-                                                        {item.unit_price.toFixed(
-                                                            2,
-                                                        )}{' '}
-                                                        / {item.unit_of_measure}
-                                                    </p>
-                                                    {item.batch_number && (
-                                                        <p className="text-xs text-gray-400">
-                                                            Batch:{' '}
-                                                            {item.batch_number}
-                                                        </p>
-                                                    )}
+                                                    <div className="flex flex-wrap items-center gap-2 text-sm text-gray-500">
+                                                        <span>
+                                                            {item.product_code}
+                                                        </span>
+                                                        <span>·</span>
+                                                        <span>
+                                                            $
+                                                            {item.unit_price.toFixed(
+                                                                2,
+                                                            )}
+                                                        </span>
+                                                    </div>
                                                 </div>
                                                 <button
                                                     onClick={() =>
-                                                        handleRemoveFromCart(
-                                                            item.id,
-                                                        )
+                                                        removeItem(item.id)
                                                     }
-                                                    className="rounded p-1.5 text-red-500 transition-colors hover:bg-red-50 hover:text-red-700"
+                                                    className="rounded p-1 text-red-400 hover:bg-red-50"
                                                 >
                                                     <Trash2 className="h-4 w-4" />
                                                 </button>
                                             </div>
-                                            <div className="mt-3 flex items-center gap-3 border-t border-gray-100 pt-3">
-                                                <span className="text-sm text-gray-600">
-                                                    Qty:
+                                            <div className="mt-2 flex items-center gap-3">
+                                                <button
+                                                    onClick={() =>
+                                                        updateQty(
+                                                            item.id,
+                                                            item.quantity - 1,
+                                                        )
+                                                    }
+                                                    className="rounded border border-gray-300 px-2 py-1 text-sm hover:bg-gray-100 disabled:opacity-50"
+                                                    disabled={
+                                                        item.quantity <= 1
+                                                    }
+                                                >
+                                                    <Minus className="h-4 w-4" />
+                                                </button>
+                                                <span className="w-10 text-center text-sm font-medium">
+                                                    {item.quantity}
                                                 </span>
-                                                <div className="flex items-center gap-2">
-                                                    <button
-                                                        onClick={() =>
-                                                            handleCartQuantityChange(
-                                                                item.id,
-                                                                item.quantity -
-                                                                    1,
-                                                            )
-                                                        }
-                                                        className="rounded p-1 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
-                                                        disabled={
-                                                            item.quantity <= 1
-                                                        }
-                                                    >
-                                                        <Minus className="h-4 w-4" />
-                                                    </button>
-                                                    <span className="w-10 text-center text-sm font-medium text-gray-900">
-                                                        {item.quantity}
-                                                    </span>
-                                                    <button
-                                                        onClick={() =>
-                                                            handleCartQuantityChange(
-                                                                item.id,
-                                                                item.quantity +
-                                                                    1,
-                                                            )
-                                                        }
-                                                        className="rounded p-1 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
-                                                        disabled={
-                                                            item.quantity >=
-                                                            item.available_balance
-                                                        }
-                                                    >
-                                                        <Plus className="h-4 w-4" />
-                                                    </button>
-                                                </div>
-                                                <span className="ml-auto text-sm font-medium text-gray-700">
+                                                <button
+                                                    onClick={() =>
+                                                        updateQty(
+                                                            item.id,
+                                                            item.quantity + 1,
+                                                        )
+                                                    }
+                                                    className="rounded border border-gray-300 px-2 py-1 text-sm hover:bg-gray-100 disabled:opacity-50"
+                                                    disabled={
+                                                        item.quantity >=
+                                                        item.available_balance
+                                                    }
+                                                >
+                                                    <Plus className="h-4 w-4" />
+                                                </button>
+                                                <span className="ml-auto text-sm font-medium text-gray-900">
                                                     $
                                                     {(
                                                         item.quantity *
@@ -960,21 +588,14 @@ export default function OrderModal({
                                     ))}
                                 </div>
 
-                                <div className="rounded-lg border border-gray-200 bg-white p-4">
-                                    <div className="mb-2 flex items-center justify-between">
-                                        <span className="text-sm text-gray-600">
-                                            Total Items:
+                                {/* Summary */}
+                                <div className="mt-3 rounded border border-gray-200 bg-white p-3">
+                                    <div className="flex items-center justify-between text-sm">
+                                        <span className="text-gray-600">
+                                            Total
                                         </span>
-                                        <span className="text-sm font-medium text-gray-900">
-                                            {totalItems}
-                                        </span>
-                                    </div>
-                                    <div className="flex items-center justify-between border-t border-gray-100 pt-2">
-                                        <span className="text-base font-medium text-gray-900">
-                                            Total Amount:
-                                        </span>
-                                        <span className="text-lg font-bold text-blue-600">
-                                            ${totalAmount.toFixed(2)}
+                                        <span className="font-bold text-blue-600">
+                                            ${summary.total.toFixed(2)}
                                         </span>
                                     </div>
                                 </div>
@@ -983,36 +604,43 @@ export default function OrderModal({
                     </div>
                 </div>
 
-                {/* Footer */}
-                <div className="flex flex-shrink-0 items-center justify-between gap-4 rounded-b-xl border-t border-gray-200 bg-gray-50 p-6">
-                    <div className="flex items-center gap-4">
-                        {validationError && (
-                            <div className="flex items-center gap-1 text-sm text-red-600">
-                                <AlertCircle className="h-4 w-4" />
-                                {validationError}
-                            </div>
-                        )}
-                    </div>
+                {/* ─── Footer with submit on right ────── */}
+                <div className="flex shrink-0 items-center justify-between rounded-b-lg border-t border-gray-200 bg-gray-50 px-5 py-3">
+                    {error ? (
+                        <div className="flex items-center gap-2 text-sm text-red-600">
+                            <AlertCircle className="h-4 w-4" />
+                            <span>{error}</span>
+                        </div>
+                    ) : (
+                        <div className="text-sm text-gray-400">
+                            {cart.length > 0
+                                ? `${cart.length} items in cart`
+                                : 'No items selected'}
+                        </div>
+                    )}
                     <div className="flex items-center gap-3">
                         <button
                             onClick={onClose}
-                            className="rounded-lg px-6 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-200 hover:text-gray-900"
-                            disabled={isSubmitting}
+                            disabled={submitting}
+                            className="rounded px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-200"
                         >
                             Cancel
                         </button>
                         <button
-                            onClick={handleSubmit}
-                            disabled={cart.length === 0 || isSubmitting}
-                            className="flex items-center gap-2 rounded-lg bg-blue-600 px-6 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                            onClick={submitOrder}
+                            disabled={cart.length === 0 || submitting}
+                            className="flex items-center gap-2 rounded bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
                         >
-                            {isSubmitting ? (
+                            {submitting ? (
                                 <>
                                     <Loader2 className="h-4 w-4 animate-spin" />
-                                    Submitting Order...
+                                    <span>Submitting...</span>
                                 </>
                             ) : (
-                                'Submit Order'
+                                <>
+                                    <Check className="h-4 w-4" />
+                                    <span>Submit Order</span>
+                                </>
                             )}
                         </button>
                     </div>

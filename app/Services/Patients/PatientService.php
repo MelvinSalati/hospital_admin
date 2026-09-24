@@ -224,4 +224,10 @@ class PatientService
             ]),
         ];
     }
+
+    public  function getCustomerDetails(int $patientId) : mixed {
+        return  $this->patientRepository->patientDetails($patientId);
+    }
+
+
 }

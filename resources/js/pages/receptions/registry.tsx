@@ -5,7 +5,7 @@ import {
     UserPlusIcon,
     AdjustmentsHorizontalIcon,
 } from '@heroicons/react/24/outline';
-import { Link, usePage } from '@inertiajs/react';
+import { Link, usePage, router } from '@inertiajs/react';
 import axios from 'axios';
 import { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
@@ -13,21 +13,32 @@ import AddPatientModal from '@/components/modals/AddPatientModal';
 import PageHeader from '@/components/PageHeader';
 import AppLayout from '@/layouts/app-layout';
 import Http from '@/utils/Http';
+import ReusableTable from '@/components/ReusableTable';
 
 interface Patient {
-    id: string;
+    id: string | number;
     patient_number: string;
     first_name: string;
     last_name: string;
     gender: string;
-    phone: string;
-    email: string;
+    phone: string | null;
+    email: string | null;
     nrc?: string;
     passport?: string;
     national_id?: string;
     alt_phone?: string;
     status: 'active' | 'inactive';
     created_at: string;
+    address: string | null;
+    date_of_birth: string | null;
+    blood_group: string | null;
+    nationality: string | null;
+    occupation: string | null;
+    marital_status: string | null;
+    id_type: string | null;
+    id_number: string | null;
+    insurance_provider: string | null;
+    insurance_number: string | null;
 }
 
 // Search options
@@ -66,18 +77,214 @@ const searchOptions: {
         icon: '📱',
         placeholder: 'Search by phone number...',
     },
-   
     {
         value: 'nrc',
         label: 'NRC Number',
         icon: '🪪',
         placeholder: 'Enter NRC number (e.g., 123456/78/9)...',
     },
+];
 
+// Helper function to format null/empty values
+const formatValue = (value: any): string => {
+    if (value === null || value === undefined || value === '') {
+        return '—';
+    }
+    return String(value);
+};
+
+// Helper function to check if value exists
+const hasValue = (value: any): boolean => {
+    return value !== null && value !== undefined && value !== '';
+};
+
+// Define table columns
+const getTableColumns = (formatDate: (date: string) => string) => [
+    {
+        id: 'patient_number',
+        label: 'Patient #',
+        sortable: true,
+        render: (patient: Patient) => (
+            <span className="font-mono text-sm font-medium text-blue-600">
+                {formatValue(patient.patient_number)}
+            </span>
+        ),
+    },
+    {
+        id: 'first_name',
+        label: 'First Name',
+        sortable: true,
+        render: (patient: Patient) => (
+            <div className="flex items-center">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-blue-600 text-sm font-medium text-white">
+                    {hasValue(patient.first_name) ? patient.first_name[0] : '?'}
+                    {hasValue(patient.last_name) ? patient.last_name[0] : '?'}
+                </div>
+                <div className="ml-3">
+                    <div className="text-sm font-medium text-gray-900">
+                        {hasValue(patient.first_name) ? patient.first_name : ''}{' '}
+                        {hasValue(patient.last_name) ? patient.last_name : ''}
+                        {!hasValue(patient.first_name) &&
+                            !hasValue(patient.last_name) &&
+                            '—'}
+                    </div>
+                    <div className="text-xs text-gray-400 capitalize">
+                        {hasValue(patient.gender) ? patient.gender : '—'}
+                    </div>
+                </div>
+            </div>
+        ),
+    },
+    {
+        id: 'last_name',
+        label: 'Surname',
+        sortable: true,
+        render: (patient: Patient) => (
+            <div className="flex items-center">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-blue-600 text-sm font-medium text-white">
+                    {hasValue(patient.first_name) ? patient.first_name[0] : '?'}
+                    {hasValue(patient.last_name) ? patient.last_name[0] : '?'}
+                </div>
+                <div className="ml-3">
+                    <div className="text-sm font-medium text-gray-900">
+                        {hasValue(patient.first_name) ? patient.first_name : ''}{' '}
+                        {hasValue(patient.last_name) ? patient.last_name : ''}
+                        {!hasValue(patient.first_name) &&
+                            !hasValue(patient.last_name) &&
+                            '—'}
+                    </div>
+                    <div className="text-xs text-gray-400 capitalize">
+                        {hasValue(patient.gender) ? patient.gender : '—'}
+                    </div>
+                </div>
+            </div>
+        ),
+    },
+    {
+        id: 'phone',
+        label: 'Contact',
+        sortable: false,
+        render: (patient: Patient) => (
+            <div className="space-y-0.5 text-sm text-gray-600">
+                <div className="flex items-center gap-1.5">
+                    <span className="text-gray-400">✉</span>
+                    <span className="text-sm">
+                        {hasValue(patient.email) ? patient.email : '—'}
+                    </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                    <span className="text-gray-400">📱</span>
+                    <span>{hasValue(patient.phone) ? patient.phone : '—'}</span>
+                </div>
+                {hasValue(patient.alt_phone) && (
+                    <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                        <span>📞</span>
+                        <span>{patient.alt_phone}</span>
+                    </div>
+                )}
+            </div>
+        ),
+    },
+    {
+        id: 'patient_number',
+        label: 'Identification',
+        sortable: false,
+        render: (patient: Patient) => (
+            <div className="space-y-0.5">
+                {hasValue(patient.nrc) && (
+                    <div className="inline-flex items-center gap-1.5 rounded border border-gray-200 bg-gray-50 px-2 py-0.5 font-mono text-xs">
+                        <span className="text-gray-400">NRC:</span>
+                        <span className="text-gray-700">{patient.nrc}</span>
+                    </div>
+                )}
+                {hasValue(patient.passport) && (
+                    <div className="ml-1 inline-flex items-center gap-1.5 rounded border border-gray-200 bg-gray-50 px-2 py-0.5 font-mono text-xs">
+                        <span className="text-gray-400">Passport:</span>
+                        <span className="text-gray-700">
+                            {patient.passport}
+                        </span>
+                    </div>
+                )}
+                {hasValue(patient.national_id) && (
+                    <div className="ml-1 inline-flex items-center gap-1.5 rounded border border-gray-200 bg-gray-50 px-2 py-0.5 font-mono text-xs">
+                        <span className="text-gray-400">NID:</span>
+                        <span className="text-gray-700">
+                            {patient.national_id}
+                        </span>
+                    </div>
+                )}
+                {!hasValue(patient.nrc) &&
+                    !hasValue(patient.passport) &&
+                    !hasValue(patient.national_id) && (
+                        <span className="text-xs text-gray-400">—</span>
+                    )}
+            </div>
+        ),
+    },
+    {
+        id: 'status',
+        label: 'Status',
+        sortable: true,
+        render: (patient: Patient) => (
+            <span
+                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
+                    patient.status === 'active'
+                        ? 'bg-green-100 text-green-700'
+                        : 'bg-gray-100 text-gray-600'
+                }`}
+            >
+                <span
+                    className={`h-1.5 w-1.5 rounded-full ${
+                        patient.status === 'active'
+                            ? 'bg-green-500'
+                            : 'bg-gray-400'
+                    }`}
+                ></span>
+                {patient.status === 'active' ? 'Active' : 'Inactive'}
+            </span>
+        ),
+    },
+    {
+        id: 'created_at',
+        label: 'Registered',
+        sortable: true,
+        render: (patient: Patient) => (
+            <span className="text-sm text-gray-500">
+                {hasValue(patient.created_at)
+                    ? new Date(patient.created_at).toLocaleDateString('en-GB', {
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric',
+                      })
+                    : '—'}
+            </span>
+        ),
+    },
+    {
+        // id: 'actions',
+        label: 'Actions',
+        sortable: false,
+        render: (patient: Patient) => (
+            <div className="flex items-center justify-end gap-3">
+                <Link
+                    href={`/patients/${patient.id}`}
+                    className="font-medium text-blue-600 transition-colors hover:text-blue-800"
+                >
+                    View
+                </Link>
+                <Link
+                    href={`/patients/${patient.id}/edit`}
+                    className="font-medium text-gray-600 transition-colors hover:text-gray-800"
+                >
+                    Edit
+                </Link>
+            </div>
+        ),
+    },
 ];
 
 export default function Registry() {
-    const { auth } = usePage().props as any;
+    const { auth, recentPatients } = usePage().props as any;
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
@@ -88,6 +295,8 @@ export default function Registry() {
     const [patients, setPatients] = useState<Patient[]>([]);
     const [loading, setLoading] = useState(false);
     const [hasSearched, setHasSearched] = useState(false);
+
+    console.log(patients);
 
     // Get current search option
     const currentOption = searchOptions.find(
@@ -125,10 +334,7 @@ export default function Registry() {
             }
         } catch (error: any) {
             console.error('Search error:', error);
-            toast.error(
-                error.message ||
-                    'An error occurred while searching',
-            );
+            toast.error(error.message || 'An error occurred while searching');
             setPatients([]);
         } finally {
             setLoading(false);
@@ -176,6 +382,9 @@ export default function Registry() {
         }
     };
 
+    // Get table columns with formatDate
+    const columns = getTableColumns(formatDate);
+
     return (
         <AppLayout
             breadcrumbs={[
@@ -206,16 +415,8 @@ export default function Registry() {
                             />
                         </svg>
                     }
-                    title={'Patient Registry'}
-                    subtitle="Manage and search patients using multiple identification methods"
-                    actions={[
-                        {
-                            label: 'Create Patient',
-                            onClick() {
-                                setIsModalOpen(true);
-                            },
-                        },
-                    ]}
+                    title={'Search'}
+                    subtitle="Find registered patients using multiple identification methods"
                 />
 
                 {/* Search Section */}
@@ -429,324 +630,83 @@ export default function Registry() {
                         )}
                     </div>
 
-                    {/* Patients Table */}
-                    <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-                        <div className="overflow-x-auto">
-                            <table className="w-full">
-                                <thead>
-                                    <tr className="border-b border-gray-200 bg-gray-50">
-                                        <th className="px-6 py-3.5 text-left text-xs font-semibold tracking-wider text-gray-500 uppercase">
-                                            Patient #
-                                        </th>
-                                        <th className="px-6 py-3.5 text-left text-xs font-semibold tracking-wider text-gray-500 uppercase">
-                                            Name
-                                        </th>
-                                        <th className="px-6 py-3.5 text-left text-xs font-semibold tracking-wider text-gray-500 uppercase">
-                                            Contact
-                                        </th>
-                                        <th className="px-6 py-3.5 text-left text-xs font-semibold tracking-wider text-gray-500 uppercase">
-                                            Identification
-                                        </th>
-                                        <th className="px-6 py-3.5 text-left text-xs font-semibold tracking-wider text-gray-500 uppercase">
-                                            Status
-                                        </th>
-                                        <th className="px-6 py-3.5 text-left text-xs font-semibold tracking-wider text-gray-500 uppercase">
-                                            Registered
-                                        </th>
-                                        <th className="px-6 py-3.5 text-right text-xs font-semibold tracking-wider text-gray-500 uppercase">
-                                            Actions
-                                        </th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100">
-                                    {loading ? (
-                                        <tr>
-                                            <td
-                                                colSpan={7}
-                                                className="px-6 py-12 text-center"
-                                            >
-                                                <div className="flex items-center justify-center gap-2">
-                                                    <svg
-                                                        className="h-6 w-6 animate-spin text-blue-600"
-                                                        fill="none"
-                                                        viewBox="0 0 24 24"
-                                                    >
-                                                        <circle
-                                                            className="opacity-25"
-                                                            cx="12"
-                                                            cy="12"
-                                                            r="10"
-                                                            stroke="currentColor"
-                                                            strokeWidth="4"
-                                                        />
-                                                        <path
-                                                            className="opacity-75"
-                                                            fill="currentColor"
-                                                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                                                        />
-                                                    </svg>
-                                                    <span className="text-gray-500">
-                                                        Searching...
-                                                    </span>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    ) : patients.length > 0 ? (
-                                        patients.map((patient) => (
-                                            <tr
-                                                key={patient.id}
-                                                className="transition-colors hover:bg-gray-50"
-                                            >
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <span className="font-mono text-sm font-medium text-blue-600">
-                                                        {patient.patient_number}
-                                                    </span>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <div className="flex items-center">
-                                                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-blue-600 text-sm font-medium text-white">
-                                                            {
-                                                                patient
-                                                                    .first_name[0]
-                                                            }
-                                                            {
-                                                                patient
-                                                                    .last_name[0]
-                                                            }
-                                                        </div>
-                                                        <div className="ml-3">
-                                                            <div className="text-sm font-medium text-gray-900">
-                                                                {
-                                                                    patient.first_name
-                                                                }{' '}
-                                                                {
-                                                                    patient.last_name
-                                                                }
-                                                            </div>
-                                                            <div className="text-xs text-gray-400 capitalize">
-                                                                {patient.gender}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </td>
-                                                <td className="px-6 py-4">
-                                                    <div className="space-y-0.5 text-sm text-gray-600">
-                                                        <div className="flex items-center gap-1.5">
-                                                            <span className="text-gray-400">
-                                                                ✉
-                                                            </span>
-                                                            <span className="text-sm">
-                                                                {patient.email}
-                                                            </span>
-                                                        </div>
-                                                        <div className="flex items-center gap-1.5">
-                                                            <span className="text-gray-400">
-                                                                📱
-                                                            </span>
-                                                            <span>
-                                                                {patient.phone}
-                                                            </span>
-                                                        </div>
-                                                        {patient.alt_phone && (
-                                                            <div className="flex items-center gap-1.5 text-xs text-gray-400">
-                                                                <span>📞</span>
-                                                                <span>
-                                                                    {
-                                                                        patient.alt_phone
-                                                                    }
-                                                                </span>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </td>
-                                                <td className="px-6 py-4">
-                                                    <div className="space-y-0.5">
-                                                        {patient.nrc && (
-                                                            <div className="inline-flex items-center gap-1.5 rounded border border-gray-200 bg-gray-50 px-2 py-0.5 font-mono text-xs">
-                                                                <span className="text-gray-400">
-                                                                    NRC:
-                                                                </span>
-                                                                <span className="text-gray-700">
-                                                                    {
-                                                                        patient.nrc
-                                                                    }
-                                                                </span>
-                                                            </div>
-                                                        )}
-                                                        {patient.passport && (
-                                                            <div className="ml-1 inline-flex items-center gap-1.5 rounded border border-gray-200 bg-gray-50 px-2 py-0.5 font-mono text-xs">
-                                                                <span className="text-gray-400">
-                                                                    Passport:
-                                                                </span>
-                                                                <span className="text-gray-700">
-                                                                    {
-                                                                        patient.passport
-                                                                    }
-                                                                </span>
-                                                            </div>
-                                                        )}
-                                                        {patient.national_id && (
-                                                            <div className="ml-1 inline-flex items-center gap-1.5 rounded border border-gray-200 bg-gray-50 px-2 py-0.5 font-mono text-xs">
-                                                                <span className="text-gray-400">
-                                                                    NID:
-                                                                </span>
-                                                                <span className="text-gray-700">
-                                                                    {
-                                                                        patient.national_id
-                                                                    }
-                                                                </span>
-                                                            </div>
-                                                        )}
-                                                        {!patient.nrc &&
-                                                            !patient.passport &&
-                                                            !patient.national_id && (
-                                                                <span className="text-xs text-gray-400">
-                                                                    —
-                                                                </span>
-                                                            )}
-                                                    </div>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <span
-                                                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
-                                                            patient.status ===
-                                                            'active'
-                                                                ? 'bg-green-100 text-green-700'
-                                                                : 'bg-gray-100 text-gray-600'
-                                                        }`}
-                                                    >
-                                                        <span
-                                                            className={`h-1.5 w-1.5 rounded-full ${
-                                                                patient.status ===
-                                                                'active'
-                                                                    ? 'bg-green-500'
-                                                                    : 'bg-gray-400'
-                                                            }`}
-                                                        ></span>
-                                                        {patient.status ===
-                                                        'active'
-                                                            ? 'Active'
-                                                            : 'Inactive'}
-                                                    </span>
-                                                </td>
-                                                <td className="px-6 py-4 text-sm whitespace-nowrap text-gray-500">
-                                                    {formatDate(
-                                                        patient.created_at,
-                                                    )}
-                                                </td>
-                                                <td className="px-6 py-4 text-right text-sm whitespace-nowrap">
-                                                    <Link
-                                                        href={`/patients/${patient.id}`}
-                                                        className="mr-4 font-medium text-blue-600 transition-colors hover:text-blue-800"
-                                                    >
-                                                        View
-                                                    </Link>
-                                                    <Link
-                                                        href={`/patients/${patient.id}/edit`}
-                                                        className="font-medium text-gray-600 transition-colors hover:text-gray-800"
-                                                    >
-                                                        Edit
-                                                    </Link>
-                                                </td>
-                                            </tr>
-                                        ))
-                                    ) : hasSearched ? (
-                                        <tr>
-                                            <td
-                                                colSpan={7}
-                                                className="px-6 py-12 text-center"
-                                            >
-                                                <div className="flex flex-col items-center">
-                                                    <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-gray-100">
-                                                        <svg
-                                                            className="h-6 w-6 text-gray-400"
-                                                            fill="none"
-                                                            stroke="currentColor"
-                                                            viewBox="0 0 24 24"
-                                                        >
-                                                            <path
-                                                                strokeLinecap="round"
-                                                                strokeLinejoin="round"
-                                                                strokeWidth={2}
-                                                                d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                                                            />
-                                                        </svg>
-                                                    </div>
-                                                    <p className="text-base font-medium text-gray-900">
-                                                        No patients found
-                                                    </p>
-                                                    <p className="mt-1 text-sm text-gray-500">
-                                                        Try adjusting your
-                                                        search criteria or
-                                                        filters
-                                                    </p>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    ) : (
-                                        <tr>
-                                            <td
-                                                colSpan={7}
-                                                className="px-6 py-12 text-center"
-                                            >
-                                                <div className="flex flex-col items-center">
-                                                    <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-gray-100">
-                                                        <MagnifyingGlassIcon className="h-6 w-6 text-gray-400" />
-                                                    </div>
-                                                    <p className="text-base font-medium text-gray-900">
-                                                        Search for patients
-                                                    </p>
-                                                    <p className="mt-1 text-sm text-gray-500">
-                                                        Enter a search term and
-                                                        click Search to find
-                                                        patients
-                                                    </p>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-
-                        {/* Pagination */}
-                        {patients.length > 0 && (
-                            <div className="flex flex-col items-center justify-between gap-3 border-t border-gray-200 bg-gray-50 px-6 py-3.5 sm:flex-row">
-                                <p className="text-sm text-gray-500">
-                                    Showing{' '}
-                                    <span className="font-medium text-gray-700">
-                                        1
-                                    </span>{' '}
-                                    to{' '}
-                                    <span className="font-medium text-gray-700">
-                                        {patients.length}
-                                    </span>{' '}
-                                    of{' '}
-                                    <span className="font-medium text-gray-700">
-                                        {patients.length}
-                                    </span>{' '}
-                                    results
-                                </p>
-                                <div className="flex items-center gap-1.5">
-                                    <button
-                                        className="rounded-lg px-3 py-1.5 text-sm text-gray-600 transition-colors hover:bg-gray-200 disabled:opacity-50"
-                                        disabled
-                                    >
-                                        Previous
-                                    </button>
-                                    <button className="rounded-lg bg-blue-600 px-3.5 py-1.5 text-sm text-white transition-colors hover:bg-blue-700">
-                                        1
-                                    </button>
-                                    <button
-                                        className="rounded-lg px-3 py-1.5 text-sm text-gray-600 transition-colors hover:bg-gray-200 disabled:opacity-50"
-                                        disabled
-                                    >
-                                        Next
-                                    </button>
-                                </div>
+                    {/* Reusable Table */}
+                    {loading ? (
+                        <div className="flex items-center justify-center rounded-xl border border-gray-200 bg-white p-12 shadow-sm">
+                            <div className="flex items-center gap-2">
+                                <svg
+                                    className="h-6 w-6 animate-spin text-blue-600"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                >
+                                    <circle
+                                        className="opacity-25"
+                                        cx="12"
+                                        cy="12"
+                                        r="10"
+                                        stroke="currentColor"
+                                        strokeWidth="4"
+                                    />
+                                    <path
+                                        className="opacity-75"
+                                        fill="currentColor"
+                                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                    />
+                                </svg>
+                                <span className="text-gray-500">
+                                    Searching...
+                                </span>
                             </div>
-                        )}
-                    </div>
+                        </div>
+                    ) : patients.length > 0 ? (
+                        <ReusableTable
+                            data={patients}
+                            columns={columns}
+                            searchable={false}
+                            onRowClick={(patient) => {
+                                router.visit(`/patients/${patient.id}`);
+                            }}
+                            emptyMessage="No patients found"
+                            className="rounded-xl border border-gray-200 bg-white shadow-sm"
+                        />
+                    ) : hasSearched ? (
+                        <div className="flex flex-col items-center rounded-xl border border-gray-200 bg-white p-12 shadow-sm">
+                            <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-gray-100">
+                                <svg
+                                    className="h-6 w-6 text-gray-400"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                >
+                                    <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                                    />
+                                </svg>
+                            </div>
+                            <p className="text-base font-medium text-gray-900">
+                                No patients found
+                            </p>
+                            <p className="mt-1 text-sm text-gray-500">
+                                Try adjusting your search criteria or filters
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="flex flex-col items-center rounded-xl border border-gray-200 bg-white p-12 shadow-sm">
+                            <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-gray-100">
+                                <MagnifyingGlassIcon className="h-6 w-6 text-gray-400" />
+                            </div>
+                            <p className="text-base font-medium text-gray-900">
+                                Search for patients
+                            </p>
+                            <p className="mt-1 text-sm text-gray-500">
+                                Enter a search term and click Search to find
+                                patients
+                            </p>
+                        </div>
+                    )}
                 </div>
 
                 {/* Add Patient Modal */}

@@ -13,6 +13,7 @@ use Inertia\Inertia;
 use App\Models\Departments\Department;
 use App\Helpers\VisitTokenHelper;
 use App\Models\Patients\Interaction;
+
 use App\Models\User;
 use Illuminate\Validation\ValidationException;
 use App\Models\Patients\InsuranceProvider;
@@ -22,6 +23,7 @@ use App\Models\Patients\PatientProcedure;
 use App\Models\Patients\PatientProcedureItem;
 use App\Models\Payments\Invoice;
 use Illuminate\Support\Facades\DB;
+use App\Services\Laboratories\LaboratoryService;
 use Carbon\Carbon;
 
 
@@ -29,13 +31,43 @@ use Carbon\Carbon;
 class PatientController extends Controller
 {
     protected PatientService $patientService;
+    protected LaboratoryService $laboratoryService; 
+    protected $visitToken;
+
+
     protected   $selectedScheme;
     protected  $token;
 
-    public function __construct(PatientService $patientService)
+    public function __construct(PatientService $patientService, LaboratoryService $laboratoryService)
     {
         $this->token     = new VisitTokenHelper();
-        $this->patientService = $patientService;
+        $this->patientService = $patientService; 
+        /**
+         * 
+         */ 
+
+        $this->laboratoryService            =       $laboratoryService;
+        
+    }
+
+
+    public function createOrder(Request $request, int $patientId){
+        try{
+
+             $tokenId = $this->token->getActiveToken($patientId)->token;
+
+             $order = array_merge($request->all(),[                         
+                'visit_token'  =>  $tokenId,
+                'patient_id'   =>  $patientId
+            ]);
+
+           return $this->laboratoryService->createLaboratoryOrder($order);
+        }
+        catch(\Exception $e){
+            return response()->json([
+                'message'  => $e->getMessage()
+            ]);
+        }
     }
 
     /**
@@ -43,8 +75,10 @@ class PatientController extends Controller
      */
     public function create()
     {
+        $today  = Carbon::now()->format('Y-m-d');
         return Inertia::render('receptions/create' , [
-            'insuranceProviders' => InsuranceProvider::all()
+            'insuranceProviders' => InsuranceProvider::all(),
+            'recentPatients' => Patient::all()
         ]);
     }
 

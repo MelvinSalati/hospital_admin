@@ -40,7 +40,13 @@ class ConsultationController extends Controller
      */
     public function store(Request $request)
     {
-        $visitToken   = VisitTokenHelper::getActiveToken($request->patient_id);
+        $visitToken   = VisitTokenHelper::getActiveToken($request->patient_id); 
+
+        /**
+         * Add to invoice
+         */ 
+
+        
 
       if(!$visitToken){
         return response()->json([

@@ -17,9 +17,10 @@ Route::prefix('reception')->group(function(){
     Route::get('/bills',[BillController::class, 'index']);
     Route::inertia('/reports', 'receptions/report');
     Route::get('payments',[BillController::class, 'payments']);
-    Route::get('/queue',[QueueController::class, 'index']);
+    Route::get('/queue',[ReceptionController::class, 'queues']);
     Route::get('insurance',[BillController::class, 'insurance']);
-    
+    Route::get('visits',[ReceptionController::class,'visits']);
+
 
 })->middleware(['auth','verified']);
 

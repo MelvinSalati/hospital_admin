@@ -299,9 +299,10 @@ export default function Patient() {
         users = [],
         services = [],
         auth,
-        visit_status = { has_active_visit: false, visit_token: null },
+        visit_status,
         insuranceProviders,
     } = props;
+    console.log(props);
     console.log(insuranceProviders);
     // Extract patient from props - handle both array and single object
     const patientFromProps = props.patient;
@@ -1163,6 +1164,15 @@ export default function Patient() {
                 { title: 'Patient', href: '' },
                 { title: patientData.name, href: '' },
             ]}
+            onAssignClick={() => {
+                // your existing assign handler
+                resetSelections();
+                setShowVisitModal(true);
+            }}
+            onStartVisitClick={() => {
+                // your existing start-visit handler
+                setShowStartVisitModal(true);
+            }}
         >
             <div className="min-h-screen bg-blue-50">
                 {/* Top Bar with Quick Actions */}
@@ -1172,17 +1182,17 @@ export default function Patient() {
                             <>
                                 <Button
                                     size="sm"
+                                    className="bg-blue-700"
                                     onClick={() => {
                                         resetSelections();
                                         setShowVisitModal(true);
                                     }}
-                                    className="bg-blue-600 hover:bg-blue-700"
                                 >
                                     <Building2 className="mr-2 h-4 w-4" />
                                     Assign to Department
                                 </Button>
                                 {visitToken && (
-                                    <Badge className="bg-green-100 text-green-700">
+                                    <Badge className="bg-green-200 text-green-700">
                                         Token: {visitToken}
                                     </Badge>
                                 )}
@@ -1191,7 +1201,6 @@ export default function Patient() {
                             <Button
                                 size="sm"
                                 onClick={() => setShowStartVisitModal(true)}
-                                className="bg-blue-600 hover:bg-blue-700"
                             >
                                 <Clock className="mr-2 h-4 w-4" />
                                 Start Visit

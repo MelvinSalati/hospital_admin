@@ -5,9 +5,11 @@ import { BarcodeIcon } from 'lucide-react';
 import { usePage } from '@inertiajs/react';
 import { useState } from 'react';
 import OrderItemsModal from '@/components/OrderItemsModal';
+import { Users, Settings, Activity, Plus } from 'lucide-react';
+import RequestStock from '@/modules/bulkstore/requestStock';
 
 export default function BulkStore() {
-    const { services, bulkOrders } = usePage().props;
+    const { services, bulkOrders, auth } = usePage().props;
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [orderItems, setOrderItems] = useState([]);
 
@@ -76,17 +78,19 @@ export default function BulkStore() {
                 },
             ]}
         >
-            <div className="h-full bg-blue-50 p-6">
+            <div className="h-full bg-blue-50">
                 <PageHeader
                     icon={<BarcodeIcon />}
                     title="Bulk Store"
                     subtitle="Order from bulk store"
+                    tabVariant="underline"
                     actions={[
                         {
                             label: 'Order from Bulk Store',
                             onClick: handleOrderFromBulkStore,
                         },
                     ]}
+                    defaultTabId="overview"
                 />
 
                 <ReusableTable
@@ -102,6 +106,7 @@ export default function BulkStore() {
                     onClose={handleModalClose}
                     onSubmit={handleOrderSubmit}
                     LedgerStockItem={services}
+                    authenticated={auth}
                 />
             </div>
         </AppLayout>

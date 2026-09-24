@@ -39,25 +39,44 @@ import {
 } from '@/components/ui/select';
 import PatientLayout from '@/layouts/patients/PatientLayout';
 import Http from '@/utils/Http';
-import type { Column} from './components/Table';
+import type { Column } from './components/Table';
 import { Table, StatusBadge } from './components/Table';
+import PageHeader from '@/components/PageHeader';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
+interface LabOrderItem {
+    id: string | number;
+    order_number: string;
+    test_id: number;
+    test_name: string;
+    test_category?: string;
+    status: 'ordered' | 'pending' | 'completed' | 'cancelled' | 'rejected';
+    priority?: string;
+    result_value?: string | null;
+    reference_range?: string | null;
+    interpretation?: string | null;
+    unit?: string | null;
+    notes?: string | null;
+    performed_by?: string | null;
+    performed_date?: string | null;
+    created_at: string;
+    updated_at?: string;
+    patient_id?: number | null;
+    lab_order_id?: number;
+    created_by?: number | null;
+    deleted_at?: string | null;
+}
+
 interface LabOrder {
     id: string | number;
     order_number: string;
-    service_name: string;
-    service_category?: string;
-    quantity: number;
-    unit_price: number;
-    total_price: number;
-    status: 'pending' | 'completed' | 'cancelled' | 'rejected';
-    priority?: string;
+    visit_token?: string;
+    patient_id?: number;
+    status: 'pending' | 'completed' | 'cancelled' | 'rejected' | 'ordered';
     created_at: string;
-    result_value?: string;
-    performed_by?: string;
-    result_date?: string;
-    rejection_reason?: string;
+    updated_at?: string;
+    item: LabOrderItem[];
+    priority?: string;
 }
 
 interface LaboratoryProps {
@@ -114,6 +133,8 @@ const getStatusColor = (status: string) => {
             return 'bg-red-100 text-red-800 border-red-200';
         case 'rejected':
             return 'bg-red-100 text-red-800 border-red-200';
+        case 'ordered':
+            return 'bg-blue-100 text-blue-800 border-blue-200';
         default:
             return 'bg-yellow-100 text-yellow-800 border-yellow-200';
     }
@@ -127,6 +148,8 @@ const getStatusIcon = (status: string) => {
             return <X className="h-3.5 w-3.5" />;
         case 'rejected':
             return <Ban className="h-3.5 w-3.5" />;
+        case 'ordered':
+            return <FileText className="h-3.5 w-3.5" />;
         default:
             return <Clock className="h-3.5 w-3.5" />;
     }
@@ -153,206 +176,277 @@ const OrderDetailsModal = ({
 }) => {
     if (!isOpen || !order) return null;
 
+    const items = order.item || [];
+
+    const completedCount = items.filter((i) => i.status === 'completed').length;
+    const pendingCount = items.filter(
+        (i) => i.status === 'pending' || i.status === 'ordered',
+    ).length;
+    const rejectedCount = items.filter(
+        (i) => i.status === 'rejected' || i.status === 'cancelled',
+    ).length;
+
     return (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
-            <div className="flex min-h-screen items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 overflow-hidden">
+            <div className="flex min-h-screen items-center justify-center p-4 sm:p-6">
                 <div
-                    className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+                    className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
                     onClick={onClose}
                 />
-                <div className="relative w-full max-w-3xl rounded-2xl bg-white shadow-2xl">
-                    {/* Header */}
-                    <div className="flex items-center justify-between border-b px-6 py-4">
-                        <div className="flex items-center gap-3">
-                            <div className="rounded-lg bg-blue-50 p-2">
-                                <FileText className="h-5 w-5 text-blue-600" />
+
+                <div className="relative flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-slate-900/5">
+                    {/* ── Header (fixed, non-scrollable) ───────────────────── */}
+                    <div className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-gradient-to-r from-slate-50 via-white to-slate-50 px-6 py-5">
+                        <div className="flex items-center gap-4">
+                            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/30">
+                                <FileText className="h-6 w-6 text-white" />
                             </div>
                             <div>
-                                <h2 className="text-lg font-semibold text-gray-800">
-                                    Order Details
-                                </h2>
-                                <p className="text-sm text-gray-500">
-                                    Order #{order.order_number}
+                                <div className="flex items-center gap-2">
+                                    <h2 className="text-lg font-bold tracking-tight text-slate-900">
+                                        Order Details
+                                    </h2>
+                                    <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold tracking-wider text-blue-700 uppercase ring-1 ring-blue-200">
+                                        {items.length} Test
+                                        {items.length !== 1 ? 's' : ''}
+                                    </span>
+                                </div>
+                                <p className="mt-0.5 font-mono text-xs text-slate-500">
+                                    {order.order_number}
                                 </p>
                             </div>
                         </div>
+
                         <button
                             onClick={onClose}
-                            className="rounded-full p-1 transition-colors hover:bg-gray-100"
+                            aria-label="Close"
+                            className="flex h-9 w-9 items-center justify-center rounded-full text-slate-400 transition-all hover:bg-slate-100 hover:text-slate-700 active:scale-95"
                         >
-                            <X className="h-5 w-5 text-gray-500" />
+                            <X className="h-5 w-5" />
                         </button>
                     </div>
 
-                    <div className="p-6">
-                        {/* Order Summary */}
-                        <div className="mb-6 grid grid-cols-2 gap-4 rounded-lg bg-gray-50 p-4 md:grid-cols-4">
-                            <div>
-                                <p className="text-xs text-gray-500">Status</p>
-                                <Badge
-                                    className={`mt-1 flex w-fit items-center gap-1.5 ${getStatusColor(order.status)}`}
-                                >
-                                    {getStatusIcon(order.status)}
-                                    <span className="capitalize">
-                                        {order.status}
-                                    </span>
-                                </Badge>
-                            </div>
-                            <div>
-                                <p className="text-xs text-gray-500">Date</p>
-                                <p className="mt-1 flex items-center gap-1 text-sm font-medium text-gray-700">
-                                    <Calendar className="h-3.5 w-3.5 text-gray-400" />
-                                    {formatDate(order.created_at)}
-                                </p>
-                            </div>
-                            <div>
-                                <p className="text-xs text-gray-500">
-                                    Priority
-                                </p>
-                                <p className="mt-1 text-sm font-medium text-gray-700">
-                                    {order.priority || 'Routine'}
-                                </p>
-                            </div>
-                            <div>
-                                <p className="text-xs text-gray-500">Total</p>
-                                <p className="mt-1 text-sm font-semibold text-blue-600">
-                                    {formatCurrency(order.total_price)}
-                                </p>
-                            </div>
-                        </div>
+                    {/* ── Body (scrollable) ───────────────────────────────── */}
+                    <div className="flex-1 overflow-y-auto bg-slate-50/40">
+                        <div className="space-y-6 px-6 py-6">
+                            {/* Summary Cards */}
+                            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md">
+                                    <p className="text-[11px] font-semibold tracking-wider text-slate-400 uppercase">
+                                        Status
+                                    </p>
+                                    <div className="mt-2">
+                                        <Badge
+                                            className={`flex w-fit items-center gap-1.5 px-2.5 py-1 text-xs font-medium capitalize ${getStatusColor(order.status)}`}
+                                        >
+                                            {getStatusIcon(order.status)}
+                                            <span>{order.status}</span>
+                                        </Badge>
+                                    </div>
+                                </div>
 
-                        {/* Test Details */}
-                        <div className="mb-4">
-                            <h3 className="mb-3 text-sm font-semibold text-gray-700">
-                                Test Information
-                            </h3>
-                            <div className="overflow-hidden rounded-lg border border-gray-200">
-                                <table className="w-full">
-                                    <thead className="bg-gray-50">
-                                        <tr>
-                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                                                Test Name
-                                            </th>
-                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                                                Category
-                                            </th>
-                                            <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
-                                                Quantity
-                                            </th>
-                                            <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
-                                                Unit Price
-                                            </th>
-                                            <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">
-                                                Total
-                                            </th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-gray-100">
-                                        <tr className="hover:bg-blue-50/30">
-                                            <td className="px-4 py-3 text-sm text-gray-700">
-                                                <div className="flex items-center gap-2">
-                                                    <TestTube className="h-3.5 w-3.5 text-blue-400" />
-                                                    {order.service_name}
-                                                </div>
-                                            </td>
-                                            <td className="px-4 py-3 text-sm text-gray-500">
-                                                {order.service_category ||
-                                                    'Laboratory'}
-                                            </td>
-                                            <td className="px-4 py-3 text-right text-sm text-gray-700">
-                                                {order.quantity}
-                                            </td>
-                                            <td className="px-4 py-3 text-right text-sm text-gray-600">
-                                                {formatCurrency(
-                                                    order.unit_price,
-                                                )}
-                                            </td>
-                                            <td className="px-4 py-3 text-right text-sm font-semibold text-blue-600">
-                                                {formatCurrency(
-                                                    order.total_price,
-                                                )}
-                                            </td>
-                                        </tr>
-                                    </tbody>
-                                    <tfoot className="bg-gray-50">
-                                        <tr>
-                                            <td
-                                                colSpan={4}
-                                                className="px-4 py-2 text-right text-sm font-medium text-gray-700"
-                                            >
-                                                Grand Total
-                                            </td>
-                                            <td className="px-4 py-2 text-right text-sm font-bold text-blue-600">
-                                                {formatCurrency(
-                                                    order.total_price,
-                                                )}
-                                            </td>
-                                        </tr>
-                                    </tfoot>
-                                </table>
-                            </div>
-                        </div>
-
-                        {/* Results (if completed) */}
-                        {order.status === 'completed' && order.result_value && (
-                            <div className="rounded-lg border border-green-200 bg-green-50 p-4">
-                                <h4 className="mb-2 flex items-center gap-2 text-sm font-semibold text-green-800">
-                                    <CheckCircle className="h-4 w-4" />
-                                    Results
-                                </h4>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <p className="text-xs text-gray-500">
-                                            Result Value
-                                        </p>
-                                        <p className="text-sm font-medium text-gray-800">
-                                            {order.result_value}
+                                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md">
+                                    <p className="text-[11px] font-semibold tracking-wider text-slate-400 uppercase">
+                                        Date
+                                    </p>
+                                    <div className="mt-2 flex items-center gap-1.5">
+                                        <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                                        <p className="text-sm font-semibold text-slate-800">
+                                            {formatDate(order.created_at)}
                                         </p>
                                     </div>
-                                    {order.performed_by && (
-                                        <div>
-                                            <p className="text-xs text-gray-500">
-                                                Performed By
-                                            </p>
-                                            <p className="text-sm text-gray-800">
-                                                {order.performed_by}
-                                            </p>
-                                        </div>
-                                    )}
-                                    {order.result_date && (
-                                        <div>
-                                            <p className="text-xs text-gray-500">
-                                                Result Date
-                                            </p>
-                                            <p className="text-sm text-gray-800">
-                                                {formatDate(order.result_date)}
-                                            </p>
-                                        </div>
-                                    )}
+                                </div>
+
+                                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md">
+                                    <p className="text-[11px] font-semibold tracking-wider text-slate-400 uppercase">
+                                        Visit Token
+                                    </p>
+                                    <p className="mt-2 truncate font-mono text-sm font-semibold text-slate-800">
+                                        {order.visit_token || '—'}
+                                    </p>
+                                </div>
+
+                                <div className="rounded-xl border border-blue-200 bg-gradient-to-br from-blue-50 to-white p-4 shadow-sm transition-shadow hover:shadow-md">
+                                    <p className="text-[11px] font-semibold tracking-wider text-blue-500 uppercase">
+                                        Total Tests
+                                    </p>
+                                    <p className="mt-2 text-2xl leading-none font-bold text-blue-600">
+                                        {items.length}
+                                    </p>
                                 </div>
                             </div>
-                        )}
 
-                        {/* Rejection Reason */}
-                        {order.status === 'rejected' &&
-                            order.rejection_reason && (
-                                <div className="rounded-lg border border-red-200 bg-red-50 p-4">
-                                    <h4 className="mb-2 flex items-center gap-2 text-sm font-semibold text-red-800">
-                                        <Ban className="h-4 w-4" />
-                                        Rejection Reason
-                                    </h4>
-                                    <p className="text-sm text-gray-700">
-                                        {order.rejection_reason}
-                                    </p>
+                            {/* Status Breakdown */}
+                            {items.length > 0 && (
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <span className="text-xs font-medium text-slate-500">
+                                        Breakdown:
+                                    </span>
+                                    {completedCount > 0 && (
+                                        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 ring-1 ring-emerald-200">
+                                            <CheckCircle className="h-3 w-3" />
+                                            {completedCount} Completed
+                                        </span>
+                                    )}
+                                    {pendingCount > 0 && (
+                                        <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 ring-1 ring-amber-200">
+                                            <Clock className="h-3 w-3" />
+                                            {pendingCount} Pending
+                                        </span>
+                                    )}
+                                    {rejectedCount > 0 && (
+                                        <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 ring-1 ring-rose-200">
+                                            <Ban className="h-3 w-3" />
+                                            {rejectedCount} Rejected
+                                        </span>
+                                    )}
                                 </div>
                             )}
 
-                        {/* Actions */}
-                        <div className="mt-6 flex justify-end gap-3">
+                            {/* Test Items Table */}
+                            <div>
+                                <div className="mb-3 flex items-center justify-between">
+                                    <h3 className="text-sm font-bold tracking-tight text-slate-800">
+                                        Laboratory Tests
+                                    </h3>
+                                    <span className="text-xs text-slate-400">
+                                        {items.length} item
+                                        {items.length !== 1 ? 's' : ''}
+                                    </span>
+                                </div>
+
+                                <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                                    <table className="w-full">
+                                        <thead className="border-b border-slate-200 bg-slate-50">
+                                            <tr>
+                                                <th className="px-4 py-3 text-left text-[11px] font-semibold tracking-wider text-slate-500 uppercase">
+                                                    Test Order #
+                                                </th>
+                                                <th className="px-4 py-3 text-left text-[11px] font-semibold tracking-wider text-slate-500 uppercase">
+                                                    Test Name
+                                                </th>
+                                                <th className="px-4 py-3 text-left text-[11px] font-semibold tracking-wider text-slate-500 uppercase">
+                                                    Category
+                                                </th>
+                                                <th className="px-4 py-3 text-left text-[11px] font-semibold tracking-wider text-slate-500 uppercase">
+                                                    Priority
+                                                </th>
+                                                <th className="px-4 py-3 text-left text-[11px] font-semibold tracking-wider text-slate-500 uppercase">
+                                                    Status
+                                                </th>
+                                                <th className="px-4 py-3 text-left text-[11px] font-semibold tracking-wider text-slate-500 uppercase">
+                                                    Result
+                                                </th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                            {items.map((item) => (
+                                                <tr
+                                                    key={item.id}
+                                                    className="group transition-colors hover:bg-blue-50/40"
+                                                >
+                                                    <td className="px-4 py-3.5 font-mono text-xs font-medium text-slate-600">
+                                                        {item.order_number}
+                                                    </td>
+                                                    <td className="px-4 py-3.5 text-sm">
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-blue-50 ring-1 ring-blue-100">
+                                                                <TestTube className="h-3.5 w-3.5 text-blue-500" />
+                                                            </div>
+                                                            <span className="font-medium text-slate-800">
+                                                                {item.test_name}
+                                                            </span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-4 py-3.5">
+                                                        <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                                                            {item.test_category ||
+                                                                'Laboratory'}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-4 py-3.5">
+                                                        <span
+                                                            className={`text-xs font-medium capitalize ${
+                                                                item.priority ===
+                                                                'urgent'
+                                                                    ? 'text-rose-600'
+                                                                    : item.priority ===
+                                                                        'stat'
+                                                                      ? 'text-orange-600'
+                                                                      : 'text-slate-600'
+                                                            }`}
+                                                        >
+                                                            {item.priority ||
+                                                                'routine'}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-4 py-3.5">
+                                                        <Badge
+                                                            className={`flex w-fit items-center gap-1.5 px-2.5 py-1 text-xs font-medium capitalize ${getStatusColor(item.status)}`}
+                                                        >
+                                                            {getStatusIcon(
+                                                                item.status,
+                                                            )}
+                                                            <span>
+                                                                {item.status}
+                                                            </span>
+                                                        </Badge>
+                                                    </td>
+                                                    <td className="px-4 py-3.5">
+                                                        {item.result_value ? (
+                                                            <span className="inline-flex items-center gap-1.5 rounded-md bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                                                                {
+                                                                    item.result_value
+                                                                }
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-xs text-slate-400">
+                                                                —
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                            {items.length === 0 && (
+                                                <tr>
+                                                    <td
+                                                        colSpan={6}
+                                                        className="px-4 py-16 text-center"
+                                                    >
+                                                        <div className="flex flex-col items-center gap-2">
+                                                            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100">
+                                                                <FlaskConical className="h-6 w-6 text-slate-400" />
+                                                            </div>
+                                                            <p className="text-sm font-medium text-slate-500">
+                                                                No tests in this
+                                                                order
+                                                            </p>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* ── Footer (fixed, non-scrollable) ──────────────────── */}
+                    <div className="flex shrink-0 items-center justify-between gap-4 border-t border-slate-200 bg-gradient-to-r from-slate-50 via-white to-slate-50 px-6 py-4">
+                        <p className="hidden text-xs text-slate-500 sm:block">
+                            Showing{' '}
+                            <span className="font-semibold text-slate-700">
+                                {items.length}
+                            </span>{' '}
+                            test{items.length !== 1 ? 's' : ''} for this order
+                        </p>
+
+                        <div className="flex w-full items-center justify-end gap-3 sm:w-auto">
                             <Button
                                 variant="outline"
                                 onClick={onClose}
-                                className="border-gray-200 text-gray-600 hover:bg-gray-50"
+                                className="border-slate-200 bg-white text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-800"
                             >
                                 Close
                             </Button>
@@ -363,7 +457,6 @@ const OrderDetailsModal = ({
         </div>
     );
 };
-
 // ─── Previous Results Component ─────────────────────────────────────────────
 interface PreviousResult {
     id: string | number;
@@ -376,18 +469,29 @@ interface PreviousResult {
 }
 
 const PreviousResultsTable = ({ orders }: { orders: LabOrder[] }) => {
+    // Flatten all items across orders for the previous results view
+    const allItems = orders.flatMap((order) =>
+        (order.item || []).map((item) => ({
+            ...item,
+            _parentOrderNumber: order.order_number,
+            _parentCreatedAt: order.created_at,
+        })),
+    );
+
     // Filter completed orders with results
-    const completedOrders = orders.filter(
-        (order) => order.status === 'completed' && order.result_value,
+    const completedOrders = allItems.filter(
+        (item) => item.status === 'completed' && item.result_value,
     );
 
     // Filter rejected orders
-    const rejectedOrders = orders.filter(
-        (order) => order.status === 'rejected',
+    const rejectedOrders = allItems.filter(
+        (item) => item.status === 'rejected',
     );
 
     // Pending orders
-    const pendingOrders = orders.filter((order) => order.status === 'pending');
+    const pendingOrders = allItems.filter(
+        (item) => item.status === 'pending' || item.status === 'ordered',
+    );
 
     return (
         <div className="space-y-4">
@@ -405,35 +509,35 @@ const PreviousResultsTable = ({ orders }: { orders: LabOrder[] }) => {
                 <div className="p-3">
                     {completedOrders.length > 0 ? (
                         <div className="space-y-2">
-                            {completedOrders.slice(0, 5).map((order) => (
+                            {completedOrders.slice(0, 5).map((item) => (
                                 <div
-                                    key={order.id}
+                                    key={item.id}
                                     className="rounded-lg bg-white p-3 shadow-sm transition-colors hover:bg-green-50"
                                 >
                                     <div className="flex items-start justify-between">
                                         <div className="min-w-0 flex-1">
                                             <p className="text-sm font-medium text-gray-800">
-                                                {order.service_name}
+                                                {item.test_name}
                                             </p>
                                             <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-gray-500">
                                                 <span className="flex items-center gap-1">
                                                     <Calendar className="h-3 w-3" />
                                                     {formatDate(
-                                                        order.result_date ||
-                                                            order.created_at,
+                                                        item.performed_date ||
+                                                            item._parentCreatedAt,
                                                     )}
                                                 </span>
-                                                {order.performed_by && (
+                                                {item.performed_by && (
                                                     <span className="flex items-center gap-1">
                                                         <User className="h-3 w-3" />
-                                                        {order.performed_by}
+                                                        {item.performed_by}
                                                     </span>
                                                 )}
                                             </div>
                                         </div>
                                         <div className="ml-2 flex items-center gap-2">
                                             <Badge className="bg-blue-100 text-blue-800">
-                                                {order.result_value}
+                                                {item.result_value}
                                             </Badge>
                                             <Badge className="bg-green-100 text-green-800">
                                                 Completed
@@ -471,27 +575,27 @@ const PreviousResultsTable = ({ orders }: { orders: LabOrder[] }) => {
                     {rejectedOrders.length > 0 || pendingOrders.length > 0 ? (
                         <div className="space-y-2">
                             {/* Rejected Orders */}
-                            {rejectedOrders.slice(0, 3).map((order) => (
+                            {rejectedOrders.slice(0, 3).map((item) => (
                                 <div
-                                    key={order.id}
+                                    key={item.id}
                                     className="rounded-lg bg-white p-3 shadow-sm transition-colors hover:bg-red-50"
                                 >
                                     <div className="flex items-start justify-between">
                                         <div className="min-w-0 flex-1">
                                             <p className="text-sm font-medium text-gray-800">
-                                                {order.service_name}
+                                                {item.test_name}
                                             </p>
                                             <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-gray-500">
                                                 <span className="flex items-center gap-1">
                                                     <Calendar className="h-3 w-3" />
                                                     {formatDate(
-                                                        order.created_at,
+                                                        item._parentCreatedAt,
                                                     )}
                                                 </span>
-                                                {order.rejection_reason && (
+                                                {item.notes && (
                                                     <span className="flex items-center gap-1 text-red-600">
                                                         <Ban className="h-3 w-3" />
-                                                        {order.rejection_reason}
+                                                        {item.notes}
                                                     </span>
                                                 )}
                                             </div>
@@ -504,21 +608,21 @@ const PreviousResultsTable = ({ orders }: { orders: LabOrder[] }) => {
                             ))}
 
                             {/* Pending Orders */}
-                            {pendingOrders.slice(0, 3).map((order) => (
+                            {pendingOrders.slice(0, 3).map((item) => (
                                 <div
-                                    key={order.id}
+                                    key={item.id}
                                     className="rounded-lg bg-white p-3 shadow-sm transition-colors hover:bg-yellow-50"
                                 >
                                     <div className="flex items-start justify-between">
                                         <div className="min-w-0 flex-1">
                                             <p className="text-sm font-medium text-gray-800">
-                                                {order.service_name}
+                                                {item.test_name}
                                             </p>
                                             <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-gray-500">
                                                 <span className="flex items-center gap-1">
                                                     <Calendar className="h-3 w-3" />
                                                     {formatDate(
-                                                        order.created_at,
+                                                        item._parentCreatedAt,
                                                     )}
                                                 </span>
                                                 <span className="flex items-center gap-1 text-yellow-600">
@@ -562,7 +666,7 @@ const PreviousResultsTable = ({ orders }: { orders: LabOrder[] }) => {
 interface LabOrderTableProps {
     orders: LabOrder[];
     isLabTechnician?: boolean;
-    onEnterResults?: (order: LabOrder) => void;
+    onEnterResults?: (order: LabOrderItem) => void;
     onViewDetails?: (order: LabOrder) => void;
     onExport?: () => void;
     itemsPerPage?: number;
@@ -587,14 +691,18 @@ const LabOrderTable = ({
     // Filter orders
     const filteredOrders = useMemo(() => {
         return orders.filter((order) => {
+            const items = order.item || [];
+
             const matchesSearch =
                 searchTerm === '' ||
                 order.order_number
                     ?.toLowerCase()
                     .includes(searchTerm.toLowerCase()) ||
-                order.service_name
-                    ?.toLowerCase()
-                    .includes(searchTerm.toLowerCase());
+                items.some((it) =>
+                    it.test_name
+                        ?.toLowerCase()
+                        .includes(searchTerm.toLowerCase()),
+                );
 
             const matchesStatus =
                 statusFilter === 'all' || order.status === statusFilter;
@@ -668,11 +776,11 @@ const LabOrderTable = ({
         }
     };
 
-    // Define columns for the Table component
+    // Define columns for the Table component — NO pricing, NO standalone test name
     const columns: Column<LabOrder>[] = [
         {
-            key: 'order_number',
-            header: 'Order #',
+            key: 'visit_token',
+            header: 'Token',
             render: (value) => (
                 <span className="font-mono text-sm font-medium text-gray-700">
                     {value}
@@ -682,70 +790,46 @@ const LabOrderTable = ({
             className: 'font-mono',
         },
         {
-            key: 'service_name',
-            header: 'Test Name',
-            render: (value, row) => (
-                <div>
+            key: 'item',
+            header: 'Tests',
+            render: (_value, row) => {
+                const items = row.item || [];
+                const preview = items
+                    .slice(0, 2)
+                    .map((it) => it.test_name)
+                    .join(', ');
+                return (
                     <div className="flex items-center gap-2">
-                        <TestTube className="h-3.5 w-3.5 text-blue-400" />
-                        <span>{value}</span>
-                        {row.priority === 'urgent' && (
-                            <Badge className="bg-red-100 text-xs text-red-800">
-                                Urgent
-                            </Badge>
-                        )}
-                        {row.priority === 'stat' && (
-                            <Badge className="bg-orange-100 text-xs text-orange-800">
-                                STAT
-                            </Badge>
+                        <Microscope className="h-4 w-4 text-blue-400" />
+                        <span className="text-sm text-gray-700">
+                            {items.length} test
+                            {items.length !== 1 ? 's' : ''}
+                        </span>
+                        {preview && (
+                            <span className="hidden truncate text-xs text-gray-400 sm:inline">
+                                • {preview}
+                                {items.length > 2
+                                    ? ` +${items.length - 2}`
+                                    : ''}
+                            </span>
                         )}
                     </div>
-                    {row.result_value && (
-                        <div className="mt-0.5 text-xs text-gray-500">
-                            Result: {row.result_value}
-                        </div>
-                    )}
-                </div>
-            ),
-            sortable: true,
-        },
-        {
-            key: 'quantity',
-            header: 'Qty',
-            render: (value) => <span>{value}</span>,
-            sortable: true,
-        },
-        {
-            key: 'unit_price',
-            header: 'Unit Price',
-            render: (value) => (
-                <span className="text-gray-600">{formatCurrency(value)}</span>
-            ),
-            sortable: true,
-        },
-        {
-            key: 'total_price',
-            header: 'Total',
-            render: (value) => (
-                <span className="font-semibold text-blue-600">
-                    {formatCurrency(value)}
-                </span>
-            ),
-            sortable: true,
+                );
+            },
         },
         {
             key: 'status',
             header: 'Status',
-            render: (value) => {
-                return (
-                    <Badge
-                        className={`flex w-fit items-center gap-1.5 ${getStatusColor(value)}`}
-                    >
-                        {getStatusIcon(value)}
-                        <span className="capitalize">{value}</span>
-                    </Badge>
-                );
-            },
+            render: (value) => (
+                <Badge
+                    className={`flex w-fit items-center gap-1.5 ${getStatusColor(value)}`}
+                >
+                    {getStatusIcon(value)}
+                    <span className="text-2xl text-red-900 capitalize">
+                        {value}
+                    </span>
+                </Badge>
+            ),
             sortable: true,
         },
         {
@@ -764,14 +848,19 @@ const LabOrderTable = ({
     const renderActions = (row: LabOrder) => {
         if (!isLabTechnician) return null;
 
+        const items = row.item || [];
+        const pendingItems = items.filter(
+            (it) => it.status === 'ordered' || it.status === 'pending',
+        );
+
         return (
             <div className="flex items-center justify-end gap-2">
-                {row.status === 'pending' && onEnterResults && (
+                {pendingItems.length > 0 && onEnterResults && (
                     <Button
                         size="sm"
                         onClick={(e) => {
                             e.stopPropagation();
-                            onEnterResults(row);
+                            onEnterResults(pendingItems[0]);
                         }}
                         className="border border-blue-200 bg-blue-50 text-blue-600 hover:bg-blue-100"
                     >
@@ -779,24 +868,13 @@ const LabOrderTable = ({
                         Enter Results
                     </Button>
                 )}
-                {row.status === 'completed' && (
-                    <span className="flex items-center gap-1.5 text-sm font-medium text-green-600">
-                        <CheckCircle className="h-4 w-4" />
-                        Ready
-                    </span>
-                )}
-                {row.status === 'cancelled' && (
-                    <span className="flex items-center gap-1.5 text-sm font-medium text-red-600">
-                        <X className="h-4 w-4" />
-                        Cancelled
-                    </span>
-                )}
-                {row.status === 'rejected' && (
-                    <span className="flex items-center gap-1.5 text-sm font-medium text-red-600">
-                        <Ban className="h-4 w-4" />
-                        Rejected
-                    </span>
-                )}
+                {items.length > 0 &&
+                    items.every((it) => it.status === 'completed') && (
+                        <span className="flex items-center gap-1.5 text-sm font-medium text-green-600">
+                            <CheckCircle className="h-4 w-4" />
+                            Ready
+                        </span>
+                    )}
             </div>
         );
     };
@@ -809,7 +887,7 @@ const LabOrderTable = ({
                     <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-gray-400" />
                     <Input
                         type="text"
-                        placeholder="Search by order #, test name..."
+                        placeholder="Search by order # or test name..."
                         value={searchTerm}
                         onChange={(e) =>
                             handleFilterChange(setSearchTerm, e.target.value)
@@ -839,6 +917,7 @@ const LabOrderTable = ({
                         </SelectTrigger>
                         <SelectContent>
                             <SelectItem value="all">All Status</SelectItem>
+                            <SelectItem value="ordered">Ordered</SelectItem>
                             <SelectItem value="pending">Pending</SelectItem>
                             <SelectItem value="completed">Completed</SelectItem>
                             <SelectItem value="cancelled">Cancelled</SelectItem>
@@ -1077,7 +1156,8 @@ const ResultsEntryDialog = ({
                                     </p>
                                     <p className="flex items-center gap-1 font-medium text-gray-800">
                                         <Microscope className="h-3.5 w-3.5 text-gray-400" />
-                                        {testOrder.service_name}
+                                        {testOrder.test_name ||
+                                            testOrder.service_name}
                                     </p>
                                 </div>
                                 <div>
@@ -1262,6 +1342,9 @@ const OrderModal = ({
                 price: item.price || 0,
                 quantity: item.quantity,
             }));
+
+            console.log(itemsToSubmit);
+
             await onSave(itemsToSubmit, patientId);
             setCart([]);
             onClose();
@@ -1270,6 +1353,16 @@ const OrderModal = ({
         } finally {
             setIsSubmitting(false);
         }
+    };
+
+    // Cancel / reset the modal
+    const handleCancel = () => {
+        if (cart.length > 0 && !confirm('Discard all items and close?')) {
+            return;
+        }
+        setCart([]);
+        setSearchTerm('');
+        onClose();
     };
 
     // Category color mapping
@@ -1300,18 +1393,18 @@ const OrderModal = ({
                     onClick={onClose}
                 />
 
-                <div className="relative w-full max-w-6xl rounded-xl shadow-xl">
+                <div className="relative w-[1000px] max-w-6xl rounded-xl bg-white shadow-xl">
                     {/* Header */}
-                    <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
+                    <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3.5">
                         <div className="flex items-center gap-2.5">
-                            <div className="rounded-lg bg-blue-50 p-2">
-                                <Beaker className="h-4 w-4 text-blue-600" />
+                            <div className="rounded-lg bg-blue-600 p-2">
+                                <Beaker className="h-6 w-6 text-white" />
                             </div>
                             <div>
-                                <h2 className="text-sm font-semibold text-slate-800">
+                                <h2 className="text-base font-semibold text-slate-800">
                                     Order Laboratory Tests
                                 </h2>
-                                <p className="text-xs text-slate-500">
+                                <p className="text-sm text-slate-500">
                                     Select tests and add to cart
                                 </p>
                             </div>
@@ -1320,15 +1413,16 @@ const OrderModal = ({
                             onClick={onClose}
                             className="rounded p-1 hover:bg-slate-100"
                         >
-                            <X className="h-4 w-4 text-slate-400" />
+                            <X className="h-5 w-5 text-slate-400" />
                         </button>
                     </div>
 
-                    <div className="flex min-h-[420px] flex-col md:flex-row">
+                    {/* Body - Two columns */}
+                    <div className="flex min-h-[440px] flex-col md:flex-row">
                         {/* Left - Available Tests */}
                         <div className="w-full border-r border-slate-200 p-4 md:w-1/2">
                             <div className="relative mb-3">
-                                <Search className="absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                                <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400" />
                                 <input
                                     type="text"
                                     placeholder="Search tests..."
@@ -1336,14 +1430,14 @@ const OrderModal = ({
                                     onChange={(e) =>
                                         setSearchTerm(e.target.value)
                                     }
-                                    className="w-full rounded-lg border border-slate-200 py-1.5 pr-3 pl-8 text-sm focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20 focus:outline-none"
+                                    className="w-full rounded-lg border border-slate-200 py-2 pr-3 pl-9 text-sm focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20 focus:outline-none"
                                 />
                                 <span className="absolute top-1/2 right-3 -translate-y-1/2 text-xs text-slate-400">
                                     {filteredServices.length}
                                 </span>
                             </div>
 
-                            <div className="max-h-[340px] space-y-1.5 overflow-y-auto pr-1">
+                            <div className="max-h-[360px] space-y-1.5 overflow-y-auto pr-1">
                                 {filteredServices.map((service, index) => {
                                     const price = getPriceAsNumber(
                                         service.price,
@@ -1357,14 +1451,14 @@ const OrderModal = ({
                                     return (
                                         <div
                                             key={service.id || index}
-                                            className={`flex items-center justify-between rounded-lg border ${colorClass} px-3 py-2 transition-colors hover:opacity-80`}
+                                            className={`flex items-center justify-between rounded-lg border ${colorClass} px-3 py-2.5 transition-colors hover:opacity-80`}
                                         >
                                             <div className="min-w-0 flex-1">
                                                 <div className="truncate text-sm font-medium">
                                                     {service.service_name}
                                                 </div>
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-xs font-medium">
+                                                <div className="mt-0.5 flex items-center gap-2">
+                                                    <span className="text-xs font-semibold">
                                                         {formatCurrency(price)}
                                                     </span>
                                                     <span className="text-xs text-slate-500">
@@ -1378,7 +1472,7 @@ const OrderModal = ({
                                                 }
                                                 className={`ml-2 flex h-7 items-center gap-1 rounded-lg px-2.5 text-xs font-medium transition-colors ${colorClass} hover:bg-opacity-80`}
                                             >
-                                                <Plus className="h-3 w-3" />
+                                                <Plus className="h-3.5 w-3.5" />
                                                 Add
                                             </button>
                                         </div>
@@ -1386,8 +1480,8 @@ const OrderModal = ({
                                 })}
                                 {filteredServices.length === 0 && (
                                     <div className="py-8 text-center">
-                                        <FlaskConical className="mx-auto h-8 w-8 text-slate-300" />
-                                        <p className="mt-1 text-sm text-slate-400">
+                                        <FlaskConical className="mx-auto h-9 w-9 text-slate-300" />
+                                        <p className="mt-2 text-sm text-slate-400">
                                             No tests found
                                         </p>
                                     </div>
@@ -1412,14 +1506,14 @@ const OrderModal = ({
                                                 setCart([]);
                                             }
                                         }}
-                                        className="text-xs text-red-500 hover:text-red-700"
+                                        className="text-xs font-medium text-red-500 hover:text-red-700"
                                     >
                                         Clear
                                     </button>
                                 )}
                             </div>
 
-                            <div className="max-h-[340px] space-y-1.5 overflow-y-auto pr-1">
+                            <div className="max-h-[360px] space-y-1.5 overflow-y-auto pr-1">
                                 {cart.map((item) => {
                                     const itemPrice = item.price || 0;
                                     const total = itemPrice * item.quantity;
@@ -1431,15 +1525,15 @@ const OrderModal = ({
                                     return (
                                         <div
                                             key={item.cart_id}
-                                            className={`rounded-lg border ${colorClass} bg-white px-3 py-2`}
+                                            className={`rounded-lg border ${colorClass} bg-white px-3 py-2.5`}
                                         >
                                             <div className="flex items-start justify-between">
                                                 <div className="min-w-0 flex-1">
                                                     <div className="truncate text-sm font-medium">
                                                         {item.service_name}
                                                     </div>
-                                                    <div className="flex items-center gap-2 text-xs text-slate-500">
-                                                        <span>
+                                                    <div className="mt-0.5 flex items-center gap-2 text-xs text-slate-500">
+                                                        <span className="font-semibold">
                                                             {formatCurrency(
                                                                 itemPrice,
                                                             )}
@@ -1458,10 +1552,10 @@ const OrderModal = ({
                                                     }
                                                     className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-500"
                                                 >
-                                                    <Trash2 className="h-3.5 w-3.5" />
+                                                    <Trash2 className="h-4 w-4" />
                                                 </button>
                                             </div>
-                                            <div className="mt-1.5 flex items-center justify-between">
+                                            <div className="mt-2 flex items-center justify-between">
                                                 <div className="flex items-center gap-1">
                                                     <button
                                                         onClick={() =>
@@ -1471,11 +1565,11 @@ const OrderModal = ({
                                                                     1,
                                                             )
                                                         }
-                                                        className="flex h-6 w-6 items-center justify-center rounded border border-slate-200 bg-white text-xs hover:bg-slate-50"
+                                                        className="flex h-6 w-6 items-center justify-center rounded border border-slate-200 bg-white text-sm hover:bg-slate-50"
                                                     >
                                                         -
                                                     </button>
-                                                    <span className="w-6 text-center text-sm font-medium">
+                                                    <span className="w-7 text-center text-sm font-medium">
                                                         {item.quantity}
                                                     </span>
                                                     <button
@@ -1486,7 +1580,7 @@ const OrderModal = ({
                                                                     1,
                                                             )
                                                         }
-                                                        className="flex h-6 w-6 items-center justify-center rounded border border-slate-200 bg-white text-xs hover:bg-slate-50"
+                                                        className="flex h-6 w-6 items-center justify-center rounded border border-slate-200 bg-white text-sm hover:bg-slate-50"
                                                     >
                                                         +
                                                     </button>
@@ -1500,40 +1594,55 @@ const OrderModal = ({
                                 })}
                                 {cart.length === 0 && (
                                     <div className="py-10 text-center">
-                                        <ShoppingCart className="mx-auto h-8 w-8 text-slate-300" />
-                                        <p className="mt-1 text-sm text-slate-400">
+                                        <ShoppingCart className="mx-auto h-9 w-9 text-slate-300" />
+                                        <p className="mt-2 text-sm text-slate-400">
                                             Cart is empty
                                         </p>
                                     </div>
                                 )}
                             </div>
+                        </div>
+                    </div>
 
-                            {cart.length > 0 && (
-                                <div className="mt-3 border-t border-slate-200 pt-3">
-                                    <div className="mb-2.5 flex items-center justify-between">
-                                        <span className="text-sm font-medium text-slate-600">
-                                            Total
-                                        </span>
-                                        <span className="text-lg font-bold text-blue-600">
-                                            {formatCurrency(totalAmount)}
-                                        </span>
-                                    </div>
-                                    <button
-                                        onClick={handleSubmit}
-                                        disabled={isSubmitting}
-                                        className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-                                    >
-                                        {isSubmitting ? (
-                                            <span className="flex items-center justify-center gap-2">
-                                                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                                                Processing...
-                                            </span>
-                                        ) : (
-                                            `Place Order (${formatCurrency(totalAmount)})`
-                                        )}
-                                    </button>
-                                </div>
-                            )}
+                    {/* Footer - below both columns, spans full width */}
+                    <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50/50 px-5 py-3.5">
+                        <div className="flex items-center gap-2 text-sm">
+                            <span className="font-medium text-slate-600">
+                                Total:
+                            </span>
+                            <span className="text-xl font-bold text-blue-600">
+                                {formatCurrency(totalAmount)}
+                            </span>
+                            <span className="ml-2 rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-700">
+                                {cart.length}{' '}
+                                {cart.length === 1 ? 'item' : 'items'}
+                            </span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={handleCancel}
+                                disabled={isSubmitting}
+                                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleSubmit}
+                                disabled={isSubmitting || cart.length === 0}
+                                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                {isSubmitting ? (
+                                    <span className="flex items-center justify-center gap-2">
+                                        <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                                        Processing...
+                                    </span>
+                                ) : (
+                                    `Place Order (${formatCurrency(totalAmount)})`
+                                )}
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -1548,21 +1657,21 @@ export default function Laboratory() {
     const { patientId, services, previousOrders, error } =
         props as LaboratoryProps;
 
+    console.log(props);
+
     const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
     const [isResultsDialogOpen, setIsResultsDialogOpen] = useState(false);
-    const [selectedTestOrder, setSelectedTestOrder] = useState<LabOrder | null>(
-        null,
-    );
+    const [selectedTestOrder, setSelectedTestOrder] =
+        useState<LabOrderItem | null>(null);
 
     const userRoles = (props as any).auth?.user?.profile?.roles || [];
     const isLabTechnician = userRoles.includes('lab_technician');
 
+    // Normalize incoming orders — keep nested item[] intact
     const enhancedOrders: LabOrder[] = useMemo(() => {
         return (previousOrders || []).map((order) => ({
             ...order,
-            quantity: order.quantity ?? 1,
-            unit_price: getPriceAsNumber(order.unit_price),
-            total_price: getPriceAsNumber(order.total_price),
+            item: order.item || [],
         }));
     }, [previousOrders]);
 
@@ -1570,6 +1679,7 @@ export default function Laboratory() {
         try {
             const response = await Http.post(`${identifier}/lab-orders`, {
                 patient_id: identifier,
+                created_by: props.auth?.user.id,
                 services: items.map((item) => ({
                     id: item.id,
                     service_name: item.service_name,
@@ -1604,7 +1714,7 @@ export default function Laboratory() {
         }
     };
 
-    const handleEnterResults = (order: LabOrder) => {
+    const handleEnterResults = (order: LabOrderItem) => {
         setSelectedTestOrder(order);
         setIsResultsDialogOpen(true);
     };
@@ -1621,27 +1731,35 @@ export default function Laboratory() {
 
         const headers = [
             'Order #',
+            'Test Order #',
             'Test Name',
-            'Quantity',
-            'Unit Price',
-            'Total',
+            'Category',
+            'Priority',
             'Status',
+            'Result',
             'Date',
         ];
-        const rows = enhancedOrders.map((order) => [
-            order.order_number,
-            order.service_name,
-            order.quantity,
-            order.unit_price,
-            order.total_price,
-            order.status,
-            new Date(order.created_at).toLocaleDateString(),
-        ]);
+
+        const rows = enhancedOrders.flatMap((order) =>
+            (order.item || []).map((item) => [
+                order.order_number,
+                item.order_number,
+                item.test_name,
+                item.test_category || 'Laboratory',
+                item.priority || 'routine',
+                item.status,
+                item.result_value || '',
+                new Date(order.created_at).toLocaleDateString(),
+            ]),
+        );
 
         const csv = [
             headers.join(','),
-            ...rows.map((row) => row.join(',')),
+            ...rows.map((row) =>
+                row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','),
+            ),
         ].join('\n');
+
         const blob = new Blob([csv], { type: 'text/csv' });
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -1651,24 +1769,6 @@ export default function Laboratory() {
         window.URL.revokeObjectURL(url);
     };
 
-    if (error) {
-        return (
-            <PatientLayout
-                breadcrumbs={[
-                    { title: 'Patient', href: '/' },
-                    { title: 'Laboratory', href: '/' },
-                ]}
-            >
-                <div className="p-6">
-                    <div className="flex gap-3 rounded-lg border border-red-200 bg-red-50 p-4">
-                        <AlertCircle className="h-5 w-5 text-red-500" />
-                        <p className="text-red-700">{error}</p>
-                    </div>
-                </div>
-            </PatientLayout>
-        );
-    }
-
     return (
         <PatientLayout
             breadcrumbs={[
@@ -1676,35 +1776,24 @@ export default function Laboratory() {
                 { title: 'Laboratory', href: '/' },
             ]}
         >
-            <div className="h-full space-y-6 bg-blue-50">
+            <div className="h-full space-y-6 bg-blue-50 p-4">
                 {/* Header */}
-                <div className="flex flex-col justify-between gap-4 bg-white p-6 sm:flex-row sm:items-center">
-                    <div>
-                        <div className="flex items-center gap-3">
-                            <div className="rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 p-2.5 shadow-lg shadow-blue-200">
-                                <FlaskConical className="h-6 w-6 text-white" />
-                            </div>
-                            <div>
-                                <h1 className="text-2xl font-bold text-gray-900">
-                                    Laboratory Services
-                                </h1>
-                                <p className="text-sm text-gray-500">
-                                    Manage laboratory tests and results
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                    <Button
-                        onClick={() => setIsOrderModalOpen(true)}
-                        className="bg-blue-600 text-white shadow-lg shadow-blue-200 hover:bg-blue-700"
-                    >
-                        <Plus className="mr-2 h-4 w-4" />
-                        Order Tests
-                    </Button>
-                </div>
+                <PageHeader
+                    icon={<Microscope />}
+                    title="Laboratory"
+                    subtitle={'Manage laboratory tests and results'}
+                    actions={[
+                        {
+                            label: 'Order Investigation',
+                            onClick() {
+                                setIsOrderModalOpen(true);
+                            },
+                        },
+                    ]}
+                />
 
                 {/* Two-Column Layout */}
-                <div className="grid grid-cols-1 gap-6 px-4 lg:grid-cols-4">
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">
                     {/* Left Column - 70% (3/4 of 4 columns = 3) */}
                     <div className="lg:col-span-3">
                         {enhancedOrders.length > 0 ? (
@@ -1749,10 +1838,13 @@ export default function Laboratory() {
                                     </h3>
                                     <Badge className="ml-auto bg-blue-100 text-blue-800">
                                         {
-                                            enhancedOrders.filter(
-                                                (o) =>
-                                                    o.status === 'completed' &&
-                                                    o.result_value,
+                                            enhancedOrders.flatMap((o) =>
+                                                (o.item || []).filter(
+                                                    (it) =>
+                                                        it.status ===
+                                                            'completed' &&
+                                                        it.result_value,
+                                                ),
                                             ).length
                                         }
                                     </Badge>

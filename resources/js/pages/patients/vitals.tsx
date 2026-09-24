@@ -1038,7 +1038,7 @@ export default function Vitals() {
                 { title: 'Vital Signs', href: '' },
             ]}
         >
-            <div className="min-h-screen bg-blue-50">
+            <div className="min-h-screen bg-blue-50 p-6">
                 <div className="">
                     {/* ============================================================
                         SECTION HEADER - Using PageHeader from your file
@@ -1049,7 +1049,7 @@ export default function Vitals() {
                         subtitle="Latest recorded observations"
                         actions={[
                             {
-                                label: 'Add Vital',
+                                label: 'Add Vital Signs',
                                 onClick: handleAddVital,
                             },
                         ]}
@@ -1070,10 +1070,10 @@ export default function Vitals() {
 
                     {/* Main Content */}
                     {hasVitals && !loading && (
-                        <div className="p-6">
+                        <div className="">
                             {/* Latest Vitals Display */}
                             <Card>
-                                <CardContent className="p-4 sm:p-5">
+                                <CardContent className="sm:p-5">
                                     {/* Date/Time header */}
                                     <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-600">
                                         {latestVital?.encounter_date && (

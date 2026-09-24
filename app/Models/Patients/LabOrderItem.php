@@ -32,7 +32,8 @@ class LabOrderItem extends Model
         'interpretation',
         'performed_by',
         'performed_date',
-        'result_notes'
+        'result_notes',
+        'order_number',
     ];
 
     protected $casts = [

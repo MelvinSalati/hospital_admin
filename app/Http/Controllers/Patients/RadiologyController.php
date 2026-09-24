@@ -130,165 +130,240 @@ class RadiologyController extends Controller
             ], 400);
         }
 
-        try {
-            DB::beginTransaction();
+        DB::beginTransaction();
 
-            // Get visit token
+        try {
+            // ------------------------------------------------------------------
+            // 1. Resolve visit token
+            // ------------------------------------------------------------------
             $activeToken = VisitTokenHelper::getActiveTokenArray($patientId);
             $visitToken = $activeToken['token'] ?? null;
 
             if (!$visitToken) {
+                DB::rollBack();
                 return response()->json([
                     'success' => false,
                     'message' => 'No active visit token found for this patient'
                 ], 400);
             }
 
-            // Get or create invoice for this visit token
-            $invoice = Invoice::firstOrCreate(
-                ['visit_token' => $visitToken, 'status' => 'pending'],
-                [
-                    'patient_id' => $patientId,
-                    'invoice_number' => $this->generateInvoiceNumber(),
-                    'payment_scheme' => $request->input('scheme', 'cash'),
-                    'currency' => 'ZMW',
-                    'issue_date' => now(),
-                    'due_date' => now()->addDays(30),
-                    'status' => 'draft',
-                    'subtotal' => 0,
-                    'tax' => 0,
-                    'discount' => 0,
-                    'total' => 0,
-                    'due_amount' => 0,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]
-            );
+            // Normalise payment scheme (mirror laboratory behaviour)
+            $paymentMethod = $request->input('scheme', $activeToken['payment_method'] ?? 'cash');
+            if ($paymentMethod === 'mobile_money') {
+                $paymentMethod = 'cash';
+            }
 
-            // Generate a unique order number for the imaging order
+            $patient = Patient::findOrFail($patientId);
+
+            // ------------------------------------------------------------------
+            // 2. Build order number + prepare invoice items
+            // ------------------------------------------------------------------
             $orderNumber = 'IMG-' . date('Ymd') . '-' . str_pad(rand(1, 9999), 4, '0', STR_PAD_LEFT);
-
-            // Calculate total
-            $totalAmount = $request->input('total_amount');
-
-            // Get the first item's details for the main order fields
+            $totalAmount = (float) $request->input('total_amount');
             $firstItem = $items[0];
 
-            // Get admission number if provided
+            $invoiceItems = [];
+            $orderItemPayloads = [];
+            $calculatedTotal = 0;
+
+            foreach ($items as $item) {
+                $quantity = (int) ($item['quantity'] ?? 1);
+                $price    = (float) $item['price'];
+                $lineTotal = $price * $quantity;
+                $calculatedTotal += $lineTotal;
+
+                $invoiceItems[] = [
+                    'service_id'       => $item['id'],
+                    'service_name'     => $item['service_name'],
+                    'service_category' => $item['category'] ?? 'Imaging',
+                    'modality'         => $item['modality'] ?? 'General',
+                    'body_part'        => $item['body_part'] ?? 'General',
+                    'priority'         => $item['priority'] ?? 'routine',
+                    'price'            => $price,
+                    'quantity'         => $quantity,
+                    'total'            => $lineTotal,
+                    'type'             => 'imaging',
+                    'notes'            => $item['notes'] ?? null,
+                    'created_at'       => now()->toDateTimeString(),
+                ];
+
+                $orderItemPayloads[] = [
+                    'service_id'   => $item['id'],
+                    'service_name' => $item['service_name'],
+                    'modality'     => $item['modality'] ?? 'General',
+                    'body_part'    => $item['body_part'] ?? 'General',
+                    'price'        => $price,
+                    'quantity'     => $quantity,
+                    'total'        => $lineTotal,
+                    'priority'     => $item['priority'] ?? 'routine',
+                    'notes'        => $item['notes'] ?? null,
+                ];
+            }
+
+            // Trust the server-side calculation over the client-supplied total
+            $totalAmount = $calculatedTotal;
+
+            // ------------------------------------------------------------------
+            // 3. Resolve admission (optional)
+            // ------------------------------------------------------------------
             $admissionNumber = $request->input('admission_number');
             $admission = null;
             if ($admissionNumber) {
                 $admission = Admission::where('admission_number', $admissionNumber)->first();
             }
 
-            // Create the main imaging order
-            $imagingOrder = ImagingOrder::create([
-                'order_number' => $orderNumber,
-                'visit_token' => $visitToken,
-                'patient_id' => $patientId,
-                'invoice_id' => $invoice->id, // Link to invoice
-                'admission_id' => $admission?->id,
-                'admission_number' => $admissionNumber,
-                'modality' => $firstItem['modality'] ?? 'General',
-                'body_part' => $firstItem['body_part'] ?? 'General',
-                'priority' => $firstItem['priority'] ?? 'routine',
-                'clinical_indication' => $firstItem['notes'] ?? null,
-                'status' => 'pending',
-                'scheme' => $request->input('scheme', 'cash'),
-                'total_amount' => $totalAmount,
-                'ordered_by' => Auth::id(),
-                'ordered_date' => now(),
-                'is_admitted' => $admission ? 1 : 0,
-                'notes' => $request->input('notes'),
-            ]);
+            // ------------------------------------------------------------------
+            // 4. Find existing open invoice OR create a new one
+            //    (mirrors LaboratoryController logic exactly)
+            // ------------------------------------------------------------------
+            $existingInvoice = Invoice::where('visit_token', $visitToken)
+                ->whereIn('status', ['draft', 'unpaid'])
+                ->where('patient_id', $patientId)
+                ->first();
 
-            // Prepare invoice items array
-            $invoiceItems = [];
-            $imagingOrderItems = [];
+            $isAppended = false;
 
-            // Create imaging order items and prepare invoice items
-            foreach ($items as $index => $item) {
-                $quantity = $item['quantity'] ?? 1;
-                $price = $item['price'];
-                $total = $price * $quantity;
+            if ($existingInvoice) {
+                // Parse existing items (could be JSON string OR array)
+                $existingItems = $existingInvoice->items;
+                if (is_string($existingItems)) {
+                    $parsedExisting = json_decode($existingItems, true) ?: [];
+                } elseif (is_array($existingItems)) {
+                    $parsedExisting = $existingItems;
+                } else {
+                    $parsedExisting = [];
+                }
 
-                // Create imaging order item
-                $imagingOrderItem = ImagingOrderItem::create([
-                    'imaging_order_id' => $imagingOrder->id,
-                    'visit_token' => $visitToken,
-                    'service_id' => $item['id'],
-                    'service_name' => $item['service_name'],
-                    'modality' => $item['modality'] ?? 'General',
-                    'body_part' => $item['body_part'] ?? 'General',
-                    'price' => $price,
-                    'quantity' => $quantity,
-                    'total' => $total,
-                    'priority' => $item['priority'] ?? 'routine',
-                    'status' => 'pending',
+                $mergedItems = array_merge($parsedExisting, $invoiceItems);
+                $newTotal = $existingInvoice->total + $totalAmount;
+
+                $existingInvoice->update([
+                    'items'      => $mergedItems,
+                    'subtotal'   => $newTotal,
+                    'total'      => $newTotal,
+                    'due_amount' => $existingInvoice->due_amount + $totalAmount,
                 ]);
 
-                $imagingOrderItems[] = $imagingOrderItem;
+                $invoice = $existingInvoice->fresh();
+                $isAppended = true;
 
-                // Prepare invoice item
-                $invoiceItems[] = [
-                    'service_id' => $item['id'],
-                    'service_name' => $item['service_name'],
-                    'category' => $item['category'] ?? 'Imaging',
-                    'modality' => $item['modality'] ?? 'General',
-                    'body_part' => $item['body_part'] ?? 'General',
-                    'priority' => $item['priority'] ?? 'routine',
-                    'price' => $price,
-                    'quantity' => $quantity,
-                    'total' => $total,
-                    'imaging_order_id' => $imagingOrder->id,
-                    'imaging_order_item_id' => $imagingOrderItem->id,
-                    'notes' => $item['notes'] ?? null,
-                ];
+                Log::info('Radiology: appended to existing invoice', [
+                    'invoice_id'   => $invoice->id,
+                    'visit_token'  => $visitToken,
+                    'items_added'  => count($invoiceItems),
+                    'amount_added' => $totalAmount,
+                ]);
+            } else {
+                $invoice = Invoice::create([
+                    'invoice_number'  => Invoice::generateInvoiceNumber(),
+                    'patient_id'      => $patient->id,
+                    'user_id'         => Auth::id(),
+                    'visit_token'     => $visitToken,
+                    'customer_name'   => $patient->name,
+                    'customer_email'  => $patient->email ?? null,
+                    'customer_phone'  => $patient->phone ?? null,
+                    'customer_address' => $patient->address ?? null,
+                    'subtotal'        => $totalAmount,
+                    'tax'             => 0,
+                    'discount'        => 0,
+                    'total'           => $totalAmount,
+                    'paid_amount'     => 0,
+                    'due_amount'      => $totalAmount,
+                    'currency'        => 'ZMW',
+                    'payment_scheme'  => $paymentMethod,
+                    'items'           => $invoiceItems,
+                    'issue_date'      => now(),
+                    'due_date'        => now()->addDays(30),
+                    'status'          => 'unpaid',
+                    'invoice_type'    => 'imaging',
+                ]);
+
+                Log::info('Radiology: created new invoice', [
+                    'invoice_id'     => $invoice->id,
+                    'invoice_number' => $invoice->invoice_number,
+                    'visit_token'    => $visitToken,
+                    'items_count'    => count($invoiceItems),
+                    'total'          => $totalAmount,
+                ]);
             }
 
-            // Update invoice with items
-            $existingItems = $invoice->items ?? [];
-            $updatedItems = array_merge($existingItems, $invoiceItems);
-
-            // Calculate new totals
-            $subtotal = $invoice->subtotal + $totalAmount;
-            $total = $subtotal + ($invoice->tax ?? 0) - ($invoice->discount ?? 0);
-
-            // Update invoice
-            $invoice->update([
-                'subtotal' => $subtotal,
-                'total' => $total,
-                'due_amount' => $total - ($invoice->paid_amount ?? 0),
-                'items' => $updatedItems,
+            // ------------------------------------------------------------------
+            // 5. Create the ImagingOrder (header) and its items
+            // ------------------------------------------------------------------
+            $imagingOrder = ImagingOrder::create([
+                'order_number'        => $orderNumber,
+                'visit_token'         => $visitToken,
+                'patient_id'          => $patientId,
+                'invoice_id'          => $invoice->id,
+                'admission_id'        => $admission?->id,
+                'admission_number'    => $admissionNumber,
+                'modality'            => $firstItem['modality'] ?? 'General',
+                'body_part'           => $firstItem['body_part'] ?? 'General',
+                'priority'            => $firstItem['priority'] ?? 'routine',
+                'clinical_indication' => $firstItem['notes'] ?? null,
+                'status'              => 'pending',
+                'scheme'              => $paymentMethod,
+                'total_amount'        => $totalAmount,
+                'ordered_by'          => Auth::id(),
+                'ordered_date'        => now(),
+                'is_admitted'         => $admission ? 1 : 0,
+                'notes'               => $request->input('notes'),
             ]);
+
+            $imagingOrderItems = [];
+            foreach ($orderItemPayloads as $payload) {
+                $imagingOrderItems[] = ImagingOrderItem::create([
+                    'imaging_order_id' => $imagingOrder->id,
+                    'visit_token'      => $visitToken,
+                    'service_id'       => $payload['service_id'],
+                    'service_name'     => $payload['service_name'],
+                    'modality'         => $payload['modality'],
+                    'body_part'        => $payload['body_part'],
+                    'price'            => $payload['price'],
+                    'quantity'         => $payload['quantity'],
+                    'total'            => $payload['total'],
+                    'priority'         => $payload['priority'],
+                    'status'           => 'pending',
+                ]);
+            }
 
             DB::commit();
 
-            // Load relationships for response
             $imagingOrder->load('items');
             $invoice->refresh();
 
             return response()->json([
                 'success' => true,
-                'message' => count($items) . ' imaging service(s) ordered successfully.',
+                'message' => $isAppended
+                    ? count($items) . ' imaging service(s) added to existing invoice successfully.'
+                    : count($items) . ' imaging service(s) ordered and new invoice created successfully.',
                 'data' => [
-                    'order' => $imagingOrder,
-                    'order_items' => $imagingOrderItems,
-                    'invoice' => $invoice,
-                    'invoice_id' => $invoice->id,
-                ]
+                    'order'        => $imagingOrder,
+                    'order_items'  => $imagingOrderItems,
+                    'invoice'      => [
+                        'id'             => $invoice->id,
+                        'invoice_number' => $invoice->invoice_number,
+                        'total'          => $invoice->total,
+                        'status'         => $invoice->status,
+                        'payment_scheme' => $invoice->payment_scheme,
+                    ],
+                    'is_appended'  => $isAppended,
+                    'total_amount' => $totalAmount,
+                    'items_count'  => count($items),
+                    'order_number' => $orderNumber,
+                ],
             ], 201);
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Error creating imaging order: ' . $e->getMessage(), [
                 'patient_id' => $patientId,
-                'items' => $items,
-                'trace' => $e->getTraceAsString()
+                'items'      => $items,
+                'trace'      => $e->getTraceAsString(),
             ]);
 
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to create imaging order: ' . $e->getMessage()
+                'message' => 'Failed to create imaging order: ' . $e->getMessage(),
             ], 500);
         }
     }

@@ -1,8 +1,5 @@
-// pages/nurses/index.tsx
-
 import { Link, usePage, router } from '@inertiajs/react';
 import {
-    ArrowLeft,
     Users,
     Eye,
     Clock,
@@ -31,6 +28,9 @@ import {
 import { Label } from '@/components/ui/label';
 import AppLayout from '@/layouts/app-layout';
 import Http from '@/utils/Http';
+import PageHeader from '@/components/PageHeader';
+import ReusableTable from '@/components/ReusableTable';
+import type { Column, Action } from '@/components/ReusableTable';
 
 // ============================================================================
 // Types
@@ -66,77 +66,69 @@ interface Props {
 }
 
 // ============================================================================
-// Ultra Compact Sub-Components
+// Badge Components
 // ============================================================================
 
-// Ultra Compact Status Badge
 const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
-    const config: Record<string, { label: string; color: string; bg: string }> =
-        {
-            pending: { label: 'Pending', color: 'text-amber-600', bg: 'bg-amber-50 dark:bg-amber-950/30' },
-            active: { label: 'Active', color: 'text-blue-600', bg: 'bg-blue-50 dark:bg-blue-950/30' },
-            in_progress: { label: 'In Prog', color: 'text-indigo-600', bg: 'bg-indigo-50 dark:bg-indigo-950/30' },
-            completed: { label: 'Done', color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-950/30' },
-            cancelled: { label: 'Cancelled', color: 'text-red-600', bg: 'bg-red-50 dark:bg-red-950/30' },
-        };
+    const config: Record<string, { label: string; color: string }> = {
+        pending: { label: 'Pending', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
+        active: { label: 'Active', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
+        in_progress: { label: 'In Prog', color: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400' },
+        completed: { label: 'Done', color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
+        cancelled: { label: 'Cancelled', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
+    };
     const cfg = config[status] || config.pending;
 
     return (
-        <span className={`inline-flex items-center gap-0.5 rounded-full px-1 py-0.5 text-[7px] font-medium ${cfg.bg} ${cfg.color}`}>
-            <span className={`h-1 w-1 rounded-full ${cfg.color.replace('text-', 'bg-')}`} />
+        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${cfg.color}`}>
+            <span className={`h-1.5 w-1.5 rounded-full ${cfg.color.split(' ')[0].replace('bg-', 'bg-')}`} />
             {cfg.label}
         </span>
     );
 };
 
-// Ultra Compact Priority Badge
 const PriorityBadge: React.FC<{ priority: string }> = ({ priority }) => {
-    const config: Record<string, { label: string; color: string; bg: string }> =
-        {
-            routine: { label: 'Routine', color: 'text-blue-600', bg: 'bg-blue-50 dark:bg-blue-950/30' },
-            urgent: { label: 'Urgent', color: 'text-orange-600', bg: 'bg-orange-50 dark:bg-orange-950/30' },
-            emergency: { label: 'Emerg', color: 'text-red-600', bg: 'bg-red-50 dark:bg-red-950/30' },
-            stat: { label: 'STAT', color: 'text-purple-600', bg: 'bg-purple-50 dark:bg-purple-950/30' },
-        };
+    const config: Record<string, { label: string; color: string }> = {
+        routine: { label: 'Routine', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
+        urgent: { label: 'Urgent', color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' },
+        emergency: { label: 'Emergency', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
+        stat: { label: 'STAT', color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' },
+    };
     const cfg = config[priority] || config.routine;
 
     return (
-        <span className={`inline-flex items-center rounded px-1 py-0.5 text-[6px] font-medium ${cfg.bg} ${cfg.color}`}>
+        <span className={`inline-flex items-center rounded px-2 py-0.5 text-[10px] font-medium ${cfg.color}`}>
             {cfg.label}
         </span>
     );
 };
 
-// Ultra Compact Payment Badge
 const PaymentBadge: React.FC<{ method: string }> = ({ method }) => {
     if (!method || method === 'Not specified') {
-        return <span className="text-[6px] text-slate-400">—</span>;
+        return <span className="text-xs text-slate-400">—</span>;
     }
 
-    const config: Record<string, { label: string; color: string; bg: string }> =
-        {
-            cash: { label: 'Cash', color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-950/30' },
-            nhima: { label: 'NHIMA', color: 'text-blue-600', bg: 'bg-blue-50 dark:bg-blue-950/30' },
-            insurance: { label: 'Ins', color: 'text-purple-600', bg: 'bg-purple-50 dark:bg-purple-950/30' },
-            charity: { label: 'Charity', color: 'text-rose-600', bg: 'bg-rose-50 dark:bg-rose-950/30' },
-            mobile_money: { label: 'Mobile', color: 'text-orange-600', bg: 'bg-orange-50 dark:bg-orange-950/30' },
-            card: { label: 'Card', color: 'text-cyan-600', bg: 'bg-cyan-50 dark:bg-cyan-950/30' },
-            altaf: { label: 'Altaf', color: 'text-indigo-600', bg: 'bg-indigo-50 dark:bg-indigo-950/30' },
-        };
+    const config: Record<string, { label: string; color: string }> = {
+        cash: { label: 'Cash', color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
+        nhima: { label: 'NHIMA', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
+        insurance: { label: 'Insurance', color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' },
+        charity: { label: 'Charity', color: 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400' },
+        mobile_money: { label: 'Mobile', color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' },
+        card: { label: 'Card', color: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400' },
+        altaf: { label: 'Altaf', color: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400' },
+    };
     const cfg = config[method.toLowerCase()] || {
         label: method,
-        color: 'text-slate-600',
-        bg: 'bg-slate-50 dark:bg-slate-800',
+        color: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400',
     };
 
     return (
-        <span className={`inline-flex items-center rounded px-1 py-0.5 text-[6px] font-medium ${cfg.bg} ${cfg.color}`}>
+        <span className={`inline-flex items-center rounded px-2 py-0.5 text-[10px] font-medium ${cfg.color}`}>
             {cfg.label}
         </span>
     );
 };
 
-// Ultra Compact Patient Avatar
 const PatientAvatar: React.FC<{ name: string }> = ({ name }) => {
     const initials = name
         .split(' ')
@@ -145,13 +137,12 @@ const PatientAvatar: React.FC<{ name: string }> = ({ name }) => {
         .toUpperCase()
         .slice(0, 2);
     return (
-        <div className="flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-[8px] font-medium text-white shadow-sm">
+        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-xs font-medium text-white shadow-sm">
             {initials || '?'}
         </div>
     );
 };
 
-// Ultra Compact Stat Card
 const StatCard: React.FC<{ icon: any; label: string; value: number }> = ({
     icon: Icon,
     label,
@@ -164,15 +155,25 @@ const StatCard: React.FC<{ icon: any; label: string; value: number }> = ({
     };
 
     return (
-        <div className={`rounded px-1.5 py-0.5 text-center ${colors[label as keyof typeof colors] || colors.Queue}`}>
-            <div className="flex items-center justify-center gap-0.5 text-[7px] font-medium uppercase">
-                <Icon className="h-2.5 w-2.5" />
+        <div className={`rounded-lg px-4 py-2 text-center ${colors[label as keyof typeof colors] || colors.Queue}`}>
+            <div className="flex items-center justify-center gap-1 text-xs font-medium uppercase">
+                <Icon className="h-3.5 w-3.5" />
                 {label}
             </div>
-            <p className="text-xs font-bold">{value}</p>
+            <p className="text-xl font-bold">{value}</p>
         </div>
     );
 };
+
+// ============================================================================
+// Stethoscope Icon
+// ============================================================================
+
+const StethoscopeIcon: React.FC<{ className?: string }> = ({ className = 'h-5 w-5' }) => (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+    </svg>
+);
 
 // ============================================================================
 // Main Component
@@ -181,19 +182,11 @@ const StatCard: React.FC<{ icon: any; label: string; value: number }> = ({
 export default function Nurses() {
     const { props } = usePage<{ props: Props }>();
     const queues: QueuePatient[] = props.queue || [];
-    const stats: Stats = props.stats || {
-        total_in_queue: 0,
-        pending_assignment: 0,
-        assigned_today: 0,
-    };
+    console.log(queues)
 
     const [selectedPatient, setSelectedPatient] = useState<QueuePatient | null>(null);
     const [showDetailsModal, setShowDetailsModal] = useState(false);
     const [loading, setLoading] = useState(false);
-    const [searchTerm, setSearchTerm] = useState('');
-    const [statusFilter, setStatusFilter] = useState('all');
-    const [currentPage, setCurrentPage] = useState(1);
-    const itemsPerPage = 10;
 
     // Normalize status
     const normalizeStatus = (status: number | string | undefined): string => {
@@ -223,34 +216,6 @@ export default function Nurses() {
             priority: patient.priority || 'routine',
         }));
     }, [queues]);
-
-    // Filter patients
-    const filteredPatients = useMemo(() => {
-        let filtered = [...processedQueue];
-
-        if (searchTerm) {
-            const term = searchTerm.toLowerCase();
-            filtered = filtered.filter(
-                (p) =>
-                    p.patient_name?.toLowerCase().includes(term) ||
-                    p.token?.toLowerCase().includes(term) ||
-                    p.contact?.includes(term)
-            );
-        }
-
-        if (statusFilter !== 'all') {
-            filtered = filtered.filter((p) => p.visit_status === statusFilter);
-        }
-
-        return filtered;
-    }, [processedQueue, searchTerm, statusFilter]);
-
-    // Pagination
-    const totalPages = Math.ceil(filteredPatients.length / itemsPerPage);
-    const paginatedPatients = filteredPatients.slice(
-        (currentPage - 1) * itemsPerPage,
-        currentPage * itemsPerPage
-    );
 
     const formatTime = (dateString: string) => {
         if (!dateString) return 'N/A';
@@ -288,11 +253,127 @@ export default function Nurses() {
         }
     };
 
-    const goToPage = (page: number) => {
-        if (page >= 1 && page <= totalPages) {
-            setCurrentPage(page);
+    // ============================================
+    // COLUMNS DEFINITION
+    // ============================================
+    
+    const columns: Column<QueuePatient>[] = [
+        {
+            id: 'token',
+            label: 'Token',
+            sortable: true,
+            format: (value) => (
+                <span className="font-mono text-sm font-medium text-blue-600 dark:text-blue-400">
+                    {value || 'N/A'}
+                </span>
+            ),
+        },
+        {
+            id: 'patient_name',
+            label: 'Patient',
+            sortable: true,
+            filterable: true,
+            format: (value, row) => (
+                <Link
+                    href={`/patients/dashboard/${row.patient_id}`}
+                    className="flex items-center gap-2 hover:text-blue-600 dark:hover:text-blue-400"
+                >
+                    <PatientAvatar name={row.patient_name} />
+                    <div>
+                        <span className="font-medium text-slate-800 dark:text-slate-200">
+                            {row.patient_name}
+                        </span>
+                        <div className="flex items-center gap-2 text-xs text-slate-400">
+                            <span>EMR #: {row.patient_number}</span>
+                            {row.contact && row.contact !== 'N/A' && (
+                                <>
+                                    <span>•</span>
+                                    <Phone size={10} />
+                                    <span>{row.contact}</span>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </Link>
+            ),
+        },
+        {
+            id: 'priority',
+            label: 'Priority',
+            sortable: true,
+            format: (value, row) => <PriorityBadge priority={row.priority} />,
+        },
+        {
+            id: 'visit_status',
+            label: 'Status',
+            sortable: true,
+            filterable: true,
+            format: (value, row) => <StatusBadge status={row.visit_status} />,
+        },
+        {
+            id: 'registered_at',
+            label: 'Arrived',
+            sortable: true,
+            format: (value) => (
+                <div className="flex items-center gap-1.5">
+                    <Clock size={14} className="text-slate-400" />
+                    <span className="text-sm text-slate-700 dark:text-slate-300">
+                        {formatTime(value as string)}
+                    </span>
+                </div>
+            ),
+        },
+        {
+            id: 'payment_method',
+            label: 'Payment',
+            sortable: true,
+            format: (value, row) => <PaymentBadge method={row.payment_method} />,
+        },
+    ];
+
+    // ============================================
+    // ACTIONS DEFINITION
+    // ============================================
+
+    const actions: Action<QueuePatient>[] = [
+        {
+            label: 'View Dashboard',
+            icon: <Eye size={16} />,
+            color: 'info',
+            onClick: (row) => {
+                router.visit(`/patients/dashboard/${row.patient_id}`);
+            },
+        },
+        {
+            label: 'Details',
+            icon: <User size={16} />,
+            color: 'info',
+            onClick: (row) => handleViewDetails(row),
+        },
+        {
+            label: 'Mark Active',
+            icon: <Activity size={16} />,
+            color: 'success',
+            show: (row) => row.visit_status === 'pending',
+            onClick: (row) => handleStatusUpdate(row.id, 'active'),
         }
-    };
+    ];
+
+    // ============================================
+    // STATUS OPTIONS FOR FILTER
+    // ============================================
+
+    const statusOptions = [
+        { value: 'pending', label: 'Pending' },
+        { value: 'active', label: 'Active' },
+        { value: 'in_progress', label: 'In Progress' },
+        { value: 'completed', label: 'Completed' },
+        { value: 'cancelled', label: 'Cancelled' },
+    ];
+
+    // ============================================
+    // RENDER
+    // ============================================
 
     return (
         <AppLayout
@@ -301,270 +382,97 @@ export default function Nurses() {
                 { href: '', title: 'Nurses Bay' },
             ]}
         >
-            <div className="flex h-full min-h-screen flex-1 flex-col gap-1.5 bg-slate-50 p-1.5 dark:bg-slate-900">
-                {/* Ultra Compact Header */}
-                <div className="flex flex-wrap items-center justify-between gap-1">
-                    <div className="flex items-center gap-1">
-                        <Link href="/dashboard">
-                            <Button variant="outline" size="icon" className="h-5 w-5">
-                                <ArrowLeft size={10} />
-                            </Button>
-                        </Link>
-                        <div>
-                            <h1 className="text-[10px] font-bold text-slate-800 dark:text-slate-100">
-                                Nurses Bay
-                            </h1>
-                            <p className="text-[6px] text-slate-500 dark:text-slate-400">
-                                Manage patient queue
-                            </p>
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-1 text-[7px] text-slate-500 dark:text-slate-400">
-                        <span className="flex items-center gap-0.5">
-                            <Users className="h-2.5 w-2.5" />
-                            {stats.total_in_queue || 0}
-                        </span>
-                        <span className="h-2.5 w-px bg-slate-300 dark:bg-slate-600" />
-                        <span className="flex items-center gap-0.5">
-                            <Clock className="h-2.5 w-2.5" />
-                            {stats.pending_assignment || 0}
-                        </span>
-                    </div>
-                </div>
+            <div className="flex h-full bg-blue-50  min-h-screen flex-1 flex-col gap-4 p-4 dark:bg-slate-900">
+                {/* Header */}
+                <PageHeader
+                    icon={<StethoscopeIcon />}
+                    title="Patients Queued"
+                    subtitle="View and manage patients currently in the queue"
+                />
 
-                {/* Ultra Compact Stats */}
-                <div className="grid grid-cols-3 gap-1">
-                    <StatCard icon={Users} label="Queue" value={stats.total_in_queue || 0} />
-                    <StatCard icon={Clock} label="Pending" value={stats.pending_assignment || 0} />
-                    <StatCard icon={UserCheck} label="Assigned" value={stats.assigned_today || 0} />
-                </div>
+               
 
-                {/* Ultra Compact Search & Filter */}
-                <div className="flex flex-wrap items-center gap-0.5 rounded border border-slate-200 bg-white p-1 dark:border-slate-700 dark:bg-slate-800/90">
-                    <div className="relative flex-1 min-w-[80px]">
-                        <Search className="absolute left-1.5 top-1/2 h-2.5 w-2.5 -translate-y-1/2 text-slate-400" />
-                        <input
-                            placeholder="Search..."
-                            value={searchTerm}
-                            onChange={(e) => {
-                                setSearchTerm(e.target.value);
-                                setCurrentPage(1);
-                            }}
-                            className="h-5 w-full rounded border border-slate-200 pl-5 pr-1 text-[7px] focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                        />
-                    </div>
-                    <select
-                        value={statusFilter}
-                        onChange={(e) => {
-                            setStatusFilter(e.target.value);
-                            setCurrentPage(1);
-                        }}
-                        className="h-5 rounded border border-slate-200 px-1 text-[6px] focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                    >
-                        <option value="all">All</option>
-                        <option value="active">Active</option>
-                        <option value="pending">Pending</option>
-                        <option value="in_progress">In Prog</option>
-                        <option value="completed">Done</option>
-                    </select>
-                    <button
-                        onClick={() => {
-                            setSearchTerm('');
-                            setStatusFilter('all');
-                            setCurrentPage(1);
-                        }}
-                        className="h-5 rounded border border-slate-200 px-1.5 text-[6px] hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-700"
-                    >
-                        Clear
-                    </button>
-                </div>
+                {/* Reusable Table */}
+                <ReusableTable
+                    title="Queue Patients"
+                    columns={columns}
+                    data={processedQueue}
+                    actions={actions}
+                    loading={loading}
+                    filterPlaceholder="Search by patient name, token, or contact..."
+                    statusFilterKey="visit_status"
+                    statusOptions={statusOptions}
+                    rowsPerPageOptions={[5, 10, 25, 50]}
+                    defaultRowsPerPage={10}
+                    defaultOrderBy="registered_at"
+                    emptyMessage="No patients in the queue"
+                    className="shadow-sm"
+                />
 
-                {/* Ultra Compact Table */}
-                <div className="overflow-hidden rounded border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800/90">
-                    <div className="overflow-x-auto">
-                        <table className="w-full">
-                            <thead className="border-b border-slate-200 bg-slate-50 text-[6px] uppercase text-slate-500 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-400">
-                                <tr>
-                                    <th className="px-1 py-0.5 text-left">Token</th>
-                                    <th className="px-1 py-0.5 text-left">Patient</th>
-                                    <th className="px-1 py-0.5 text-center">Pri</th>
-                                    <th className="px-1 py-0.5 text-center">Status</th>
-                                    <th className="px-1 py-0.5 text-center">Time</th>
-                                    <th className="px-1 py-0.5 text-right">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100 text-[7px] dark:divide-slate-700/50">
-                                {paginatedPatients.length > 0 ? (
-                                    paginatedPatients.map((p) => (
-                                        <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                                            <td className="px-1 py-0.5">
-                                                <span className="font-mono text-[7px] font-bold text-blue-600 dark:text-blue-400">
-                                                    {p.token}
-                                                </span>
-                                            </td>
-                                            <td className="px-1 py-0.5">
-                                                <div className="flex items-center gap-1">
-                                                    <PatientAvatar name={p.patient_name} />
-                                                    <div>
-                                                        <div className="text-[7px] font-medium text-slate-800 dark:text-slate-200">
-                                                            {p.patient_name}
-                                                        </div>
-                                                        <div className="flex flex-wrap items-center gap-0.5 text-[5px] text-slate-500 dark:text-slate-400">
-                                                            <Phone className="h-1.5 w-1.5" />
-                                                            <span className="max-w-[40px] truncate">{p.contact}</span>
-                                                            <span className="text-slate-300 dark:text-slate-600">|</span>
-                                                            <PaymentBadge method={p.payment_method} />
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </td>
-                                            <td className="px-1 py-0.5 text-center">
-                                                <PriorityBadge priority={p.priority} />
-                                            </td>
-                                            <td className="px-1 py-0.5 text-center">
-                                                <StatusBadge status={p.visit_status} />
-                                            </td>
-                                            <td className="px-1 py-0.5 text-center text-[6px] text-slate-500 dark:text-slate-400">
-                                                {formatTime(p.registered_at)}
-                                            </td>
-                                            <td className="px-1 py-0.5 text-right">
-                                                <div className="flex items-center justify-end gap-0.5">
-                                                    <Link
-                                                        href={`/patients/admissions/${p.patient_id}`}
-                                                        className="rounded bg-blue-600 px-1 py-0.5 text-[6px] font-medium text-white transition-colors hover:bg-blue-700"
-                                                    >
-                                                        Admit
-                                                    </Link>
-                                                    <Link
-                                                        href={`/patients/vital-signs/create/${p.patient_id}`}
-                                                        className="rounded bg-slate-700 px-1 py-0.5 text-[6px] font-medium text-white transition-colors hover:bg-slate-600 dark:bg-slate-600 dark:hover:bg-slate-500"
-                                                    >
-                                                        VS
-                                                    </Link>
-                                                    <button
-                                                        onClick={() => handleViewDetails(p)}
-                                                        className="rounded p-0.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-blue-600 dark:hover:bg-slate-700"
-                                                        title="View"
-                                                    >
-                                                        <Eye className="h-2.5 w-2.5" />
-                                                    </button>
-                                                    {p.visit_status === 'in_progress' && (
-                                                        <button
-                                                            onClick={() => handleStatusUpdate(p.id, 'completed')}
-                                                            disabled={loading}
-                                                            className="rounded bg-emerald-600 px-1 py-0.5 text-[6px] font-medium text-white transition-colors hover:bg-emerald-700 disabled:opacity-50"
-                                                        >
-                                                            Done
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    ))
-                                ) : (
-                                    <tr>
-                                        <td colSpan={6} className="px-1 py-4 text-center">
-                                            <div className="flex flex-col items-center gap-0.5">
-                                                <Users className="h-5 w-5 text-slate-300 dark:text-slate-600" />
-                                                <p className="text-[7px] text-slate-500 dark:text-slate-400">
-                                                    No patients
-                                                </p>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    {/* Ultra Compact Pagination */}
-                    {totalPages > 1 && (
-                        <div className="flex items-center justify-between border-t border-slate-200 px-1 py-0.5 dark:border-slate-700">
-                            <p className="text-[6px] text-slate-500 dark:text-slate-400">
-                                {filteredPatients.length > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0}–
-                                {Math.min(currentPage * itemsPerPage, filteredPatients.length)}
-                            </p>
-                            <div className="flex items-center gap-0.5">
-                                <button
-                                    onClick={() => goToPage(currentPage - 1)}
-                                    disabled={currentPage === 1}
-                                    className="rounded border border-slate-200 p-0.5 transition-colors hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-700"
-                                >
-                                    <ChevronLeft className="h-2.5 w-2.5" />
-                                </button>
-                                <span className="text-[6px] text-slate-600 dark:text-slate-400">
-                                    {currentPage}/{totalPages}
-                                </span>
-                                <button
-                                    onClick={() => goToPage(currentPage + 1)}
-                                    disabled={currentPage === totalPages}
-                                    className="rounded border border-slate-200 p-0.5 transition-colors hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-700"
-                                >
-                                    <ChevronRight className="h-2.5 w-2.5" />
-                                </button>
+                {/* Details Modal */}
+                <Dialog open={showDetailsModal} onOpenChange={setShowDetailsModal}>
+                    <DialogContent className="max-w-sm">
+                        <DialogHeader>
+                            <DialogTitle className="text-sm">Patient Details</DialogTitle>
+                        </DialogHeader>
+                        {selectedPatient && (
+                            <div className="space-y-3">
+                                <div className="flex items-center gap-3">
+                                    <PatientAvatar name={selectedPatient.patient_name} />
+                                    <div>
+                                        <p className="text-sm font-medium">{selectedPatient.patient_name}</p>
+                                        <p className="text-xs text-slate-500">Token: {selectedPatient.token}</p>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2 text-sm">
+                                    <div>
+                                        <Label className="text-xs text-slate-500">Contact</Label>
+                                        <p>{selectedPatient.contact}</p>
+                                    </div>
+                                    <div>
+                                        <Label className="text-xs text-slate-500">Gender</Label>
+                                        <p>{selectedPatient.gender}</p>
+                                    </div>
+                                    <div>
+                                        <Label className="text-xs text-slate-500">Priority</Label>
+                                        <p><PriorityBadge priority={selectedPatient.priority} /></p>
+                                    </div>
+                                    <div>
+                                        <Label className="text-xs text-slate-500">Status</Label>
+                                        <p><StatusBadge status={selectedPatient.visit_status} /></p>
+                                    </div>
+                                    <div>
+                                        <Label className="text-xs text-slate-500">Payment</Label>
+                                        <p><PaymentBadge method={selectedPatient.payment_method} /></p>
+                                    </div>
+                                    <div>
+                                        <Label className="text-xs text-slate-500">Registered</Label>
+                                        <p className="text-xs">{formatTime(selectedPatient.registered_at)}</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center justify-between gap-2 pt-2 border-t">
+                                    <Link
+                                        href={`/patients/dashboard/${selectedPatient.patient_id}`}
+                                        className="inline-flex items-center gap-1 rounded bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-600 transition-colors hover:bg-blue-100 dark:bg-blue-950/30 dark:text-blue-400"
+                                    >
+                                        <Eye className="h-3.5 w-3.5" />
+                                        Dashboard
+                                    </Link>
+                                    <Button
+                                        size="sm"
+                                        className="text-xs"
+                                        onClick={() => {
+                                            setShowDetailsModal(false);
+                                        }}
+                                    >
+                                        Close
+                                    </Button>
+                                </div>
                             </div>
-                        </div>
-                    )}
-                </div>
+                        )}
+                    </DialogContent>
+                </Dialog>
             </div>
-
-            {/* Patient Details Modal - Ultra Compact */}
-            <Dialog open={showDetailsModal} onOpenChange={setShowDetailsModal}>
-                <DialogContent className="max-w-md">
-                    <DialogHeader>
-                        <DialogTitle className="text-xs">Patient Details</DialogTitle>
-                    </DialogHeader>
-                    {selectedPatient && (
-                        <div className="space-y-2">
-                            <div className="grid grid-cols-2 gap-2">
-                                <div>
-                                    <Label className="text-[8px] text-slate-500">Patient</Label>
-                                    <p className="text-[9px] font-medium">{selectedPatient.patient_name}</p>
-                                </div>
-                                <div>
-                                    <Label className="text-[8px] text-slate-500">Token</Label>
-                                    <p className="font-mono text-[9px] font-semibold">{selectedPatient.token}</p>
-                                </div>
-                                <div>
-                                    <Label className="text-[8px] text-slate-500">Contact</Label>
-                                    <p className="text-[9px]">{selectedPatient.contact}</p>
-                                </div>
-                                <div>
-                                    <Label className="text-[8px] text-slate-500">Gender</Label>
-                                    <p className="text-[9px] capitalize">{selectedPatient.gender}</p>
-                                </div>
-                                <div>
-                                    <Label className="text-[8px] text-slate-500">Payment</Label>
-                                    <PaymentBadge method={selectedPatient.payment_method} />
-                                </div>
-                                <div>
-                                    <Label className="text-[8px] text-slate-500">Priority</Label>
-                                    <PriorityBadge priority={selectedPatient.priority} />
-                                </div>
-                                <div>
-                                    <Label className="text-[8px] text-slate-500">Status</Label>
-                                    <StatusBadge status={selectedPatient.visit_status} />
-                                </div>
-                                <div>
-                                    <Label className="text-[8px] text-slate-500">Arrived</Label>
-                                    <p className="text-[9px]">{formatTime(selectedPatient.registered_at)}</p>
-                                </div>
-                                <div className="col-span-2">
-                                    <Label className="text-[8px] text-slate-500">Department</Label>
-                                    <p className="text-[9px]">{selectedPatient.assigned_department}</p>
-                                </div>
-                                <div className="col-span-2">
-                                    <Label className="text-[8px] text-slate-500">Staff</Label>
-                                    <p className="text-[9px]">{selectedPatient.assigned_staff}</p>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-                    <DialogFooter>
-                        <Button size="sm" className="h-6 text-[8px]" onClick={() => setShowDetailsModal(false)}>Close</Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
         </AppLayout>
     );
 }

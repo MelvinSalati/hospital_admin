@@ -64,13 +64,20 @@ class PaymentController extends Controller
         // Get insurance providers (if you have this table)
         $insuranceProviders = $this->getInsuranceProviders();
 
-        return Inertia::render('patients/payments', [
-            'patient' => [
-                'id' => $patient->id,
-                'name' => $patient->name,
-                'email' => $patient->email,
-                'phone' => $patient->profile->phone ?? 'N/A',
-            ],
+        // return Inertia::render('patients/payments', [
+        //     'patient' => [
+        //         'id' => $patient->id,
+        //         'name' => $patient->name,
+        //         'email' => $patient->email,
+        //         'phone' => $patient->profile->phone ?? 'N/A',
+        //     ],
+        //     'invoices' => $invoices,
+        //     'payments' => $payments,
+        //     'paymentMethods' => $paymentMethods,
+        //     'insuranceProviders' => $insuranceProviders,
+        // ]);
+        return Inertia::render('patients/Payments', [
+            'patient' => $patient,
             'invoices' => $invoices,
             'payments' => $payments,
             'paymentMethods' => $paymentMethods,

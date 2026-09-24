@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Patients;
 
+use App\Helpers\NumberGenerator;
 use App\Http\Controllers\Controller;
 use App\Models\Patients\LabOrder;
 use App\Models\Patients\LabOrderItem;
@@ -89,6 +90,7 @@ class LabOrderController extends Controller
      */
     public function store(Request $request)
     {
+        Log::info('order details',[$request->all()]);
         $validator = Validator::make($request->all(), [
             'patient_id' => 'required|exists:patients,id',
             'services' => 'required|array|min:1',
@@ -390,21 +392,17 @@ class LabOrderController extends Controller
     private function generateLaboratoryOrderNumber(): string
     {
         $date = now()->format('Ymd');
-        $lastOrder = DB::table('lab_orders')
-            ->where('order_number', 'like', "LAB-{$date}-%")
-            ->orderByDesc('id')
-            ->first();
+        $lastOrder = NumberGenerator::randomCode('ODR');
 
         if (! $lastOrder) {
             return "LAB-{$date}-0001";
         }
 
-        $lastSequence = (int) substr($lastOrder->order_number, -4);
 
         return sprintf(
             'LAB-%s-%04d',
             $date,
-            $lastSequence + 1
+            $lastOrder,
         );
     }
 

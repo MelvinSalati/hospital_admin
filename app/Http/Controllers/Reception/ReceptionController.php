@@ -10,11 +10,11 @@ use Inertia\Inertia;
 
 class ReceptionController extends Controller
 {
-    protected ReceptionService $receptionService; 
+    protected ReceptionService $receptionService;
 
     public function __construct(ReceptionService $service){
         $this->receptionService     = $service;
-    } 
+    }
 
     /**
      *  renders the dashbiard  specifically dashboard page
@@ -22,7 +22,7 @@ class ReceptionController extends Controller
     public function index(){
         return  Inertia::render('receptions/dashboard', $this->receptionService->getDashboard());
     }
- 
+
       public function search(){
         return  Inertia::render('receptions/registry');
     }
@@ -57,10 +57,37 @@ class ReceptionController extends Controller
         ]);
     }
 
-    public function queues(){
+    public function visits()
+    {
+        $active = PatientVisit::with('patient')
+            ->whereDate('created_at', \Carbon\Carbon::today())
+            ->get()
+            ->groupBy('patient_id')
+            ->map(function ($visits) {
+                $first = $visits->first();
+                return [
+                    'patient_id'     => $first->patient_id,
+                    'patient'        => $first->patient,
+                    'visits'         => $visits->values(),
+                    'visit_count'    => $visits->count(),
+                    'latest_visit'   => $visits->sortByDesc('created_at')->first(),
+                    'first_seen_at'  => $visits->min('created_at'),
+                    'last_seen_at'   => $visits->max('created_at'),
+                    'total_billed'   => $visits->sum('amount_billed'),   // adjust to your column
+                    'total_paid'     => $visits->sum('amount_paid'), 
+                    'created_at'    =>  \Carbon\Carbon::today()->format('d-m-Y'),    // adjust to your column
+                ];
+            })
+            ->values(); // reset keys so JSON is an array, not an object
+
+        return Inertia::render('receptions/visits', [
+            'active' => $active,
+        ]);
+    }
+    public function queues()
+    {
         return Inertia::render('receptions/queues', [
-            'active' => PatientVisit::with('patient')->with('invoice')->with('visitToken')->with('assignedDepartment')->Where('status',1)->get(),
-            'completed' => PatientVisit::with('patient')->with('visitToken')->with('assignedDepartment')->where('status',0)->get()
+            'active' => PatientVisit::with('patient')->where('status', 0)->where('department_id', 10)->get(),
         ]);
     }
 

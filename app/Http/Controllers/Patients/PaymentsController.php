@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Patients\Payment;
 use App\Models\Patients\PaymentItem;
 use App\Models\Patients\Invoice;
+use App\Models\Patients\Patient;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -21,7 +22,7 @@ class PaymentsController extends Controller
     public function index($patientId)
     {
         // Get patient information
-        $patient = User::with('profile')->findOrFail($patientId);
+        $patient = Patient::findOrFail($patientId);
 
         // Get invoices for this patient
         $invoices = Invoice::where('patient_id', $patientId)->get();
@@ -65,12 +66,7 @@ class PaymentsController extends Controller
         $insuranceProviders = $this->getInsuranceProviders();
 
         return Inertia::render('patients/payments', [
-            'patient' => [
-                'id' => $patient->id,
-                'name' => $patient->name,
-                'email' => $patient->email,
-                'phone' => $patient->profile->phone ?? 'N/A',
-            ],
+            'patient' => $patient,
             'invoices' => $invoices,
             'payments' => $payments,
             'paymentMethods' => $paymentMethods,

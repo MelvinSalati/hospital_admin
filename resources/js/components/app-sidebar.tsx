@@ -56,6 +56,10 @@ import {
     DownloadIcon,
     ScissorsIcon,
     PlusCircle,
+    SearchIcon,
+    PillBottleIcon,
+    Package2Icon,
+    Search,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import AppLogo from '@/components/app-logo';
@@ -258,14 +262,24 @@ const roleNavItems: Record<string, NavItem[]> = {
             icon: LayoutGrid,
         },
         {
-            title: 'Patients',
+            title: 'Search',
             href: '/nurses/registry',
+            icon: SearchIcon,
+        },
+        {
+            title: 'Add Patient',
+            href: '/reception/create',
             icon: Users,
         },
         {
             title: 'Appointments',
             href: '/nurses/appointments',
             icon: Calendar1Icon,
+        },
+        {
+            title: 'Treatment Room',
+            href: '/nurses/treatment-room',
+            icon: PillBottleIcon,
         },
         {
             title: 'Queue & Check-in',
@@ -275,12 +289,27 @@ const roleNavItems: Record<string, NavItem[]> = {
         {
             title: 'Visits',
             href: '/nurses/visits',
+            icon: Users,
+        },
+        {
+            title: 'In Patient',
+            href: '/nurses/in-patient',
             icon: Stethoscope,
+        },
+        {
+            title: 'Treatment Room',
+            href: '/nurses/treatment-room',
+            icon: PillBottleIcon,
         },
         {
             title: 'Bulk Store',
             icon: Package,
             href: '/nurses/bulk-store',
+        },
+        {
+            title: 'Users',
+            icon: UserPlus2Icon,
+            href: '/nurses/user-department',
         },
         {
             title: 'Reports',
@@ -301,9 +330,9 @@ const roleNavItems: Record<string, NavItem[]> = {
         },
 
         {
-            title: 'Registry',
+            title: 'Search',
             href: '/reception/registry',
-            icon: Users,
+            icon: Search,
         },
 
         {
@@ -445,21 +474,41 @@ const roleNavItems: Record<string, NavItem[]> = {
         },
     ],
     lab_technician: [
-        { title: 'Dashboard', href: '/laboratory/dashboard', icon: LayoutGrid },
-        { title: 'Queues', href: '/laboratory', icon: Users },
+        {
+            title: 'Dashboard',
+            href: '/laboratory/dashboard',
+            icon: LayoutGrid,
+        },
+        {
+            title: 'Queues',
+            href: '/laboratory',
+            icon: Users,
+        },
+        {
+            title: 'Orders',
+            href: '/laboratory/orders',
+            icon: ShoppingBagIcon,
+        },
         {
             title: 'Processed',
             href: '/laboratory/processed',
             icon: ArrowRightCircleIcon,
         },
-        { title: 'Orders', href: '/laboratory/orders', icon: ShoppingBagIcon },
-        { title: 'Logistics', href: '/laboratory/logistics', icon: LayoutGrid },
         {
-            title: 'Configurations',
+            title: 'Logistics',
+            href: '/laboratory/logistics',
+            icon: Package2Icon,
+        },
+        {
+            title: 'Reports',
+            href: '/laboratory/reports',
+            icon: BarChart3,
+        },
+        {
+            title: 'Configuration',
             href: '/laboratory/manage-tests',
             icon: Cog6ToothIcon,
         },
-        { title: 'Reports', href: '/laboratory/reports', icon: BarChart3 },
         {
             title: 'Account',
             href: `../../${routes.web.user.account}`,
@@ -743,7 +792,7 @@ export default function AppSidebar() {
             </SidebarHeader>
 
             <SidebarContent className="px-2 py-3">
-                <div className="space-y-4">
+                <div className="space-y-4 font-semibold">
                     {groupedItems.main.length > 0 && (
                         <div className="space-y-1">
                             {groupedItems.main.map((item) => {
@@ -756,7 +805,7 @@ export default function AppSidebar() {
                                         href={item.href}
                                         className="group flex items-center justify-between rounded-lg px-3 py-2 text-sm font-medium text-gray-700 transition-all hover:bg-blue-50 hover:text-blue-700 dark:text-gray-300 dark:hover:bg-blue-900/30 dark:hover:text-blue-400"
                                     >
-                                        <div className="flex items-center gap-3">
+                                        <div className="flex items-center gap-6">
                                             {item.icon && (
                                                 <item.icon className="h-4 w-4 text-gray-500 group-hover:text-blue-600 dark:text-gray-400 dark:group-hover:text-blue-400" />
                                             )}

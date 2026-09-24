@@ -1,3 +1,4 @@
+// pages/patients/RadiologyOrdersTable.tsx
 import { usePage } from '@inertiajs/react';
 import {
     Plus,
@@ -10,23 +11,28 @@ import {
     ChevronRight,
     Save,
     RadiationIcon,
+    FileText,
+    Calendar,
+    Filter,
+    ClipboardList,
 } from 'lucide-react';
 import Notiflix from 'notiflix';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from '@/components/ui/table';
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import PatientLayout from '@/layouts/patients/PatientLayout';
 import Http from '@/utils/Http';
+import type { Column } from './components/Table';
+import { Table as ReusableTable } from './components/Table';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -139,6 +145,25 @@ const safeToLowerCase = (value: any): string => {
     return String(value).toLowerCase();
 };
 
+const formatDate = (date: string): string => {
+    if (!date) return '—';
+    try {
+        return new Date(date).toLocaleDateString('en-ZM', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+        });
+    } catch {
+        return '—';
+    }
+};
+
+const formatCurrency = (amount: number | string): string => {
+    const num = typeof amount === 'string' ? parseFloat(amount) : amount;
+    if (isNaN(num)) return 'ZMW 0.00';
+    return `ZMW ${num.toFixed(2)}`;
+};
+
 // ─── Custom Hooks ────────────────────────────────────────────────────────────
 
 const usePagination = <T,>(items: T[], itemsPerPage: number) => {
@@ -157,6 +182,7 @@ const usePagination = <T,>(items: T[], itemsPerPage: number) => {
         startIndex,
         paginatedItems,
         goToPage,
+        setCurrentPage,
     };
 };
 
@@ -736,163 +762,188 @@ const RadiologyBundleModal = ({
     const items = order.items || [];
 
     return (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
+        <div className="fixed inset-0 z-50 overflow-hidden">
             <div className="flex min-h-screen items-center justify-center p-4">
-                <div className="fixed inset-0 bg-black/50" onClick={onClose} />
-                <div className="relative w-full max-w-4xl rounded-xl bg-white shadow-2xl">
-                    <div className="flex items-center justify-between border-b px-6 py-4">
-                        <div>
-                            <h2 className="text-xl font-semibold">
-                                Radiology Bundle
-                            </h2>
-                            <p className="text-sm text-gray-500">
-                                #{order.order_number} • {items.length} item
-                                {items.length !== 1 ? 's' : ''}
-                            </p>
+                <div
+                    className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm"
+                    onClick={onClose}
+                />
+                <div className="relative flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-slate-900/5">
+                    {/* Header — non-scrollable */}
+                    <div className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-gradient-to-r from-slate-50 via-white to-slate-50 px-6 py-5">
+                        <div className="flex items-center gap-4">
+                            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/30">
+                                <RadiationIcon className="h-6 w-6 text-white" />
+                            </div>
+                            <div>
+                                <h2 className="text-lg font-bold tracking-tight text-slate-900">
+                                    Radiology Bundle
+                                </h2>
+                                <p className="mt-0.5 font-mono text-xs text-slate-500">
+                                    #{order.order_number} • {items.length} item
+                                    {items.length !== 1 ? 's' : ''}
+                                </p>
+                            </div>
                         </div>
                         <button
                             onClick={onClose}
-                            className="text-gray-400 hover:text-gray-500"
+                            className="flex h-9 w-9 items-center justify-center rounded-full text-slate-400 transition-all hover:bg-slate-100 hover:text-slate-700"
                             aria-label="Close"
                         >
                             <X className="h-5 w-5" />
                         </button>
                     </div>
 
-                    <div className="p-6">
-                        <div className="mb-4">
-                            <Badge
-                                className={
-                                    STATUS_COLORS[order.status] ||
-                                    'bg-gray-100 text-gray-600'
-                                }
-                            >
-                                Status:{' '}
-                                {order.status
-                                    ? order.status.charAt(0).toUpperCase() +
-                                      order.status.slice(1)
-                                    : 'Unknown'}
-                            </Badge>
-                        </div>
+                    {/* Body — scrollable */}
+                    <div className="flex-1 overflow-y-auto bg-slate-50/40">
+                        <div className="space-y-5 px-6 py-6">
+                            <div>
+                                <Badge
+                                    className={
+                                        STATUS_COLORS[order.status] ||
+                                        'bg-gray-100 text-gray-600'
+                                    }
+                                >
+                                    Status:{' '}
+                                    {order.status
+                                        ? order.status.charAt(0).toUpperCase() +
+                                          order.status.slice(1)
+                                        : 'Unknown'}
+                                </Badge>
+                            </div>
 
-                        {items.length > 0 ? (
-                            <div className="overflow-hidden rounded-lg border">
-                                <table className="w-full text-sm">
-                                    <thead className="border-b bg-gray-50">
-                                        <tr>
-                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
-                                                Service
-                                            </th>
-                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
-                                                Details
-                                            </th>
-                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
-                                                Qty
-                                            </th>
-                                            <th className="px-4 py-3"></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y">
-                                        {items.map((item: any, idx: number) => {
-                                            const isExpanded =
-                                                expandedItem ===
-                                                (item.id?.toString() ||
-                                                    String(idx));
-                                            const itemId =
-                                                item.id?.toString() ||
-                                                String(idx);
-                                            return (
-                                                <React.Fragment key={itemId}>
-                                                    <tr className="hover:bg-gray-50">
-                                                        <td className="px-4 py-3 font-medium">
-                                                            {item.service_name ||
-                                                                'Unknown'}
-                                                        </td>
-                                                        <td className="px-4 py-3 text-gray-600">
-                                                            {item.modality && (
-                                                                <div>
-                                                                    {
-                                                                        item.modality
-                                                                    }
-                                                                    {item.body_part &&
-                                                                        ` • ${item.body_part}`}
-                                                                </div>
-                                                            )}
-                                                            {item.priority &&
-                                                                item.priority !==
-                                                                    'routine' && (
-                                                                    <Badge className="bg-yellow-100 text-xs text-yellow-800">
-                                                                        {
-                                                                            item.priority
-                                                                        }
-                                                                    </Badge>
-                                                                )}
-                                                            {!item.modality &&
-                                                                '—'}
-                                                        </td>
-                                                        <td className="px-4 py-3 text-gray-600 tabular-nums">
-                                                            {item.quantity || 1}
-                                                        </td>
-                                                        <td className="px-4 py-3">
-                                                            {item.notes && (
-                                                                <Button
-                                                                    variant="ghost"
-                                                                    size="sm"
-                                                                    className="h-7 text-xs"
-                                                                    onClick={() =>
-                                                                        setExpandedItem(
-                                                                            isExpanded
-                                                                                ? null
-                                                                                : itemId,
-                                                                        )
-                                                                    }
-                                                                >
-                                                                    <ChevronLeft
-                                                                        className={`h-3 w-3 transition-transform ${
-                                                                            isExpanded
-                                                                                ? 'rotate-90'
-                                                                                : ''
-                                                                        }`}
-                                                                    />
-                                                                </Button>
-                                                            )}
-                                                        </td>
-                                                    </tr>
-                                                    {isExpanded &&
-                                                        item.notes && (
-                                                            <tr className="bg-gray-50">
-                                                                <td
-                                                                    colSpan={4}
-                                                                    className="px-4 py-3"
-                                                                >
-                                                                    <div className="text-xs text-gray-600">
-                                                                        <span className="font-medium text-gray-700">
-                                                                            Notes:
-                                                                        </span>
-                                                                        <p className="mt-1 whitespace-pre-wrap">
+                            {items.length > 0 ? (
+                                <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                                    <table className="w-full text-sm">
+                                        <thead className="border-b border-slate-200 bg-slate-50">
+                                            <tr>
+                                                <th className="px-4 py-3 text-left text-[11px] font-semibold tracking-wider text-slate-500 uppercase">
+                                                    Service
+                                                </th>
+                                                <th className="px-4 py-3 text-left text-[11px] font-semibold tracking-wider text-slate-500 uppercase">
+                                                    Details
+                                                </th>
+                                                <th className="px-4 py-3 text-left text-[11px] font-semibold tracking-wider text-slate-500 uppercase">
+                                                    Qty
+                                                </th>
+                                                <th className="px-4 py-3"></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                            {items.map(
+                                                (item: any, idx: number) => {
+                                                    const itemId =
+                                                        item.id?.toString() ||
+                                                        String(idx);
+                                                    const isExpanded =
+                                                        expandedItem === itemId;
+                                                    return (
+                                                        <React.Fragment
+                                                            key={itemId}
+                                                        >
+                                                            <tr className="transition-colors hover:bg-blue-50/40">
+                                                                <td className="px-4 py-3.5 font-medium text-slate-800">
+                                                                    {item.service_name ||
+                                                                        'Unknown'}
+                                                                </td>
+                                                                <td className="px-4 py-3.5 text-slate-600">
+                                                                    {item.modality && (
+                                                                        <div>
                                                                             {
-                                                                                item.notes
+                                                                                item.modality
                                                                             }
-                                                                        </p>
-                                                                    </div>
+                                                                            {item.body_part &&
+                                                                                ` • ${item.body_part}`}
+                                                                        </div>
+                                                                    )}
+                                                                    {item.priority &&
+                                                                        item.priority !==
+                                                                            'routine' && (
+                                                                            <Badge className="bg-yellow-100 text-xs text-yellow-800">
+                                                                                {
+                                                                                    item.priority
+                                                                                }
+                                                                            </Badge>
+                                                                        )}
+                                                                    {!item.modality &&
+                                                                        '—'}
+                                                                </td>
+                                                                <td className="px-4 py-3.5 text-slate-600 tabular-nums">
+                                                                    {item.quantity ||
+                                                                        1}
+                                                                </td>
+                                                                <td className="px-4 py-3.5">
+                                                                    {item.notes && (
+                                                                        <Button
+                                                                            variant="ghost"
+                                                                            size="sm"
+                                                                            className="h-7 text-xs"
+                                                                            onClick={() =>
+                                                                                setExpandedItem(
+                                                                                    isExpanded
+                                                                                        ? null
+                                                                                        : itemId,
+                                                                                )
+                                                                            }
+                                                                        >
+                                                                            <ChevronLeft
+                                                                                className={`h-3 w-3 transition-transform ${
+                                                                                    isExpanded
+                                                                                        ? 'rotate-90'
+                                                                                        : ''
+                                                                                }`}
+                                                                            />
+                                                                        </Button>
+                                                                    )}
                                                                 </td>
                                                             </tr>
-                                                        )}
-                                                </React.Fragment>
-                                            );
-                                        })}
-                                    </tbody>
-                                </table>
-                            </div>
-                        ) : (
-                            <div className="py-12 text-center text-gray-400">
-                                No items found
-                            </div>
-                        )}
+                                                            {isExpanded &&
+                                                                item.notes && (
+                                                                    <tr className="bg-slate-50">
+                                                                        <td
+                                                                            colSpan={
+                                                                                4
+                                                                            }
+                                                                            className="px-4 py-3"
+                                                                        >
+                                                                            <div className="text-xs text-slate-600">
+                                                                                <span className="font-medium text-slate-700">
+                                                                                    Notes:
+                                                                                </span>
+                                                                                <p className="mt-1 whitespace-pre-wrap">
+                                                                                    {
+                                                                                        item.notes
+                                                                                    }
+                                                                                </p>
+                                                                            </div>
+                                                                        </td>
+                                                                    </tr>
+                                                                )}
+                                                        </React.Fragment>
+                                                    );
+                                                },
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            ) : (
+                                <div className="rounded-xl border border-slate-200 bg-white py-16 text-center">
+                                    <ClipboardList className="mx-auto h-12 w-12 text-slate-300" />
+                                    <p className="mt-2 text-sm text-slate-500">
+                                        No items found
+                                    </p>
+                                </div>
+                            )}
+                        </div>
                     </div>
 
-                    <div className="flex justify-end border-t bg-gray-50 px-6 py-4">
-                        <Button onClick={onClose} variant="outline">
+                    {/* Footer — non-scrollable */}
+                    <div className="flex shrink-0 items-center justify-end gap-3 border-t border-slate-200 bg-gradient-to-r from-slate-50 via-white to-slate-50 px-6 py-4">
+                        <Button
+                            onClick={onClose}
+                            variant="outline"
+                            className="border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                        >
                             Close
                         </Button>
                     </div>
@@ -913,10 +964,11 @@ export default function RadiologyOrdersTable({
         null,
     );
     const [isBundleModalOpen, setIsBundleModalOpen] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [statusFilter, setStatusFilter] = useState('all');
     const itemsPerPage = 5;
     const { previousOrders } = usePage().props;
 
-    console.log('orders', previousOrders);
     const safeOrders = useMemo(
         () => (Array.isArray(previousOrders) ? previousOrders : []),
         [previousOrders],
@@ -937,8 +989,32 @@ export default function RadiologyOrdersTable({
         [safeOrders],
     );
 
-    const { currentPage, totalPages, startIndex, paginatedItems, goToPage } =
-        usePagination(enhancedOrders, itemsPerPage);
+    // Client-side filtering
+    const filteredOrders = useMemo(() => {
+        return enhancedOrders.filter((order) => {
+            const matchesSearch =
+                searchTerm === '' ||
+                safeToLowerCase(order.order_number).includes(
+                    safeToLowerCase(searchTerm),
+                ) ||
+                safeToLowerCase(order.service_name).includes(
+                    safeToLowerCase(searchTerm),
+                );
+
+            const matchesStatus =
+                statusFilter === 'all' || order.status === statusFilter;
+
+            return matchesSearch && matchesStatus;
+        });
+    }, [enhancedOrders, searchTerm, statusFilter]);
+
+    const { currentPage, totalPages, paginatedItems, setCurrentPage } =
+        usePagination(filteredOrders, itemsPerPage);
+
+    // Reset page when filters change
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchTerm, statusFilter, setCurrentPage]);
 
     const handleViewBundle = useCallback((order: RadiologyOrder) => {
         setSelectedOrder(order);
@@ -948,7 +1024,8 @@ export default function RadiologyOrdersTable({
     const handleNewOrder = useCallback(() => {
         setIsOrderModalOpen(true);
     }, []);
-    // ─── Save Order Handler ──────────────────────────────────────────────────
+
+    // ─── Save Order Handler (business logic unchanged) ──────────────────────
     const handleSaveOrder = useCallback(
         async (items: RadiologyCartItem[], patientId: string) => {
             try {
@@ -995,7 +1072,6 @@ export default function RadiologyOrdersTable({
             } catch (error: any) {
                 console.error('❌ Error saving radiology order:', error);
 
-                // Check if it's a validation error (422)
                 if (error?.response?.status === 422) {
                     const errors = error.response.data.errors;
 
@@ -1004,16 +1080,12 @@ export default function RadiologyOrdersTable({
                         JSON.stringify(errors, null, 2),
                     );
 
-                    // Show each error individually as separate toast notifications
                     if (typeof errors === 'object') {
                         Object.entries(errors).forEach(([field, messages]) => {
-                            // Clean up the field name for display
                             let fieldName = field;
 
-                            // Handle nested fields like "items.0.id"
                             if (field.includes('.')) {
                                 const parts = field.split('.');
-                                // Check if it's an array item
                                 if (!isNaN(Number(parts[1]))) {
                                     fieldName = `Item #${parseInt(parts[1]) + 1} → ${parts[2] || parts[0]}`;
                                 } else {
@@ -1021,7 +1093,6 @@ export default function RadiologyOrdersTable({
                                 }
                             }
 
-                            // Show each validation error as a separate notification
                             if (Array.isArray(messages)) {
                                 messages.forEach((message) => {
                                     Notiflix.Notify.failure(
@@ -1045,14 +1116,12 @@ export default function RadiologyOrdersTable({
                             }
                         });
 
-                        // Also show a summary in console
                         console.error('📋 Validation errors summary:');
                         Object.entries(errors).forEach(([field, messages]) => {
                             console.error(`  • ${field}:`, messages);
                         });
                     }
                 } else {
-                    // Handle other errors
                     const errorMessage =
                         error?.response?.data?.message ||
                         error?.message ||
@@ -1066,6 +1135,99 @@ export default function RadiologyOrdersTable({
         },
         [],
     );
+
+    // ─── Table Columns ─────────────────────────────────────────────────────
+    const columns: Column<any>[] = [
+        {
+            key: 'order_number',
+            header: 'Order #',
+            render: (value) => (
+                <span className="font-mono text-sm font-medium text-slate-700">
+                    {value}
+                </span>
+            ),
+            sortable: true,
+        },
+        {
+            key: 'service_name',
+            header: 'Service',
+            render: (value, row) => (
+                <div>
+                    <div className="font-medium text-slate-800">{value}</div>
+                    {row.items && row.items.length > 1 && (
+                        <div className="text-xs text-slate-400">
+                            +{row.items.length - 1} more
+                        </div>
+                    )}
+                </div>
+            ),
+            sortable: true,
+        },
+        {
+            key: 'quantity',
+            header: 'Qty',
+            render: (value) => <span className="text-slate-600">{value}</span>,
+        },
+        {
+            key: 'unit_price',
+            header: 'Unit Price',
+            render: (value) => (
+                <span className="text-slate-600">{formatCurrency(value)}</span>
+            ),
+        },
+        {
+            key: 'total_price',
+            header: 'Total',
+            render: (value) => (
+                <span className="font-semibold text-blue-600">
+                    {formatCurrency(value)}
+                </span>
+            ),
+        },
+        {
+            key: 'status',
+            header: 'Status',
+            render: (value) => (
+                <Badge className={`capitalize ${getStatusColor(value)}`}>
+                    {value}
+                </Badge>
+            ),
+            sortable: true,
+        },
+        {
+            key: 'created_at',
+            header: 'Date',
+            render: (value) => (
+                <span className="text-sm text-slate-500">
+                    {formatDate(value)}
+                </span>
+            ),
+            sortable: true,
+        },
+    ];
+
+    const renderActions = (order: RadiologyOrder) => (
+        <Button
+            size="sm"
+            onClick={(e) => {
+                e.stopPropagation();
+                handleViewBundle(order);
+            }}
+            variant="outline"
+            className="border-slate-200 text-slate-600 hover:bg-slate-50"
+        >
+            <Eye className="mr-1 h-3 w-3" />
+            View
+        </Button>
+    );
+
+    const hasActiveFilters = searchTerm !== '' || statusFilter !== 'all';
+
+    const clearFilters = () => {
+        setSearchTerm('');
+        setStatusFilter('all');
+    };
+
     return (
         <PatientLayout
             breadcrumbs={[
@@ -1073,168 +1235,164 @@ export default function RadiologyOrdersTable({
                 { title: 'Radiology', href: '/' },
             ]}
         >
-            <PageHeader
-                icon={<RadiationIcon />}
-                title="Imaging / Radiology"
-                subtitle="Manage radiology orders"
-                actions={[
-                    {
-                        label: 'Order Imaging',
-                        onClick: handleNewOrder,
-                    },
-                ]}
-            />
-            <div className="h-full space-y-4 bg-blue-50 p-2">
+            <div className="h-full space-y-4 bg-blue-50 p-4">
+                <PageHeader
+                    icon={<RadiationIcon />}
+                    title="Imaging / Radiology"
+                    subtitle="Manage radiology orders"
+                    actions={[
+                        {
+                            label: 'Order Imaging',
+                            onClick: handleNewOrder,
+                        },
+                    ]}
+                />
                 {enhancedOrders.length > 0 ? (
-                    <div className="overflow-hidden rounded-lg border">
-                        <div className="overflow-x-auto bg-white">
-                            <Table>
-                                <TableHeader className="bg-gray-50">
-                                    <TableRow>
-                                        <TableHead>Order #</TableHead>
-                                        <TableHead>Service</TableHead>
-                                        <TableHead>Qty</TableHead>
-                                        <TableHead>Unit Price</TableHead>
-                                        <TableHead>Total</TableHead>
-                                        <TableHead>Status</TableHead>
-                                        <TableHead>Date</TableHead>
-                                        <TableHead>Action</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {paginatedItems.map((order) => (
-                                        <TableRow key={order.id}>
-                                            <TableCell className="font-mono text-sm">
-                                                {order.order_number}
-                                            </TableCell>
-                                            <TableCell>
-                                                {order.service_name}
-                                            </TableCell>
-                                            <TableCell>
-                                                {order.quantity}
-                                            </TableCell>
-                                            <TableCell>
-                                                ZMW{' '}
-                                                {order.unit_price.toFixed(2)}
-                                            </TableCell>
-                                            <TableCell className="font-medium">
-                                                ZMW {order.total_price ?? 0}
-                                            </TableCell>
-                                            <TableCell>
-                                                <Badge
-                                                    className={getStatusColor(
-                                                        order.status,
-                                                    )}
-                                                >
-                                                    {order.status}
-                                                </Badge>
-                                            </TableCell>
-                                            <TableCell>
-                                                {new Date(
-                                                    order.created_at,
-                                                ).toLocaleDateString()}
-                                            </TableCell>
-                                            <TableCell>
-                                                <Button
-                                                    size="sm"
-                                                    onClick={() =>
-                                                        handleViewBundle(order)
-                                                    }
-                                                    variant="outline"
-                                                >
-                                                    <Eye className="mr-1 h-3 w-3" />{' '}
-                                                    View
-                                                </Button>
-                                            </TableCell>
-                                        </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
+                    <div className="rounded-sm bg-white p-4">
+                        {/* Filter Toolbar */}
+                        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="relative max-w-md flex-1">
+                                <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                                <Input
+                                    type="text"
+                                    placeholder="Search by order # or service..."
+                                    value={searchTerm}
+                                    onChange={(e) =>
+                                        setSearchTerm(e.target.value)
+                                    }
+                                    className="h-10 pr-4 pl-9 text-sm focus:border-blue-400 focus:ring-blue-400"
+                                />
+                                {searchTerm && (
+                                    <button
+                                        onClick={() => setSearchTerm('')}
+                                        className="absolute top-1/2 right-3 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                    >
+                                        <X className="h-4 w-4" />
+                                    </button>
+                                )}
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2">
+                                <Select
+                                    value={statusFilter}
+                                    onValueChange={setStatusFilter}
+                                >
+                                    <SelectTrigger className="h-10 w-[150px] border-slate-200 text-sm">
+                                        <Filter className="mr-2 h-3.5 w-3.5 text-slate-400" />
+                                        <SelectValue placeholder="All Status" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">
+                                            All Status
+                                        </SelectItem>
+                                        <SelectItem value="pending">
+                                            Pending
+                                        </SelectItem>
+                                        <SelectItem value="scheduled">
+                                            Scheduled
+                                        </SelectItem>
+                                        <SelectItem value="in_progress">
+                                            In Progress
+                                        </SelectItem>
+                                        <SelectItem value="completed">
+                                            Completed
+                                        </SelectItem>
+                                        <SelectItem value="cancelled">
+                                            Cancelled
+                                        </SelectItem>
+                                    </SelectContent>
+                                </Select>
+
+                                {hasActiveFilters && (
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={clearFilters}
+                                        className="h-10 text-sm text-slate-500 hover:text-slate-700"
+                                    >
+                                        <X className="mr-1 h-3.5 w-3.5" />
+                                        Clear
+                                    </Button>
+                                )}
+                            </div>
                         </div>
 
-                        {totalPages > 1 && (
-                            <div className="flex flex-col items-center justify-between gap-3 border-t px-4 py-3 sm:flex-row">
-                                <span className="text-sm text-gray-500">
-                                    Showing {startIndex + 1} to{' '}
-                                    {Math.min(
-                                        startIndex + itemsPerPage,
-                                        enhancedOrders.length,
-                                    )}{' '}
-                                    of {enhancedOrders.length}
+                        {/* Filter Chips */}
+                        {hasActiveFilters && (
+                            <div className="mb-3 flex flex-wrap items-center gap-2">
+                                <span className="text-xs font-medium text-slate-500">
+                                    Active filters:
                                 </span>
-                                <div className="flex gap-1">
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() =>
-                                            goToPage(currentPage - 1)
-                                        }
-                                        disabled={currentPage === 1}
-                                        className="h-8 w-8 p-0"
-                                        aria-label="Previous page"
+                                {searchTerm && (
+                                    <Badge
+                                        variant="secondary"
+                                        className="gap-1 text-xs"
                                     >
-                                        <ChevronLeft className="h-4 w-4" />
-                                    </Button>
-                                    {Array.from(
-                                        { length: Math.min(5, totalPages) },
-                                        (_, i) => {
-                                            let pageNum = i + 1;
-                                            if (
-                                                totalPages > 5 &&
-                                                currentPage > 3
-                                            ) {
-                                                pageNum = currentPage - 3 + i;
-                                                if (pageNum > totalPages)
-                                                    return null;
+                                        Search: {searchTerm}
+                                        <button
+                                            onClick={() => setSearchTerm('')}
+                                            className="ml-1 text-slate-400 hover:text-slate-600"
+                                        >
+                                            <X className="h-3 w-3" />
+                                        </button>
+                                    </Badge>
+                                )}
+                                {statusFilter !== 'all' && (
+                                    <Badge
+                                        variant="secondary"
+                                        className="gap-1 text-xs"
+                                    >
+                                        Status: {statusFilter}
+                                        <button
+                                            onClick={() =>
+                                                setStatusFilter('all')
                                             }
-                                            return (
-                                                <Button
-                                                    key={pageNum}
-                                                    variant={
-                                                        currentPage === pageNum
-                                                            ? 'default'
-                                                            : 'outline'
-                                                    }
-                                                    size="sm"
-                                                    onClick={() =>
-                                                        goToPage(pageNum)
-                                                    }
-                                                    className={`h-8 w-8 p-0 ${
-                                                        currentPage === pageNum
-                                                            ? 'bg-blue-600'
-                                                            : ''
-                                                    }`}
-                                                >
-                                                    {pageNum}
-                                                </Button>
-                                            );
-                                        },
-                                    ).filter(Boolean)}
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() =>
-                                            goToPage(currentPage + 1)
-                                        }
-                                        disabled={currentPage === totalPages}
-                                        className="h-8 w-8 p-0"
-                                        aria-label="Next page"
-                                    >
-                                        <ChevronRight className="h-4 w-4" />
-                                    </Button>
-                                </div>
+                                            className="ml-1 text-slate-400 hover:text-slate-600"
+                                        >
+                                            <X className="h-3 w-3" />
+                                        </button>
+                                    </Badge>
+                                )}
                             </div>
                         )}
+
+                        {/* Reusable Table */}
+                        <ReusableTable
+                            data={paginatedItems}
+                            columns={columns}
+                            subtitle={`${filteredOrders.length} order${filteredOrders.length !== 1 ? 's' : ''} found`}
+                            emptyMessage={
+                                hasActiveFilters
+                                    ? 'No orders match your filters'
+                                    : 'No radiology orders available'
+                            }
+                            onRowClick={handleViewBundle}
+                            actions={renderActions}
+                            searchable={false}
+                            pagination={{
+                                currentPage,
+                                totalPages,
+                                onPageChange: setCurrentPage,
+                                totalItems: filteredOrders.length,
+                                itemsPerPage,
+                            }}
+                            className="border-0 shadow-none"
+                        />
                     </div>
                 ) : (
-                    <div className="rounded-lg border bg-gray-50 py-12 text-center">
-                        <p className="text-gray-500">
+                    <div className="rounded-xl border border-slate-200 bg-white py-16 text-center shadow-sm">
+                        <RadiationIcon className="mx-auto h-16 w-16 text-slate-300" />
+                        <h3 className="mt-4 text-lg font-medium text-slate-700">
                             No radiology orders found
+                        </h3>
+                        <p className="mt-1 text-sm text-slate-400">
+                            Create your first radiology order to get started
                         </p>
                         <Button
                             onClick={handleNewOrder}
-                            className="bg-blue-600 hover:bg-blue-700"
+                            className="mt-4 bg-blue-600 text-white hover:bg-blue-700"
                         >
+                            <Plus className="mr-2 h-4 w-4" />
                             Create your first radiology order
                         </Button>
                     </div>

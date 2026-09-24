@@ -15,6 +15,7 @@ use App\Models\Payments\Invoice;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
 use App\Models\Patients\MCHOrderItem;
+use App\Models\Patients\PatientVisitScheme;
 
 class MartenalChildHealthController extends Controller
 {
@@ -28,23 +29,35 @@ class MartenalChildHealthController extends Controller
             $activeToken   = VisitTokenHelper::getActiveTokenArray($patientId);
             $paymentMethod = $activeToken['payment_method'] ?? 'cash';
 
+            // ── Resolve scheme_id from the active visit token (same as LaboratoryController) ──
+            $schemeSelected = PatientVisitScheme::where('token', $activeToken['token'])
+                ->value('scheme_id');
+
+            // ── Load MCH services filtered by scheme_type, exactly like laboratory ──
+            $mchServices = Service::where('scheme_type', $schemeSelected)
+                ->whereIn('service_category', ['Others', 'MCH', 'Antenatal', 'Postnatal', 'Child Health'])
+                ->get();
+
+            // Optional: keep pricing helper available for any downstream formatting
             $pricingHelper = new ServicePricingHelper($paymentMethod);
-            $mchServices   = $pricingHelper->getMCH($patientId);
 
             return Inertia::render('patients/mch', [
                 'patientId'          => $patientId,
                 'services'           => $mchServices,
-                'previousOrders'          => $this->getAntenatalVisits($patientId),
+                'previousOrders'     => $this->getAntenatalVisits($patientId),
                 'postnatal'          => $this->getPostnatalVisits($patientId),
                 'childHealthRecords' => $this->getChildHealthRecords($patientId),
             ]);
         } catch (\Exception $e) {
-            Log::error('MCH Index Error: ' . $e->getMessage());
+            Log::error('MCH Index Error: ' . $e->getMessage(), [
+                'trace'      => $e->getTraceAsString(),
+                'patient_id' => $patientId,
+            ]);
 
             return Inertia::render('patients/mch', [
                 'patientId'          => $patientId,
-                'services'           => [],
-                'antenatal'          => [],
+                'services'           => collect(),
+                'previousOrders'     => collect(),
                 'postnatal'          => [],
                 'childHealthRecords' => [],
                 'error'              => 'Unable to load MCH data. Please try again.',
@@ -73,22 +86,21 @@ class MartenalChildHealthController extends Controller
         ]);
 
         /**
-         * Check if initial vist has been started
-         * 
+         * Check if initial visit has been started
          */
-
         Log::info($request);
-        
-        $service  = $request->input('services'); 
+
+        $service   = $request->input('services');
         $patientId = $request->input('patient_id');
-        if($service[0]['service_name']=='Initial Visit'){
-            if($this->initialVisitStarted($patientId)){
+
+        if ($service[0]['service_name'] == 'Initial Visit') {
+            if ($this->initialVisitStarted($patientId)) {
                 return response()->json([
-                    "message"  => "Service already initalised!!",
-                    "status"   => 400
-                ],400);
+                    "message" => "Service already initalised!!",
+                    "status"  => 400,
+                ], 400);
             }
-        };
+        }
 
         if ($validator->fails()) {
             return response()->json([
@@ -190,10 +202,8 @@ class MartenalChildHealthController extends Controller
             Log::info('existing--', [$existingInvoice]);
 
             if ($existingInvoice) {
-                // FIXED: Handle items properly - could be string or array depending on model cast
                 $existingItems = $existingInvoice->items;
 
-                // Parse existing items if they're a string, otherwise use as array
                 if (is_string($existingItems)) {
                     $parsedExisting = json_decode($existingItems, true) ?: [];
                 } elseif (is_array($existingItems)) {
@@ -202,30 +212,27 @@ class MartenalChildHealthController extends Controller
                     $parsedExisting = [];
                 }
 
-                // Merge new items with existing
                 $mergedItems = array_merge($parsedExisting, $invoiceItems);
-                $newTotal = $existingInvoice->total + $totalAmount;
+                $newTotal    = $existingInvoice->total + $totalAmount;
 
-                // FIXED: Pass array directly - let model cast handle JSON encoding
                 $existingInvoice->update([
-                    'items'      => $mergedItems,  // No manual json_encode() needed
+                    'items'      => $mergedItems,
                     'subtotal'   => $newTotal,
                     'total'      => $newTotal,
                     'due_amount' => $existingInvoice->due_amount + $totalAmount,
                 ]);
 
-                $invoice = $existingInvoice->fresh();
-                $isAppended = true;  // FIXED: Set flag to true when appending
+                $invoice    = $existingInvoice->fresh();
+                $isAppended = true;
 
                 Log::info('MCH: appended to existing invoice', [
-                    'invoice_id'    => $invoice->id,
-                    'visit_token'   => $token,
-                    'service_type'  => $serviceType,
-                    'items_added'   => count($invoiceItems),
-                    'amount_added'  => $totalAmount,
+                    'invoice_id'   => $invoice->id,
+                    'visit_token'  => $token,
+                    'service_type' => $serviceType,
+                    'items_added'  => count($invoiceItems),
+                    'amount_added' => $totalAmount,
                 ]);
             } else {
-                // FIXED: Create new invoice without manual JSON encoding
                 $invoice = Invoice::create([
                     'invoice_number'   => Invoice::generateInvoiceNumber(),
                     'patient_id'       => $patient->id,
@@ -243,7 +250,7 @@ class MartenalChildHealthController extends Controller
                     'due_amount'       => $totalAmount,
                     'currency'         => 'ZMW',
                     'payment_scheme'   => $paymentMethod,
-                    'items'            => $invoiceItems,  // Pass array directly
+                    'items'            => $invoiceItems,
                     'issue_date'       => now(),
                     'due_date'         => now()->addDays(30),
                     'status'           => 'unpaid',
@@ -265,7 +272,7 @@ class MartenalChildHealthController extends Controller
                 DB::table('mch_order_items')->insert([
                     'invoice_id'   => $invoice->id,
                     'patient_id'   => $patientId,
-                    'ordered_by'   => 0,          // was hardcoded 0
+                    'ordered_by'   => Auth::id(),
                     'order_number' => $this->generateMCHOrderNumber(),
                     'status'       => 'pending',
                     'created_at'   => now(),
@@ -367,7 +374,6 @@ class MartenalChildHealthController extends Controller
                 'total_postnatal_visits' => DB::table('postnatal_screenings')
                     ->where('patient_id', $patientId)->count(),
 
-                // risk_level lives in antenatal_follow_up, not antenatal_screenings
                 'current_pregnancy' => DB::table('antenatal_screenings as a')
                     ->leftJoin('antenatal_follow_up as fu', 'a.id', '=', 'fu.antenatal_id')
                     ->where('a.patient_id', $patientId)
@@ -407,11 +413,9 @@ class MartenalChildHealthController extends Controller
 
     /**
      * Format invoice items for display (used externally if needed).
-     * Keys match the structure written in orderMCHService().
      */
     public function getFormattedInvoiceItems(Invoice $invoice): array
     {
-        // FIXED: Handle items properly - could be string or array
         $items = $invoice->items;
 
         if (is_string($items)) {
@@ -511,7 +515,7 @@ class MartenalChildHealthController extends Controller
                     'created_at'
                 )
                 ->get()
-                ->map(fn($r) => (array) $r)   // cast stdClass → array for consistent frontend shape
+                ->map(fn($r) => (array) $r)
                 ->toArray();
         } catch (\Exception $e) {
             Log::error('Error fetching child health records: ' . $e->getMessage());
@@ -540,19 +544,19 @@ class MartenalChildHealthController extends Controller
         $prefix = 'MCH';
         $date   = now()->format('Ymd');
 
-        // Use a DB-level aggregate to avoid race conditions
         $count = DB::table('mch_order_items')
             ->whereDate('created_at', today())
             ->count();
 
         return sprintf('%s-%s-%04d', $prefix, $date, $count + 1);
-    } 
+    }
 
-    private  function initialVisitStarted($patientId){
+    private function initialVisitStarted($patientId)
+    {
         return MCHOrderItem::where('patient_id', $patientId)
-        ->where('service_name', 'Initial Visit')
-        // ->where('status','active')
-        ->first();
+            ->where('service_name', 'Initial Visit')
+            // ->where('status','active')
+            ->first();
     }
 
     // ─────────────────────────────────────────────

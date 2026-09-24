@@ -1,160 +1,577 @@
-// pages/nurses/dashboard.tsx
+// resources/js/pages/nurses/dashboard.tsx
 
-import { Head, usePage } from '@inertiajs/react';
+import { Head, Link, usePage } from '@inertiajs/react';
 import {
-    Users,
-    Clock,
-    UserCheck,
     Activity,
-    HeartPulse,
-    Thermometer,
-    Pill,
-    Stethoscope,
-    TrendingUp,
-    Calendar,
-    ArrowUp,
-    ArrowDown,
-    Eye,
-    Phone,
-    User,
-    Bed,
+    AlertCircle,
     AlertTriangle,
-    CheckCircle,
-    Clock as ClockIcon,
-    FileText,
-    Plus,
+    ArrowRight,
     Bell,
+    CalendarClock,
+    CheckCircle2,
+    ChevronRight,
+    Clock3,
+    ClipboardCheck,
+    ClipboardList,
+    HeartPulse,
+    ListChecks,
+    Pill,
+    RefreshCw,
+    Stethoscope,
+    Thermometer,
+    UserCheck,
+    Users,
+    UserRound,
+    Weight,
+    XCircle,
 } from 'lucide-react';
-// import { StatCard } from '@/components/dashboard/cards/StatCard';
-import { useState } from 'react';
 import AppLayout from '@/layouts/app-layout';
+import type { ReactNode } from 'react';
 
-// ============================================================================
-// Types
-// ============================================================================
-
-interface NurseDashboardProps {
-    stats?: {
-        total_patients: number;
-        active_patients: number;
-        pending_admissions: number;
-        today_visits: number;
-        vitals_taken: number;
-        admissions_today: number;
-        discharged_today: number;
-        critical_patients: number;
-        stable_patients: number;
-    };
-    recentPatients?: Array<{
-        id: number;
-        name: string;
-        token: string;
-        status: string;
-        admitted_at: string;
-        room?: string;
-        vitals?: {
-            bp: string;
-            hr: number;
-            temp: number;
-            spo2: number;
-        };
-    }>;
-    recentVitals?: Array<{
-        id: number;
-        patient_name: string;
-        blood_pressure: string;
-        heart_rate: number;
-        temperature: number;
-        oxygen_saturation: number;
-        recorded_at: string;
-        status: string;
-    }>;
-    notifications?: Array<{
-        id: number;
-        title: string;
-        message: string;
-        type: 'info' | 'warning' | 'success' | 'danger';
-        time: string;
-        read: boolean;
-    }>;
+interface DashboardStats {
+    patients_waiting: number;
+    patients_in_assessment: number;
+    triage_queue: number;
+    vital_signs_due: number;
+    pending_tasks: number;
+    medications_due: number;
+    reassessments_due: number;
+    abnormal_vitals: number;
+    completed_encounters: number;
 }
 
-// ============================================================================
-// Sub-Components
-// ============================================================================
+interface QueuePatient {
+    id: number;
+    patient_id: number;
+    patient_name: string;
+    mrn: string;
+    visit_id: number;
+    visit_number: string;
+    reason: string;
+    priority: 'routine' | 'moderate' | 'high' | 'urgent';
+    workflow_status:
+        | 'waiting'
+        | 'triage'
+        | 'assessment'
+        | 'care'
+        | 'reassessment';
+    task?: string;
+    due_at?: string;
+    waiting_minutes?: number;
+    age?: number;
+    sex?: string;
+}
 
-const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
-    const config: Record<string, { label: string; color: string; bg: string }> = {
-        admitted: { label: 'Admitted', color: 'text-blue-600', bg: 'bg-blue-50 dark:bg-blue-950/30 dark:text-blue-400' },
-        stable: { label: 'Stable', color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-950/30 dark:text-emerald-400' },
-        critical: { label: 'Critical', color: 'text-red-600', bg: 'bg-red-50 dark:bg-red-950/30 dark:text-red-400' },
-        discharged: { label: 'Discharged', color: 'text-slate-600', bg: 'bg-slate-50 dark:bg-slate-800 dark:text-slate-400' },
-        pending: { label: 'Pending', color: 'text-amber-600', bg: 'bg-amber-50 dark:bg-amber-950/30 dark:text-amber-400' },
-        in_progress: { label: 'In Progress', color: 'text-indigo-600', bg: 'bg-indigo-50 dark:bg-indigo-950/30 dark:text-indigo-400' },
+interface ClinicalAlert {
+    id: number;
+    patient_id: number;
+    patient_name: string;
+    mrn: string;
+    type: 'vital' | 'medication' | 'task' | 'clinical';
+    severity: 'warning' | 'critical';
+    message: string;
+    detail?: string;
+    created_at: string;
+}
+
+interface VitalDue {
+    id: number;
+    patient_id: number;
+    patient_name: string;
+    mrn: string;
+    reason: string;
+    due_at: string;
+    overdue: boolean;
+    minutes: number;
+}
+
+interface MedicationDue {
+    id: number;
+    patient_id: number;
+    patient_name: string;
+    medication: string;
+    dose: string;
+    route: string;
+    due_at: string;
+    status: 'due' | 'overdue' | 'upcoming';
+}
+
+interface NursingTask {
+    id: number;
+    patient_id: number;
+    patient_name: string;
+    task: string;
+    priority: 'routine' | 'moderate' | 'high' | 'urgent';
+    due_at?: string;
+    overdue?: boolean;
+}
+
+interface Reassessment {
+    id: number;
+    patient_id: number;
+    patient_name: string;
+    mrn: string;
+    assessment: string;
+    due_at: string;
+    overdue: boolean;
+}
+
+interface ActivitySummary {
+    triage_completed: number;
+    assessments_completed: number;
+    procedures_completed: number;
+    reassessments_completed: number;
+    patients_educated: number;
+}
+
+interface NurseDashboardProps {
+    stats?: DashboardStats;
+    queue?: QueuePatient[];
+    alerts?: ClinicalAlert[];
+    vitalsDue?: VitalDue[];
+    medicationsDue?: MedicationDue[];
+    tasks?: NursingTask[];
+    reassessments?: Reassessment[];
+    activity?: ActivitySummary;
+}
+
+const defaultStats: DashboardStats = {
+    patients_waiting: 12,
+    patients_in_assessment: 4,
+    triage_queue: 7,
+    vital_signs_due: 6,
+    pending_tasks: 9,
+    medications_due: 5,
+    reassessments_due: 3,
+    abnormal_vitals: 3,
+    completed_encounters: 38,
+};
+
+const defaultQueue: QueuePatient[] = [
+    {
+        id: 1,
+        patient_id: 1001,
+        patient_name: 'John Banda',
+        mrn: 'MRN-001245',
+        visit_id: 5001,
+        visit_number: 'OPD-1024',
+        reason: 'Fever and weakness',
+        priority: 'urgent',
+        workflow_status: 'triage',
+        task: 'Triage',
+        waiting_minutes: 18,
+        age: 42,
+        sex: 'Male',
+    },
+    {
+        id: 2,
+        patient_id: 1002,
+        patient_name: 'Mary Phiri',
+        mrn: 'MRN-001246',
+        visit_id: 5002,
+        visit_number: 'OPD-1025',
+        reason: 'ANC follow-up',
+        priority: 'high',
+        workflow_status: 'waiting',
+        task: 'Initial assessment',
+        waiting_minutes: 14,
+        age: 28,
+        sex: 'Female',
+    },
+    {
+        id: 3,
+        patient_id: 1003,
+        patient_name: 'Peter Zulu',
+        mrn: 'MRN-001247',
+        visit_id: 5003,
+        visit_number: 'OPD-1026',
+        reason: 'Wound dressing',
+        priority: 'routine',
+        workflow_status: 'care',
+        task: 'Wound dressing',
+        waiting_minutes: 7,
+        age: 35,
+        sex: 'Male',
+    },
+    {
+        id: 4,
+        patient_id: 1004,
+        patient_name: 'Ruth Mwale',
+        mrn: 'MRN-001248',
+        visit_id: 5004,
+        visit_number: 'OPD-1027',
+        reason: 'Hypertension review',
+        priority: 'moderate',
+        workflow_status: 'reassessment',
+        task: 'BP reassessment',
+        waiting_minutes: 5,
+        age: 51,
+        sex: 'Female',
+    },
+    {
+        id: 5,
+        patient_id: 1005,
+        patient_name: 'David Phiri',
+        mrn: 'MRN-001249',
+        visit_id: 5005,
+        visit_number: 'OPD-1028',
+        reason: 'Cough',
+        priority: 'routine',
+        workflow_status: 'assessment',
+        task: 'Nursing assessment',
+        waiting_minutes: 4,
+        age: 31,
+        sex: 'Male',
+    },
+];
+
+const defaultAlerts: ClinicalAlert[] = [
+    {
+        id: 1,
+        patient_id: 1001,
+        patient_name: 'John Banda',
+        mrn: 'MRN-001245',
+        type: 'vital',
+        severity: 'critical',
+        message: 'Low oxygen saturation',
+        detail: 'SpO₂ 89% • recorded 4 minutes ago',
+        created_at: '4 min ago',
+    },
+    {
+        id: 2,
+        patient_id: 1006,
+        patient_name: 'Grace Phiri',
+        mrn: 'MRN-001250',
+        type: 'vital',
+        severity: 'critical',
+        message: 'Elevated blood pressure',
+        detail: '178/110 mmHg • recorded 8 minutes ago',
+        created_at: '8 min ago',
+    },
+    {
+        id: 3,
+        patient_id: 1007,
+        patient_name: 'Peter Mwila',
+        mrn: 'MRN-001251',
+        type: 'vital',
+        severity: 'warning',
+        message: 'Elevated temperature',
+        detail: '38.9°C • recorded 12 minutes ago',
+        created_at: '12 min ago',
+    },
+];
+
+const defaultVitalsDue: VitalDue[] = [
+    {
+        id: 1,
+        patient_id: 1001,
+        patient_name: 'John Banda',
+        mrn: 'MRN-001245',
+        reason: 'Triage',
+        due_at: 'Now',
+        overdue: true,
+        minutes: 6,
+    },
+    {
+        id: 2,
+        patient_id: 1002,
+        patient_name: 'Mary Phiri',
+        mrn: 'MRN-001246',
+        reason: 'ANC assessment',
+        due_at: '10:20',
+        overdue: false,
+        minutes: 0,
+    },
+    {
+        id: 3,
+        patient_id: 1004,
+        patient_name: 'Ruth Mwale',
+        mrn: 'MRN-001248',
+        reason: 'BP reassessment',
+        due_at: '10:30',
+        overdue: false,
+        minutes: 0,
+    },
+];
+
+const defaultMedications: MedicationDue[] = [
+    {
+        id: 1,
+        patient_id: 1008,
+        patient_name: 'Jane Smith',
+        medication: 'Paracetamol',
+        dose: '500 mg',
+        route: 'PO',
+        due_at: '10:00',
+        status: 'due',
+    },
+    {
+        id: 2,
+        patient_id: 1009,
+        patient_name: 'Robert Johnson',
+        medication: 'Amoxicillin',
+        dose: '500 mg',
+        route: 'PO',
+        due_at: '10:15',
+        status: 'upcoming',
+    },
+    {
+        id: 3,
+        patient_id: 1010,
+        patient_name: 'Maria Garcia',
+        medication: 'Metronidazole',
+        dose: '500 mg',
+        route: 'IV',
+        due_at: '09:45',
+        status: 'overdue',
+    },
+];
+
+const defaultTasks: NursingTask[] = [
+    {
+        id: 1,
+        patient_id: 1003,
+        patient_name: 'Peter Zulu',
+        task: 'Wound dressing',
+        priority: 'routine',
+    },
+    {
+        id: 2,
+        patient_id: 1011,
+        patient_name: 'Sarah Banda',
+        task: 'Patient education',
+        priority: 'moderate',
+    },
+    {
+        id: 3,
+        patient_id: 1004,
+        patient_name: 'Ruth Mwale',
+        task: 'Recheck blood pressure',
+        priority: 'high',
+        overdue: true,
+    },
+    {
+        id: 4,
+        patient_id: 1012,
+        patient_name: 'Andrew Phiri',
+        task: 'Specimen collection',
+        priority: 'routine',
+    },
+];
+
+const defaultReassessments: Reassessment[] = [
+    {
+        id: 1,
+        patient_id: 1004,
+        patient_name: 'Ruth Mwale',
+        mrn: 'MRN-001248',
+        assessment: 'Blood pressure',
+        due_at: '10:30',
+        overdue: false,
+    },
+    {
+        id: 2,
+        patient_id: 1001,
+        patient_name: 'John Banda',
+        mrn: 'MRN-001245',
+        assessment: 'Pain / respiratory status',
+        due_at: 'Now',
+        overdue: true,
+    },
+    {
+        id: 3,
+        patient_id: 1013,
+        patient_name: 'Lucy Mwila',
+        mrn: 'MRN-001253',
+        assessment: 'Post-procedure review',
+        due_at: '11:00',
+        overdue: false,
+    },
+];
+
+const defaultActivity: ActivitySummary = {
+    triage_completed: 31,
+    assessments_completed: 27,
+    procedures_completed: 22,
+    reassessments_completed: 14,
+    patients_educated: 17,
+};
+
+function StatCard({
+    title,
+    value,
+    subtitle,
+    icon: Icon,
+    href,
+    urgent = false,
+}: {
+    title: string;
+    value: number;
+    subtitle: string;
+    icon: typeof Users;
+    href?: string;
+    urgent?: boolean;
+}) {
+    const content = (
+        <div
+            className={`group rounded-xl border bg-white p-4 shadow-sm transition-all hover:shadow-md dark:bg-slate-800 ${
+                urgent
+                    ? 'border-red-200 dark:border-red-900/60'
+                    : 'border-slate-200 dark:border-slate-700'
+            }`}
+        >
+            <div className="flex items-start justify-between">
+                <div>
+                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                        {title}
+                    </p>
+
+                    <p
+                        className={`mt-1 text-2xl font-bold ${
+                            urgent
+                                ? 'text-red-600 dark:text-red-400'
+                                : 'text-slate-900 dark:text-white'
+                        }`}
+                    >
+                        {value}
+                    </p>
+
+                    <p className="mt-1 text-[11px] text-slate-400">
+                        {subtitle}
+                    </p>
+                </div>
+
+                <div
+                    className={`rounded-lg p-2 ${
+                        urgent
+                            ? 'bg-red-50 dark:bg-red-950/30'
+                            : 'bg-blue-50 dark:bg-blue-950/30'
+                    }`}
+                >
+                    <Icon
+                        className={`h-5 w-5 ${
+                            urgent
+                                ? 'text-red-600 dark:text-red-400'
+                                : 'text-blue-600 dark:text-blue-400'
+                        }`}
+                    />
+                </div>
+            </div>
+
+            {href && (
+                <div className="mt-3 flex items-center text-[11px] font-medium text-blue-600 dark:text-blue-400">
+                    Open queue
+                    <ArrowRight className="ml-1 h-3 w-3 transition-transform group-hover:translate-x-1" />
+                </div>
+            )}
+        </div>
+    );
+
+    return href ? <Link href={href}>{content}</Link> : content;
+}
+
+function PriorityBadge({
+    priority,
+}: {
+    priority: QueuePatient['priority'];
+}) {
+    const config = {
+        urgent: 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400',
+        high: 'bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-400',
+        moderate:
+            'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400',
+        routine:
+            'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400',
     };
 
-    const cfg = config[status] || config.pending;
     return (
-        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${cfg.bg} ${cfg.color}`}>
-            <span className={`mr-1 h-1.5 w-1.5 rounded-full ${cfg.color.replace('text-', 'bg-')}`} />
-            {cfg.label}
+        <span
+            className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${config[priority]}`}
+        >
+            {priority}
         </span>
     );
-};
+}
 
-const VitalsIndicator: React.FC<{ value: number; threshold: number; label: string }> = ({ value, threshold, label }) => {
-    const isWarning = value > threshold;
+function WorkflowBadge({
+    status,
+}: {
+    status: QueuePatient['workflow_status'];
+}) {
+    const labels = {
+        waiting: 'Waiting',
+        triage: 'Triage',
+        assessment: 'Assessment',
+        care: 'Nursing Care',
+        reassessment: 'Reassessment',
+    };
+
     return (
-        <span className={`text-sm font-medium ${isWarning ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-            {value}
-            {isWarning && <AlertTriangle className="ml-1 inline h-3 w-3" />}
+        <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+            {labels[status]}
         </span>
     );
-};
+}
 
-// ============================================================================
-// Main Component
-// ============================================================================
+function SectionHeader({
+    icon: Icon,
+    title,
+    count,
+    href,
+}: {
+    icon: typeof Users;
+    title: string;
+    count?: number;
+    href?: string;
+}) {
+    return (
+        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+            <div className="flex items-center gap-2">
+                <Icon className="h-4 w-4 text-slate-500" />
+
+                <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                    {title}
+                </h2>
+
+                {typeof count === 'number' && (
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+                        {count}
+                    </span>
+                )}
+            </div>
+
+            {href && (
+                <Link
+                    href={href}
+                    className="flex items-center text-[11px] font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                >
+                    View all
+                    <ChevronRight className="ml-0.5 h-3 w-3" />
+                </Link>
+            )}
+        </div>
+    );
+}
 
 export default function NurseDashboard() {
-    const { props } = usePage();
-    const dashboardData = props as NurseDashboardProps;
+    const { props } = usePage<NurseDashboardProps>();
+    const data = props;
 
-    // Mock data - replace with actual props from controller
-    const stats = dashboardData.stats || {
-        total_patients: 156,
-        active_patients: 42,
-        pending_admissions: 8,
-        today_visits: 27,
-        vitals_taken: 34,
-        admissions_today: 12,
-        discharged_today: 5,
-        critical_patients: 3,
-        stable_patients: 28,
-    };
+    const stats = data.stats ?? defaultStats;
+    const queue = data.queue ?? defaultQueue;
+    const alerts = data.alerts ?? defaultAlerts;
+    const vitalsDue = data.vitalsDue ?? defaultVitalsDue;
+    const medicationsDue = data.medicationsDue ?? defaultMedications;
+    const tasks = data.tasks ?? defaultTasks;
+    const reassessments = data.reassessments ?? defaultReassessments;
+    const activity = data.activity ?? defaultActivity;
 
-    const recentPatients = dashboardData.recentPatients || [
-        { id: 1, name: 'John Doe', token: 'T-1001', status: 'critical', admitted_at: '10:30 AM', room: 'ICU - Bed 4', vitals: { bp: '150/95', hr: 102, temp: 38.5, spo2: 92 } },
-        { id: 2, name: 'Jane Smith', token: 'T-1002', status: 'stable', admitted_at: '09:15 AM', room: 'Ward 1 - Bed 2', vitals: { bp: '120/80', hr: 72, temp: 36.8, spo2: 98 } },
-        { id: 3, name: 'Robert Johnson', token: 'T-1003', status: 'in_progress', admitted_at: '08:45 AM', room: 'Ward 3 - Bed 6', vitals: { bp: '135/85', hr: 88, temp: 37.2, spo2: 96 } },
-        { id: 4, name: 'Maria Garcia', token: 'T-1004', status: 'stable', admitted_at: '07:30 AM', room: 'Ward 2 - Bed 8', vitals: { bp: '118/75', hr: 68, temp: 36.5, spo2: 99 } },
-        { id: 5, name: 'David Wilson', token: 'T-1005', status: 'admitted', admitted_at: '06:45 AM', room: 'Ward 4 - Bed 3', vitals: { bp: '125/82', hr: 76, temp: 36.9, spo2: 97 } },
-    ];
-
-    const recentVitals = dashboardData.recentVitals || [
-        { id: 1, patient_name: 'John Doe', blood_pressure: '150/95', heart_rate: 102, temperature: 38.5, oxygen_saturation: 92, recorded_at: '10:30 AM', status: 'critical' },
-        { id: 2, patient_name: 'Jane Smith', blood_pressure: '120/80', heart_rate: 72, temperature: 36.8, oxygen_saturation: 98, recorded_at: '09:15 AM', status: 'stable' },
-        { id: 3, patient_name: 'Robert Johnson', blood_pressure: '135/85', heart_rate: 88, temperature: 37.2, oxygen_saturation: 96, recorded_at: '08:45 AM', status: 'warning' },
-        { id: 4, patient_name: 'Maria Garcia', blood_pressure: '118/75', heart_rate: 68, temperature: 36.5, oxygen_saturation: 99, recorded_at: '07:30 AM', status: 'stable' },
-    ];
-
-    const notifications = dashboardData.notifications || [
-        { id: 1, title: 'Critical Vital Alert', message: 'John Doe - BP: 150/95, HR: 102, Temp: 38.5°C', type: 'danger', time: '5 min ago', read: false },
-        { id: 2, title: 'New Admission', message: 'David Wilson admitted to Ward 4 - Bed 3', type: 'success', time: '15 min ago', read: false },
-        { id: 3, title: 'Medication Reminder', message: 'Jane Smith due for medication in 30 minutes', type: 'warning', time: '25 min ago', read: false },
-        { id: 4, title: 'Lab Results Available', message: 'John Doe - Blood test results ready', type: 'info', time: '45 min ago', read: false },
-        { id: 5, title: 'Discharge Request', message: 'Maria Garcia - Discharge clearance requested', type: 'success', time: '1 hour ago', read: true },
-    ];
+    const currentDate = new Date().toLocaleDateString('en-US', {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric',
+    });
 
     return (
         <AppLayout
@@ -163,142 +580,244 @@ export default function NurseDashboard() {
                 { title: 'Dashboard', href: '/nurses/dashboard' },
             ]}
         >
-            <Head title="Nurse Dashboard" />
- <div className="flex h-full min-h-screen flex-1 flex-col gap-3 bg-slate-50 p-3 dark:bg-slate-900">
-                {/* Header */}
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                        <h1 className="text-lg font-bold text-slate-800 dark:text-slate-100">
-                            👩‍⚕️ Nurse Dashboard
-                        </h1>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
-                            Patient care overview and vitals monitoring
-                        </p>
-                    </div>
-                    <div className="flex items-center gap-2 rounded-lg bg-white px-3 py-1.5 shadow-sm dark:bg-slate-800">
-                        <Clock className="h-4 w-4 text-slate-400" />
-                        <span className="text-xs text-slate-600 dark:text-slate-300">
-                            {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                        </span>
-                    </div>
-                </div>
+            <Head title="Nursing Dashboard" />
 
-                {/* Quick Stats */}
-                {/* <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-                    <StatCard title="Total Patients" value={stats.total_patients} icon={Users} colorScheme="purple" />
-                    <StatCard title="Active" value={stats.active_patients} icon={Activity} colorScheme="blue" />
-                    <StatCard title="Pending Admissions" value={stats.pending_admissions} icon={UserCheck} colorScheme="amber" />
-                    <StatCard title="Today's Visits" value={stats.today_visits} icon={Calendar} colorScheme="green" />
-                    <StatCard title="Critical" value={stats.critical_patients} icon={AlertTriangle} colorScheme="red" />
-                </div> */}
+            <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
+                <div className="mx-auto max-w-[1600px] space-y-4 p-4 lg:p-5">
 
-                {/* Stats Row 2 */}
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm dark:border-slate-700 dark:bg-slate-800/90">
-                        <div className="flex items-center gap-2">
-                            <div className="rounded-lg bg-blue-100 p-1.5 dark:bg-blue-950/30">
-                                <HeartPulse className="h-4 w-4 text-blue-600" />
-                            </div>
-                            <div>
-                                <p className="text-[10px] font-medium uppercase text-slate-500 dark:text-slate-400">Vitals Taken</p>
-                                <p className="text-lg font-bold text-slate-800 dark:text-slate-100">{stats.vitals_taken}</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm dark:border-slate-700 dark:bg-slate-800/90">
-                        <div className="flex items-center gap-2">
-                            <div className="rounded-lg bg-emerald-100 p-1.5 dark:bg-emerald-950/30">
-                                <UserCheck className="h-4 w-4 text-emerald-600" />
-                            </div>
-                            <div>
-                                <p className="text-[10px] font-medium uppercase text-slate-500 dark:text-slate-400">Admissions</p>
-                                <p className="text-lg font-bold text-slate-800 dark:text-slate-100">{stats.admissions_today}</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm dark:border-slate-700 dark:bg-slate-800/90">
-                        <div className="flex items-center gap-2">
-                            <div className="rounded-lg bg-amber-100 p-1.5 dark:bg-amber-950/30">
-                                <ArrowUp className="h-4 w-4 text-amber-600" />
-                            </div>
-                            <div>
-                                <p className="text-[10px] font-medium uppercase text-slate-500 dark:text-slate-400">Discharged</p>
-                                <p className="text-lg font-bold text-slate-800 dark:text-slate-100">{stats.discharged_today}</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm dark:border-slate-700 dark:bg-slate-800/90">
-                        <div className="flex items-center gap-2">
-                            <div className="rounded-lg bg-indigo-100 p-1.5 dark:bg-indigo-950/30">
-                                <Bed className="h-4 w-4 text-indigo-600" />
-                            </div>
-                            <div>
-                                <p className="text-[10px] font-medium uppercase text-slate-500 dark:text-slate-400">Occupied Beds</p>
-                                <p className="text-lg font-bold text-slate-800 dark:text-slate-100">{stats.active_patients}</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Main Content */}
-                <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-                    {/* Recent Patients - Compact */}
-                    <div className="lg:col-span-2">
-                        <div className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800/90">
-                            <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2 dark:border-slate-700">
-                                <div className="flex items-center gap-2">
-                                    <Users className="h-4 w-4 text-slate-500" />
-                                    <h3 className="text-xs font-semibold text-slate-800 dark:text-slate-100">Recent Patients</h3>
-                                    <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600 dark:bg-slate-700 dark:text-slate-400">
-                                        {recentPatients.length}
-                                    </span>
+                    {/* =====================================================
+                        HEADER
+                    ====================================================== */}
+                    <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+                        <div>
+                            <div className="flex items-center gap-2">
+                                <div className="rounded-lg bg-blue-100 p-2 dark:bg-blue-950/40">
+                                    <Stethoscope className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                                 </div>
-                                <button className="text-[10px] text-blue-600 hover:text-blue-700 dark:text-blue-400">View All</button>
+
+                                <div>
+                                    <h1 className="text-xl font-bold text-slate-900 dark:text-white">
+                                        Nursing Dashboard
+                                    </h1>
+
+                                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                                        Clinical workflow and patient care
+                                        management
+                                    </p>
+                                </div>
                             </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                                <CalendarClock className="h-4 w-4 text-slate-400" />
+                                {currentDate}
+                            </div>
+
+                            <button
+                                type="button"
+                                className="rounded-lg border border-slate-200 bg-white p-2 text-slate-500 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700"
+                                title="Refresh dashboard"
+                            >
+                                <RefreshCw className="h-4 w-4" />
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* =====================================================
+                        PRIMARY WORKLOAD
+                    ====================================================== */}
+                    <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                        <StatCard
+                            title="Patients Waiting"
+                            value={stats.patients_waiting}
+                            subtitle="Awaiting nursing"
+                            icon={Users}
+                            href="/nurses/queue"
+                        />
+
+                        <StatCard
+                            title="In Assessment"
+                            value={stats.patients_in_assessment}
+                            subtitle="Currently being assessed"
+                            icon={UserCheck}
+                            href="/nurses/queue?status=assessment"
+                        />
+
+                        <StatCard
+                            title="Triage Queue"
+                            value={stats.triage_queue}
+                            subtitle="Awaiting triage"
+                            icon={Activity}
+                            href="/nurses/triage"
+                        />
+
+                        <StatCard
+                            title="Reassessment Due"
+                            value={stats.reassessments_due}
+                            subtitle="Requires review"
+                            icon={RefreshCw}
+                            href="/nurses/reassessments"
+                            urgent={stats.reassessments_due > 0}
+                        />
+                    </div>
+
+                    {/* =====================================================
+                        CLINICAL WORKLOAD
+                    ====================================================== */}
+                    <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                        <StatCard
+                            title="Vital Signs Due"
+                            value={stats.vital_signs_due}
+                            subtitle="Measurements due"
+                            icon={HeartPulse}
+                            href="/nurses/vitals/due"
+                            urgent={stats.vital_signs_due > 0}
+                        />
+
+                        <StatCard
+                            title="Pending Tasks"
+                            value={stats.pending_tasks}
+                            subtitle="Nursing actions"
+                            icon={ListChecks}
+                            href="/nurses/tasks"
+                        />
+
+                        <StatCard
+                            title="Medication Due"
+                            value={stats.medications_due}
+                            subtitle="MAR actions"
+                            icon={Pill}
+                            href="/nurses/medications"
+                        />
+
+                        <StatCard
+                            title="Abnormal Vitals"
+                            value={stats.abnormal_vitals}
+                            subtitle="Requires attention"
+                            icon={AlertTriangle}
+                            href="/nurses/alerts"
+                            urgent={stats.abnormal_vitals > 0}
+                        />
+                    </div>
+
+                    {/* =====================================================
+                        MAIN WORK AREA
+                    ====================================================== */}
+                    <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+
+                        {/* Nursing Queue */}
+                        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm xl:col-span-2 dark:border-slate-700 dark:bg-slate-800">
+                            <SectionHeader
+                                icon={ClipboardList}
+                                title="Nursing Work Queue"
+                                count={queue.length}
+                                href="/nurses/queue"
+                            />
+
                             <div className="overflow-x-auto">
-                                <table className="w-full">
-                                    <thead className="border-b border-slate-200 bg-slate-50 text-[8px] uppercase text-slate-500 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-400">
-                                        <tr>
-                                            <th className="px-2 py-1 text-left">Patient</th>
-                                            <th className="px-2 py-1 text-left">Token</th>
-                                            <th className="px-2 py-1 text-center">Vitals</th>
-                                            <th className="px-2 py-1 text-center">Status</th>
-                                            <th className="px-2 py-1 text-right">Time</th>
+                                <table className="w-full min-w-[850px]">
+                                    <thead className="bg-slate-50 dark:bg-slate-800/70">
+                                        <tr className="border-b border-slate-200 dark:border-slate-700">
+                                            <th className="px-4 py-2 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                                                Patient
+                                            </th>
+                                            <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                                                Visit
+                                            </th>
+                                            <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                                                Reason
+                                            </th>
+                                            <th className="px-3 py-2 text-center text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                                                Priority
+                                            </th>
+                                            <th className="px-3 py-2 text-center text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                                                Workflow
+                                            </th>
+                                            <th className="px-3 py-2 text-right text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                                                Action
+                                            </th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-slate-100 text-xs dark:divide-slate-700/50">
-                                        {recentPatients.slice(0, 5).map((patient) => (
-                                            <tr key={patient.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                                                <td className="px-2 py-1">
-                                                    <div className="flex items-center gap-1.5">
-                                                        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/30">
-                                                            <User className="h-3 w-3 text-blue-600 dark:text-blue-400" />
+
+                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-700/60">
+                                        {queue.map((patient) => (
+                                            <tr
+                                                key={patient.id}
+                                                className="transition-colors hover:bg-slate-50 dark:hover:bg-slate-700/30"
+                                            >
+                                                <td className="px-4 py-3">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-50 dark:bg-blue-950/40">
+                                                            <UserRound className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                                                         </div>
-                                                        <span className="text-[10px] font-medium text-slate-800 dark:text-slate-200">
-                                                            {patient.name}
-                                                        </span>
-                                                    </div>
-                                                    <div className="text-[8px] text-slate-400">{patient.room}</div>
-                                                </td>
-                                                <td className="px-2 py-1 font-mono text-[9px] text-blue-600 dark:text-blue-400">
-                                                    {patient.token}
-                                                </td>
-                                                <td className="px-2 py-1 text-center">
-                                                    <div className="flex items-center justify-center gap-1 text-[9px]">
-                                                        <span className="text-slate-500">BP</span>
-                                                        <span className="font-medium">{patient.vitals?.bp}</span>
-                                                        <span className="text-slate-300">|</span>
-                                                        <span className="text-slate-500">HR</span>
-                                                        <span className={`font-medium ${(patient.vitals?.hr || 0) > 100 ? 'text-red-500' : 'text-emerald-500'}`}>
-                                                            {patient.vitals?.hr}
-                                                        </span>
+
+                                                        <div>
+                                                            <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
+                                                                {patient.patient_name}
+                                                            </p>
+
+                                                            <p className="text-[10px] text-slate-400">
+                                                                {patient.mrn}
+                                                                {patient.age
+                                                                    ? ` • ${patient.age}y`
+                                                                    : ''}
+                                                                {patient.sex
+                                                                    ? ` • ${patient.sex}`
+                                                                    : ''}
+                                                            </p>
+                                                        </div>
                                                     </div>
                                                 </td>
-                                                <td className="px-2 py-1 text-center">
-                                                    <StatusBadge status={patient.status} />
+
+                                                <td className="px-3 py-3">
+                                                    <span className="font-mono text-[10px] text-blue-600 dark:text-blue-400">
+                                                        {patient.visit_number}
+                                                    </span>
                                                 </td>
-                                                <td className="px-2 py-1 text-right text-[9px] text-slate-400">
-                                                    {patient.admitted_at}
+
+                                                <td className="max-w-[180px] px-3 py-3">
+                                                    <p className="truncate text-xs text-slate-600 dark:text-slate-300">
+                                                        {patient.reason}
+                                                    </p>
+
+                                                    {patient.task && (
+                                                        <p className="mt-0.5 text-[10px] text-slate-400">
+                                                            Task: {patient.task}
+                                                        </p>
+                                                    )}
+                                                </td>
+
+                                                <td className="px-3 py-3 text-center">
+                                                    <PriorityBadge
+                                                        priority={
+                                                            patient.priority
+                                                        }
+                                                    />
+                                                </td>
+
+                                                <td className="px-3 py-3 text-center">
+                                                    <WorkflowBadge
+                                                        status={
+                                                            patient.workflow_status
+                                                        }
+                                                    />
+                                                </td>
+
+                                                <td className="px-3 py-3 text-right">
+                                                    <Link
+                                                        href={`/nurses/patients/${patient.patient_id}`}
+                                                        className="inline-flex items-center rounded-lg bg-blue-600 px-3 py-1.5 text-[10px] font-semibold text-white hover:bg-blue-700"
+                                                    >
+                                                        {patient.workflow_status ===
+                                                        'waiting'
+                                                            ? 'Start'
+                                                            : patient.workflow_status ===
+                                                                'reassessment'
+                                                              ? 'Review'
+                                                              : 'Continue'}
+                                                        <ArrowRight className="ml-1 h-3 w-3" />
+                                                    </Link>
                                                 </td>
                                             </tr>
                                         ))}
@@ -306,113 +825,382 @@ export default function NurseDashboard() {
                                 </table>
                             </div>
                         </div>
-                    </div>
 
-                    {/* Notifications */}
-                    <div className="lg:col-span-1">
-                        <div className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800/90">
-                            <div className="border-b border-slate-200 px-3 py-2 dark:border-slate-700">
-                                <div className="flex items-center gap-2">
-                                    <Bell className="h-4 w-4 text-slate-500" />
-                                    <h3 className="text-xs font-semibold text-slate-800 dark:text-slate-100">Notifications</h3>
-                                    <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] text-red-700 dark:bg-red-900/30 dark:text-red-400">
-                                        {notifications.filter(n => !n.read).length}
-                                    </span>
-                                </div>
-                            </div>
-                            <div className="max-h-[280px] overflow-y-auto">
-                                {notifications.slice(0, 5).map((notification) => (
+                        {/* Clinical Alerts */}
+                        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
+                            <SectionHeader
+                                icon={AlertTriangle}
+                                title="Clinical Alerts"
+                                count={alerts.length}
+                                href="/nurses/alerts"
+                            />
+
+                            <div className="divide-y divide-slate-100 dark:divide-slate-700">
+                                {alerts.map((alert) => (
                                     <div
-                                        key={notification.id}
-                                        className={`border-b border-slate-100 p-2 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800/50 ${
-                                            !notification.read ? 'bg-blue-50/50 dark:bg-blue-950/20' : ''
-                                        }`}
+                                        key={alert.id}
+                                        className="p-4 transition-colors hover:bg-slate-50 dark:hover:bg-slate-700/30"
                                     >
-                                        <div className="flex items-start gap-2">
-                                            <div className={`mt-0.5 h-1.5 w-1.5 rounded-full ${
-                                                notification.type === 'danger' ? 'bg-red-500' :
-                                                notification.type === 'warning' ? 'bg-amber-500' :
-                                                notification.type === 'success' ? 'bg-emerald-500' :
-                                                'bg-blue-500'
-                                            }`} />
-                                            <div className="flex-1">
-                                                <p className="text-[10px] font-medium text-slate-800 dark:text-slate-200">
-                                                    {notification.title}
-                                                    {!notification.read && <span className="ml-1 inline-block h-1 w-1 rounded-full bg-blue-500" />}
+                                        <div className="flex gap-3">
+                                            <div
+                                                className={`mt-0.5 rounded-full p-1.5 ${
+                                                    alert.severity === 'critical'
+                                                        ? 'bg-red-100 text-red-600 dark:bg-red-950/40 dark:text-red-400'
+                                                        : 'bg-amber-100 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400'
+                                                }`}
+                                            >
+                                                {alert.severity ===
+                                                'critical' ? (
+                                                    <AlertCircle className="h-4 w-4" />
+                                                ) : (
+                                                    <AlertTriangle className="h-4 w-4" />
+                                                )}
+                                            </div>
+
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <div>
+                                                        <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
+                                                            {
+                                                                alert.patient_name
+                                                            }
+                                                        </p>
+
+                                                        <p className="text-[10px] text-slate-400">
+                                                            {alert.mrn}
+                                                        </p>
+                                                    </div>
+
+                                                    <span
+                                                        className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase ${
+                                                            alert.severity ===
+                                                            'critical'
+                                                                ? 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400'
+                                                                : 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400'
+                                                        }`}
+                                                    >
+                                                        {alert.severity}
+                                                    </span>
+                                                </div>
+
+                                                <p className="mt-2 text-xs font-medium text-slate-700 dark:text-slate-200">
+                                                    {alert.message}
                                                 </p>
-                                                <p className="text-[9px] text-slate-600 dark:text-slate-400">{notification.message}</p>
-                                                <p className="mt-0.5 text-[8px] text-slate-400 dark:text-slate-500">{notification.time}</p>
+
+                                                <p className="mt-0.5 text-[10px] text-slate-500">
+                                                    {alert.detail}
+                                                </p>
+
+                                                <Link
+                                                    href={`/nurses/patients/${alert.patient_id}`}
+                                                    className="mt-2 inline-flex items-center text-[10px] font-semibold text-blue-600 dark:text-blue-400"
+                                                >
+                                                    Review patient
+                                                    <ChevronRight className="ml-0.5 h-3 w-3" />
+                                                </Link>
                                             </div>
                                         </div>
                                     </div>
                                 ))}
                             </div>
-                            {notifications.length > 5 && (
-                                <div className="border-t border-slate-200 px-3 py-1.5 text-center dark:border-slate-700">
-                                    <button className="text-[9px] text-blue-600 hover:text-blue-700 dark:text-blue-400">View All</button>
-                                </div>
-                            )}
                         </div>
                     </div>
-                </div>
 
-                {/* Recent Vitals - Compact */}
-                <div className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800/90">
-                    <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2 dark:border-slate-700">
-                        <div className="flex items-center gap-2">
-                            <HeartPulse className="h-4 w-4 text-slate-500" />
-                            <h3 className="text-xs font-semibold text-slate-800 dark:text-slate-100">Recent Vitals</h3>
-                            <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600 dark:bg-slate-700 dark:text-slate-400">
-                                {recentVitals.length}
-                            </span>
-                        </div>
-                        <button className="text-[10px] text-blue-600 hover:text-blue-700 dark:text-blue-400">View All</button>
-                    </div>
-                    <div className="overflow-x-auto">
-                        <table className="w-full">
-                            <thead className="border-b border-slate-200 bg-slate-50 text-[8px] uppercase text-slate-500 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-400">
-                                <tr>
-                                    <th className="px-2 py-1 text-left">Patient</th>
-                                    <th className="px-2 py-1 text-center">BP</th>
-                                    <th className="px-2 py-1 text-center">HR</th>
-                                    <th className="px-2 py-1 text-center">Temp</th>
-                                    <th className="px-2 py-1 text-center">SpO₂</th>
-                                    <th className="px-2 py-1 text-center">Status</th>
-                                    <th className="px-2 py-1 text-right">Time</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100 text-xs dark:divide-slate-700/50">
-                                {recentVitals.map((vital) => (
-                                    <tr key={vital.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                                        <td className="px-2 py-1 text-[10px] font-medium text-slate-800 dark:text-slate-200">
-                                            {vital.patient_name}
-                                        </td>
-                                        <td className="px-2 py-1 text-center text-[10px] text-slate-600 dark:text-slate-400">
-                                            {vital.blood_pressure}
-                                        </td>
-                                        <td className="px-2 py-1 text-center">
-                                            <span className={`text-[10px] font-medium ${vital.heart_rate > 100 ? 'text-red-500' : 'text-emerald-500'}`}>
-                                                {vital.heart_rate}
-                                            </span>
-                                        </td>
-                                        <td className="px-2 py-1 text-center text-[10px] text-slate-600 dark:text-slate-400">
-                                            {vital.temperature}°C
-                                        </td>
-                                        <td className="px-2 py-1 text-center">
-                                            <span className={`text-[10px] font-medium ${vital.oxygen_saturation < 95 ? 'text-red-500' : 'text-emerald-500'}`}>
-                                                {vital.oxygen_saturation}%
-                                            </span>
-                                        </td>
-                                        <td className="px-2 py-1 text-center">
-                                            <StatusBadge status={vital.status} />
-                                        </td>
-                                        <td className="px-2 py-1 text-right text-[9px] text-slate-400">
-                                            {vital.recorded_at}
-                                        </td>
-                                    </tr>
+                    {/* =====================================================
+                        VITALS + REASSESSMENT + TASKS
+                    ====================================================== */}
+                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+
+                        {/* Vitals Due */}
+                        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
+                            <SectionHeader
+                                icon={HeartPulse}
+                                title="Vital Signs Due"
+                                count={vitalsDue.length}
+                                href="/nurses/vitals/due"
+                            />
+
+                            <div className="divide-y divide-slate-100 dark:divide-slate-700">
+                                {vitalsDue.map((item) => (
+                                    <div
+                                        key={item.id}
+                                        className="flex items-center justify-between gap-3 p-3"
+                                    >
+                                        <div className="flex min-w-0 items-center gap-2">
+                                            <div className="rounded-lg bg-red-50 p-2 dark:bg-red-950/30">
+                                                <HeartPulse className="h-4 w-4 text-red-500" />
+                                            </div>
+
+                                            <div className="min-w-0">
+                                                <p className="truncate text-xs font-semibold text-slate-800 dark:text-slate-100">
+                                                    {item.patient_name}
+                                                </p>
+
+                                                <p className="text-[10px] text-slate-400">
+                                                    {item.reason}
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        <div className="text-right">
+                                            <p
+                                                className={`text-[10px] font-semibold ${
+                                                    item.overdue
+                                                        ? 'text-red-600'
+                                                        : 'text-slate-600 dark:text-slate-300'
+                                                }`}
+                                            >
+                                                {item.due_at}
+                                            </p>
+
+                                            <Link
+                                                href={`/nurses/vitals/${item.patient_id}`}
+                                                className="text-[10px] font-semibold text-blue-600 dark:text-blue-400"
+                                            >
+                                                Record
+                                            </Link>
+                                        </div>
+                                    </div>
                                 ))}
-                            </tbody>
-                        </table>
+                            </div>
+                        </div>
+
+                        {/* Reassessment */}
+                        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
+                            <SectionHeader
+                                icon={RefreshCw}
+                                title="Reassessment Due"
+                                count={reassessments.length}
+                                href="/nurses/reassessments"
+                            />
+
+                            <div className="divide-y divide-slate-100 dark:divide-slate-700">
+                                {reassessments.map((item) => (
+                                    <div
+                                        key={item.id}
+                                        className="flex items-center justify-between gap-3 p-3"
+                                    >
+                                        <div className="min-w-0">
+                                            <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
+                                                {item.patient_name}
+                                            </p>
+
+                                            <p className="text-[10px] text-slate-400">
+                                                {item.assessment}
+                                            </p>
+                                        </div>
+
+                                        <div className="text-right">
+                                            <p
+                                                className={`text-[10px] font-semibold ${
+                                                    item.overdue
+                                                        ? 'text-red-600'
+                                                        : 'text-slate-500'
+                                                }`}
+                                            >
+                                                {item.due_at}
+                                            </p>
+
+                                            <Link
+                                                href={`/nurses/reassessments/${item.id}`}
+                                                className="text-[10px] font-semibold text-blue-600 dark:text-blue-400"
+                                            >
+                                                Assess
+                                            </Link>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Nursing Tasks */}
+                        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
+                            <SectionHeader
+                                icon={ListChecks}
+                                title="Pending Nursing Tasks"
+                                count={tasks.length}
+                                href="/nurses/tasks"
+                            />
+
+                            <div className="divide-y divide-slate-100 dark:divide-slate-700">
+                                {tasks.map((task) => (
+                                    <div
+                                        key={task.id}
+                                        className="flex items-center gap-3 p-3"
+                                    >
+                                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-700">
+                                            <ClipboardCheck className="h-4 w-4 text-slate-500" />
+                                        </div>
+
+                                        <div className="min-w-0 flex-1">
+                                            <p className="text-xs font-medium text-slate-800 dark:text-slate-100">
+                                                {task.task}
+                                            </p>
+
+                                            <p className="text-[10px] text-slate-400">
+                                                {task.patient_name}
+                                            </p>
+                                        </div>
+
+                                        <PriorityBadge
+                                            priority={task.priority}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* =====================================================
+                        MEDICATION ADMINISTRATION
+                    ====================================================== */}
+                    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
+                        <SectionHeader
+                            icon={Pill}
+                            title="Medication Administration Due"
+                            count={medicationsDue.length}
+                            href="/nurses/medications"
+                        />
+
+                        <div className="overflow-x-auto">
+                            <table className="w-full min-w-[700px]">
+                                <thead className="bg-slate-50 dark:bg-slate-800/70">
+                                    <tr className="border-b border-slate-200 dark:border-slate-700">
+                                        <th className="px-4 py-2 text-left text-[10px] uppercase text-slate-500">
+                                            Patient
+                                        </th>
+                                        <th className="px-3 py-2 text-left text-[10px] uppercase text-slate-500">
+                                            Medication
+                                        </th>
+                                        <th className="px-3 py-2 text-center text-[10px] uppercase text-slate-500">
+                                            Dose
+                                        </th>
+                                        <th className="px-3 py-2 text-center text-[10px] uppercase text-slate-500">
+                                            Route
+                                        </th>
+                                        <th className="px-3 py-2 text-center text-[10px] uppercase text-slate-500">
+                                            Due
+                                        </th>
+                                        <th className="px-3 py-2 text-right text-[10px] uppercase text-slate-500">
+                                            Action
+                                        </th>
+                                    </tr>
+                                </thead>
+
+                                <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                                    {medicationsDue.map((medication) => (
+                                        <tr
+                                            key={medication.id}
+                                            className="hover:bg-slate-50 dark:hover:bg-slate-700/30"
+                                        >
+                                            <td className="px-4 py-3">
+                                                <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
+                                                    {
+                                                        medication.patient_name
+                                                    }
+                                                </p>
+                                            </td>
+
+                                            <td className="px-3 py-3 text-xs text-slate-700 dark:text-slate-200">
+                                                {medication.medication}
+                                            </td>
+
+                                            <td className="px-3 py-3 text-center text-xs">
+                                                {medication.dose}
+                                            </td>
+
+                                            <td className="px-3 py-3 text-center">
+                                                <span className="rounded bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+                                                    {medication.route}
+                                                </span>
+                                            </td>
+
+                                            <td className="px-3 py-3 text-center">
+                                                <span
+                                                    className={`text-xs font-semibold ${
+                                                        medication.status ===
+                                                        'overdue'
+                                                            ? 'text-red-600'
+                                                            : medication.status ===
+                                                                'due'
+                                                              ? 'text-amber-600'
+                                                              : 'text-slate-500'
+                                                    }`}
+                                                >
+                                                    {medication.due_at}
+                                                </span>
+                                            </td>
+
+                                            <td className="px-3 py-3 text-right">
+                                                <Link
+                                                    href={`/nurses/medications/${medication.id}`}
+                                                    className="inline-flex items-center rounded-lg bg-blue-600 px-3 py-1.5 text-[10px] font-semibold text-white hover:bg-blue-700"
+                                                >
+                                                    Administer
+                                                </Link>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    {/* =====================================================
+                        TODAY'S NURSING ACTIVITY
+                    ====================================================== */}
+                    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
+                        <SectionHeader
+                            icon={CheckCircle2}
+                            title="Today's Nursing Activity"
+                        />
+
+                        <div className="grid grid-cols-2 divide-x divide-y divide-slate-100 sm:grid-cols-5 sm:divide-y-0 dark:divide-slate-700">
+                            <div className="p-4">
+                                <p className="text-[10px] uppercase text-slate-400">
+                                    Triage Completed
+                                </p>
+                                <p className="mt-1 text-xl font-bold text-slate-800 dark:text-white">
+                                    {activity.triage_completed}
+                                </p>
+                            </div>
+
+                            <div className="p-4">
+                                <p className="text-[10px] uppercase text-slate-400">
+                                    Assessments
+                                </p>
+                                <p className="mt-1 text-xl font-bold text-slate-800 dark:text-white">
+                                    {activity.assessments_completed}
+                                </p>
+                            </div>
+
+                            <div className="p-4">
+                                <p className="text-[10px] uppercase text-slate-400">
+                                    Procedures
+                                </p>
+                                <p className="mt-1 text-xl font-bold text-slate-800 dark:text-white">
+                                    {activity.procedures_completed}
+                                </p>
+                            </div>
+
+                            <div className="p-4">
+                                <p className="text-[10px] uppercase text-slate-400">
+                                    Reassessments
+                                </p>
+                                <p className="mt-1 text-xl font-bold text-slate-800 dark:text-white">
+                                    {activity.reassessments_completed}
+                                </p>
+                            </div>
+
+                            <div className="p-4">
+                                <p className="text-[10px] uppercase text-slate-400">
+                                    Patient Education
+                                </p>
+                                <p className="mt-1 text-xl font-bold text-slate-800 dark:text-white">
+                                    {activity.patients_educated}
+                                </p>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

@@ -9,6 +9,7 @@ import {
     Filter,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { useState } from 'react';
 
 interface ActionButton {
     label: string;
@@ -28,31 +29,64 @@ interface ActionButton {
     className?: string;
 }
 
+interface Tab {
+    id: string;
+    label: string;
+    icon?: ReactNode;
+    component: ReactNode;
+    badge?: string | number;
+    disabled?: boolean;
+}
+
 interface PageHeaderProps {
     title?: string;
     subtitle?: string;
-    icon?: ReactNode; // Added icon prop
-    iconClassName?: string; // Optional className for icon customization
+    icon?: ReactNode;
+    iconClassName?: string;
     backUrl?: string;
     backLabel?: string;
     actions?: ActionButton[];
     children?: ReactNode;
     className?: string;
     breadcrumbs?: Array<{ label: string; href?: string }>;
+    tabs?: Tab[];
+    defaultTabId?: string;
+    onTabChange?: (tabId: string) => void;
+    tabClassName?: string;
+    activeTabClassName?: string;
+    tabContentClassName?: string;
+    tabVariant?: 'default' | 'pills' | 'underline';
 }
 
 export default function PageHeader({
     title,
     subtitle,
     icon,
-    iconClassName = 'h-8 w-8 mr-3 text-blue-600 dark:text-blue-400', // Default size and styling
+    iconClassName = 'h-8 w-8 mr-3 text-blue-600 dark:text-blue-400',
     backUrl,
     backLabel = 'Back',
     actions = [],
     children,
     className = '',
     breadcrumbs = [],
+    tabs = [],
+    defaultTabId,
+    onTabChange,
+    tabClassName = '',
+    activeTabClassName = '',
+    tabContentClassName = '',
+    tabVariant = 'default',
 }: PageHeaderProps) {
+    const [activeTabId, setActiveTabId] = useState<string>(
+        defaultTabId || (tabs.length > 0 ? tabs[0].id : ''),
+    );
+
+    const handleTabClick = (tabId: string) => {
+        if (tabs.find((tab) => tab.id === tabId)?.disabled) return;
+        setActiveTabId(tabId);
+        onTabChange?.(tabId);
+    };
+
     // Button variant styles
     const variantStyles = {
         primary: 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500',
@@ -134,9 +168,93 @@ export default function PageHeader({
         );
     };
 
+    // Get active tab content
+    const activeTab = tabs.find((tab) => tab.id === activeTabId);
+
+    // Tab styling based on variant
+    const getTabStyles = (tab: Tab) => {
+        const isActive = activeTabId === tab.id;
+        const isDisabled = tab.disabled;
+
+        if (tabVariant === 'pills') {
+            return `
+                inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all
+                ${
+                    isActive
+                        ? `bg-blue-600 text-white shadow-sm ${activeTabClassName}`
+                        : `text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700/50 dark:hover:text-gray-200`
+                }
+                ${isDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}
+                ${tabClassName}
+            `;
+        }
+
+        if (tabVariant === 'underline') {
+            return `
+                inline-flex items-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition-all
+                ${
+                    isActive
+                        ? `border-blue-600 text-blue-700 dark:border-blue-400 dark:text-blue-300 ${activeTabClassName}`
+                        : `border-transparent text-gray-600 hover:border-gray-300 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200`
+                }
+                ${isDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}
+                ${tabClassName}
+            `;
+        }
+
+        // Default variant
+        return `
+            inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all
+            ${
+                isActive
+                    ? `bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300 ${activeTabClassName}`
+                    : `text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700/50 dark:hover:text-gray-200`
+            }
+            ${isDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}
+            ${tabClassName}
+        `;
+    };
+
+    // Badge styling
+    const getBadgeStyles = (tab: Tab) => {
+        const isActive = activeTabId === tab.id;
+
+        if (tabVariant === 'pills') {
+            return `
+                ml-1 rounded-full px-2 py-0.5 text-xs font-medium
+                ${
+                    isActive
+                        ? 'bg-white/20 text-white'
+                        : 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
+                }
+            `;
+        }
+
+        if (tabVariant === 'underline') {
+            return `
+                ml-1 rounded-full px-2 py-0.5 text-xs font-medium
+                ${
+                    isActive
+                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                        : 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
+                }
+            `;
+        }
+
+        // Default variant
+        return `
+            ml-1 rounded-full px-2 py-0.5 text-xs font-medium
+            ${
+                isActive
+                    ? 'bg-blue-200 text-blue-800 dark:bg-blue-800/50 dark:text-blue-200'
+                    : 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
+            }
+        `;
+    };
+
     return (
         <div
-            className={`mb-4 w-full rounded-lg bg-white p-3 shadow-lg dark:bg-slate-800 ${className}`}
+            className={`mb-4 w-full rounded-lg bg-white p-3 dark:bg-slate-800 ${className}`}
         >
             {/* Breadcrumbs */}
             {breadcrumbs.length > 0 && (
@@ -213,6 +331,53 @@ export default function PageHeader({
                     {children}
                 </div>
             </div>
+
+            {/* Tabs */}
+            {tabs.length > 0 && (
+                <div
+                    className={`mt-4 ${
+                        tabVariant === 'underline'
+                            ? 'border-b border-gray-200 dark:border-gray-700'
+                            : ''
+                    }`}
+                >
+                    <div
+                        className={`flex space-x-1 overflow-x-auto py-2 ${
+                            tabVariant === 'underline' ? 'pb-0' : ''
+                        }`}
+                    >
+                        {tabs.map((tab) => (
+                            <button
+                                key={tab.id}
+                                onClick={() => handleTabClick(tab.id)}
+                                disabled={tab.disabled}
+                                className={getTabStyles(tab)}
+                            >
+                                {tab.icon && (
+                                    <span className="h-4 w-4 shrink-0">
+                                        {tab.icon}
+                                    </span>
+                                )}
+                                <span className="whitespace-nowrap">
+                                    {tab.label}
+                                </span>
+                                {tab.badge && (
+                                    <span className={getBadgeStyles(tab)}>
+                                        {tab.badge}
+                                    </span>
+                                )}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Tab Content */}
+            {tabs.length > 0 && activeTab && (
+                <div className={`mt-4 ${tabContentClassName}`}>
+                    {activeTab.component}
+                </div>
+            )}
         </div>
     );
 }

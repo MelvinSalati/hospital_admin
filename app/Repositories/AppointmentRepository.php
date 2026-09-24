@@ -40,11 +40,41 @@ class AppointmentRepository implements AppointmentInterface
     public function getAppointments(int $patientId)
     {
         return $this->appointment
+            ->with(['patient', 'department', 'doctor'])
             ->where('patient_id', $patientId)
             ->orderByDesc('appointment_date')
             ->orderByDesc('appointment_time')
             ->limit(4)
-            ->get();
+            ->get()
+            ->map(fn($appointment) => [
+                'id' => $appointment->id,
+                'uuid' => $appointment->appointment_uuid,
+                'created_at' => $appointment->created_at,
+                'date' => $appointment->appointment_date,
+                'time' => $appointment->appointment_time,
+
+                'status' => $appointment->status,
+                'priority' => $appointment->priority,
+                'reason' => $appointment->reason,
+                'notes' => $appointment->notes,
+
+                'patient_id' => $appointment->patient_id,
+                'patient_name' => $appointment->patient
+                    ? trim($appointment->patient->first_name . ' ' . $appointment->patient->last_name)
+                    : null,
+
+                'department_id' => $appointment->department_id,
+                'department_name' => $appointment->department?->name,
+
+                'doctor_id' => $appointment->doctor_id,
+                'doctor_name' => $appointment->doctor?->name,
+
+                'room' => $appointment->room,
+                'visit_token' => $appointment->visit_token,
+                'scheduled_at' => $appointment->scheduled_at,
+            ])
+            ->values()
+            ->toArray();
     }
 
     public function checkAppointmentStatus(int $appointmentId)

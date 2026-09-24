@@ -6,7 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\Patients\VisitToken;
 use App\Models\PatientVisit;
 use Inertia\Inertia;
-use Illuminate\Support\Facades\DB;
+use App\Models\User;
+use App\Models\UserProfile;
+use Illuminate\Support\Facades\Log;
 
 class NursesController extends Controller
 {
@@ -19,7 +21,7 @@ class NursesController extends Controller
     public function index()
     {
         // Get all active visit tokens with patient and visit information
-        $queuedPatients = PatientVisit::with(['patient', 'assignedDepartment', 'assignedStaff', 'visitToken'])
+        $queuedPatients = PatientVisit::with(['patient', 'assignedStaff', 'visitToken'])
             ->where('department_id', 6)
             ->where('status', 1)
             ->orderBy('created_at', 'asc')
@@ -31,6 +33,7 @@ class NursesController extends Controller
                     'token' => $visit->visitToken ? $visit->visitToken->token : 'T-' . str_pad($visit->id, 4, '0', STR_PAD_LEFT),
                     'visit_token_id' => $visit->visitToken?->id,
                     'patient_id' => $visit->patient_id,
+                    'patient_number'=> $visit->patient->patient_number,
                     'patient_name' => $visit->patient ? $visit->patient->first_name . ' ' . $visit->patient->last_name : 'Unknown',
                     'contact' => $visit->patient?->phone ?? 'N/A',
                     'gender' => $visit->patient?->gender ?? 'N/A',
@@ -47,19 +50,11 @@ class NursesController extends Controller
             });
 
         // Get statistics
-        $stats = [
-            'total_in_queue' => VisitToken::where('status', 'active')->count(),
-            'pending_assignment' => VisitToken::where('status', 'active')
-                ->whereNull('assigned_department_id')
-                ->count(),
-            'assigned_today' => VisitToken::whereDate('created_at', today())
-                ->where('status', 'active')
-                ->count(),
-        ];
+
+        Log::info('patient details ',[$queuedPatients]);
 
         return Inertia::render('nurses/nurses', [
             'queue' => $queuedPatients,
-            'stats' => $stats,
         ]);
     }
 
@@ -186,9 +181,61 @@ class NursesController extends Controller
                 'error' => $e->getMessage()
             ], 404);
         }
-    } 
+    }
 
     private function routeComponent(){
         return 'nurses/dashboard';
+    }
+
+    public function visit () {
+
+        $visit  = PatientVisit::with(['patient', 'assignedStaff', 'visitToken'])
+            ->where('department_id', 6)
+            ->where('status', 1)
+            ->orderBy('created_at', 'asc')
+            ->get()
+            ->map(function ($visit) {
+
+                return [
+                    'id' => $visit->id,
+                    'token' => $visit->visitToken ? $visit->visitToken->token : 'T-' . str_pad($visit->id, 4, '0', STR_PAD_LEFT),
+                    'visit_token_id' => $visit->visitToken?->id,
+                    'patient_id' => $visit->patient_id,
+                    'patient_number'=> $visit->patient->patient_number,
+                    'patient_name' => $visit->patient ? $visit->patient->first_name . ' ' . $visit->patient->last_name : 'Unknown',
+                    'contact' => $visit->patient?->phone ?? 'N/A',
+                    'gender' => $visit->patient?->gender ?? 'N/A',
+                    'payment_method' => $visit->payment_method,
+                    'original_payment_method' => $visit->visitToken?->original_payment_method ?? $visit->original_payment_method,
+                    'status' => $visit->status,
+                    'registered_at' => $visit->started_at ? $visit->started_at->format('Y-m-d H:i:s') : $visit->created_at->format('Y-m-d H:i:s'),
+                    'assigned_department' => $visit->assignedDepartment?->department_name ?? 'Not assigned',
+                    'assigned_staff' => $visit->assignedStaff?->name ?? 'Not assigned',
+                    'visit_status' => $this->mapVisitStatus($visit->status),
+                    'priority' => $visit->priority ?? 'routine',
+                    'department_id' => $visit->department_id,
+                ];
+            });
+        return  Inertia::render('nurses/visits',[
+            'queues' => $visit
+        ]);
+    } 
+
+    public function inPatients(){
+        return Inertia::render('nurses/in-patient' ,[
+            'admitted'  => []
+        ]);
+    } 
+    public function  treatmentRoom(){
+        return Inertia::render('nurses/treatment-room' ,[
+            'procedures'  => []
+        ]);
+    }
+
+    public function  userDepartment()
+    {
+        return Inertia::render('nurses/user-department', [
+            'userDepartments'  => UserProfile::where('department_id',6)->get()
+        ]);
     }
 }

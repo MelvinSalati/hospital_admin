@@ -138,4 +138,16 @@ class PatientRepository
             'created_at'
         ];
     }
+
+    public function patientDetails(int $patientId): Patient
+    {
+        return Patient::query()
+            ->select([
+                'email',
+                'first_name',
+                'last_name',
+                'phone_number',
+            ])
+            ->findOrFail($patientId);
+    }
 }

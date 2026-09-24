@@ -20,6 +20,7 @@ import {
     CreditCard,
     Building2,
     Package,
+    Users2,
 } from 'lucide-react';
 import Notiflix from 'notiflix';
 import React, { useState, useEffect, useRef } from 'react';
@@ -848,9 +849,7 @@ const InvoiceModal: React.FC<InvoiceModalProps> = ({
 
 export default function Queues() {
     const { active, completed } = usePage<QueuesProps>().props;
-    const [activeTab, setActiveTab] = useState<'active' | 'completed'>(
-        'active',
-    );
+    console.log(active);
     const [loading, setLoading] = useState(false);
     const [selectedInvoices, setSelectedInvoices] = useState<Invoice[]>([]);
     const [selectedPatient, setSelectedPatient] = useState<string>('');
@@ -963,8 +962,8 @@ export default function Queues() {
     // Define columns for active queues - REMOVED Unpaid Balance column
     const activeColumns: Column<PatientVisit>[] = [
         {
-            id: 'queue_number',
-            label: 'Queue #',
+            id: 'token',
+            label: 'Token',
             sortable: true,
             format: (value) => (
                 <div className="font-mono text-sm font-medium">
@@ -984,10 +983,12 @@ export default function Queues() {
                     </div>
                     <div>
                         <span className="font-medium text-slate-800 dark:text-slate-200">
-                            {row.patient?.name || 'Unknown Patient'}
+                            {row.patient?.first_name} {row.patient?.last_name}
                         </span>
                         <div className="flex items-center gap-2 text-xs text-slate-400">
-                            <span>ID: {row.patient?.id || 'N/A'}</span>
+                            <span>
+                                ID: {row.patient?.patient_number || 'N/A'}
+                            </span>
                             {row.patient?.phone && (
                                 <>
                                     <span>•</span>
@@ -1009,19 +1010,7 @@ export default function Queues() {
                 </div>
             ),
         },
-        {
-            id: 'department',
-            label: 'Department',
-            sortable: true,
-            format: (value, row) => (
-                <div className="flex items-center gap-2">
-                    <Stethoscope className="h-4 w-4 text-slate-400" />
-                    <span className="text-sm text-slate-700 dark:text-slate-300">
-                        {row.department?.name || 'N/A'}
-                    </span>
-                </div>
-            ),
-        },
+
         {
             id: 'priority',
             label: 'Priority',
@@ -1035,37 +1024,9 @@ export default function Queues() {
                 );
             },
         },
+
         {
-            id: 'status',
-            label: 'Status',
-            sortable: true,
-            filterable: true,
-            filterType: 'status',
-            statusColors: {
-                waiting: 'warning',
-                in_progress: 'info',
-                completed: 'success',
-                cancelled: 'error',
-                no_show: 'error',
-            },
-            format: (value, row) => {
-                const config = getStatusConfig(row.status);
-                const Icon = config.icon;
-                return (
-                    <span
-                        className={cn(
-                            'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium shadow-sm',
-                            config.color,
-                        )}
-                    >
-                        <Icon className="h-3 w-3" />
-                        {config.label}
-                    </span>
-                );
-            },
-        },
-        {
-            id: 'arrived_at',
+            id: 'updated_at',
             label: 'Arrived',
             sortable: true,
             format: (value) => (
@@ -1219,52 +1180,11 @@ export default function Queues() {
     // Define actions for active queues
     const activeActions: Action<PatientVisit>[] = [
         {
-            label: 'View',
-            icon: <FileText size={16} />,
-            color: 'info',
-            onClick: (row) => handleViewPatient(row.id),
-        },
-        {
-            label: 'Invoices',
-            icon: <Receipt size={16} />,
-            color: 'warning',
-            show: (row) =>
-                row.unpaid_invoices && row.unpaid_invoices.length > 0,
+            label: 'Dashboard',
+            icon: <Users2 size={16} />,
+            color: 'primary',
             onClick: (row) =>
-                handleViewInvoice(row.patient.id, row.patient.name),
-        },
-        {
-            label: 'Start',
-            icon: <Activity size={16} />,
-            color: 'success',
-            show: (row) => getStatusConfig(row.status).label === 'Waiting',
-            onClick: (row) => handleStartConsultation(row.id),
-        },
-        {
-            label: 'Complete',
-            icon: <CheckCircle size={16} />,
-            color: 'success',
-            show: (row) => getStatusConfig(row.status).label === 'In Progress',
-            onClick: (row) => handleCompleteVisit(row.id),
-        },
-    ];
-
-    // Define actions for completed queues
-    const completedActions: Action<PatientVisit>[] = [
-        {
-            label: 'View',
-            icon: <FileText size={16} />,
-            color: 'info',
-            onClick: (row) => handleViewPatient(row.id),
-        },
-        {
-            label: 'Invoices',
-            icon: <Receipt size={16} />,
-            color: 'warning',
-            show: (row) =>
-                row.unpaid_invoices && row.unpaid_invoices.length > 0,
-            onClick: (row) =>
-                handleViewInvoice(row.patient.id, row.patient.name),
+                router.visit(`/patients/dashboard/${row.patient.id}`),
         },
     ];
 
@@ -1284,131 +1204,31 @@ export default function Queues() {
                 { title: 'Queues', href: '/reception/queues' },
             ]}
         >
-            <div className="h-full bg-blue-50 p-4 ">
+            <div className="h-full bg-blue-50 p-4">
                 <PageHeader
                     icon={<Users className="h-6 w-6" />}
                     title="Patient Queues"
                     subtitle="View and manage patients in the queue with invoice tracking"
                 />
 
-                {/* Tabs as Button Group */}
-                <div className="mt-6 flex items-center justify-between">
-                    <div className="text-sm text-slate-500 dark:text-slate-400">
-                        {activeTab === 'active' ? (
-                            <span className="flex items-center gap-2">
-                                <span className="inline-block h-2 w-2 rounded-full bg-amber-500"></span>
-                                Showing active patients
-                            </span>
-                        ) : (
-                            <span className="flex items-center gap-2">
-                                <span className="inline-block h-2 w-2 rounded-full bg-emerald-500"></span>
-                                Showing completed visits
-                            </span>
-                        )}
-                    </div>
-
-                    <div className="flex items-center gap-1 rounded-lg bg-slate-200/50 p-1 dark:bg-slate-800/50">
-                        <button
-                            onClick={() => setActiveTab('active')}
-                            className={cn(
-                                'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all duration-200',
-                                activeTab === 'active'
-                                    ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white'
-                                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200',
-                            )}
-                        >
-                            <Clock className="h-3.5 w-3.5" />
-                            Active
-                            <Badge
-                                variant={
-                                    activeTab === 'active'
-                                        ? 'default'
-                                        : 'secondary'
-                                }
-                                className={cn(
-                                    'ml-0.5 px-1.5 py-0 text-[10px]',
-                                    activeTab === 'active'
-                                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300'
-                                        : 'bg-slate-300/50 text-slate-600 dark:bg-slate-600/50 dark:text-slate-400',
-                                )}
-                            >
-                                {active?.length || 0}
-                            </Badge>
-                        </button>
-
-                        <button
-                            onClick={() => setActiveTab('completed')}
-                            className={cn(
-                                'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all duration-200',
-                                activeTab === 'completed'
-                                    ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white'
-                                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200',
-                            )}
-                        >
-                            <CheckCircle className="h-3.5 w-3.5" />
-                            Completed
-                            <Badge
-                                variant={
-                                    activeTab === 'completed'
-                                        ? 'default'
-                                        : 'secondary'
-                                }
-                                className={cn(
-                                    'ml-0.5 px-1.5 py-0 text-[10px]',
-                                    activeTab === 'completed'
-                                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300'
-                                        : 'bg-slate-300/50 text-slate-600 dark:bg-slate-600/50 dark:text-slate-400',
-                                )}
-                            >
-                                {completed?.length || 0}
-                            </Badge>
-                        </button>
-                    </div>
+                <div className="mt-6">
+                    <ReusableTable
+                        title="Active Queue"
+                        columns={activeColumns}
+                        data={active || []}
+                        actions={activeActions}
+                        loading={loading}
+                        filterPlaceholder="Search by patient name..."
+                        statusFilterKey="status"
+                        statusOptions={statusOptions}
+                        rowsPerPageOptions={[8, 15, 25, 50]}
+                        defaultRowsPerPage={8}
+                        defaultOrderBy="arrived_at"
+                        emptyMessage="No patients in the queue"
+                        className="shadow-sm"
+                    />
                 </div>
 
-                {/* Active Queue Table */}
-                {activeTab === 'active' && (
-                    <div className="mt-6">
-                        <ReusableTable
-                            title="Active Queue"
-                            columns={activeColumns}
-                            data={active || []}
-                            actions={activeActions}
-                            loading={loading}
-                            filterPlaceholder="Search by patient name..."
-                            statusFilterKey="status"
-                            statusOptions={statusOptions}
-                            rowsPerPageOptions={[8, 15, 25, 50]}
-                            defaultRowsPerPage={8}
-                            defaultOrderBy="arrived_at"
-                            emptyMessage="No patients in the queue"
-                            className="shadow-sm"
-                        />
-                    </div>
-                )}
-
-                {/* Completed Queue Table */}
-                {activeTab === 'completed' && (
-                    <div className="mt-6">
-                        <ReusableTable
-                            title="Completed Visits"
-                            columns={completedColumns}
-                            data={completed || []}
-                            actions={completedActions}
-                            loading={loading}
-                            filterPlaceholder="Search by patient name..."
-                            statusFilterKey="status"
-                            statusOptions={statusOptions}
-                            rowsPerPageOptions={[8, 15, 25, 50]}
-                            defaultRowsPerPage={8}
-                            defaultOrderBy="completed_at"
-                            emptyMessage="No completed visits"
-                            className="shadow-sm"
-                        />
-                    </div>
-                )}
-
-                {/* Invoice Modal - Shows all invoices with totals */}
                 <InvoiceModal
                     isOpen={isInvoiceModalOpen}
                     onClose={() => {

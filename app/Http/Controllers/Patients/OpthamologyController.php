@@ -14,6 +14,7 @@ use App\Models\Services\Service;
 use App\Models\Payments\Invoice;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
+use App\Models\Patients\PatientVisitScheme;
 
 class OpthamologyController extends Controller
 {
@@ -23,11 +24,21 @@ class OpthamologyController extends Controller
     public function index($patientId)
     {
         try {
+            // Get active visit token for payment scheme
             $activeToken   = VisitTokenHelper::getActiveTokenArray($patientId);
             $paymentMethod = $activeToken['payment_method'] ?? 'cash';
 
-            // Get opthamology services (using 'Procedures' or 'Opthamology' category)
-            $opthamologyServices = ServicePricingHelper::getOpthamology($patientId);
+            // ── Resolve scheme_id from the active visit token (same as LaboratoryController) ──
+            $schemeSelected = PatientVisitScheme::where('token', $activeToken['token'])
+                ->value('scheme_id');
+
+            // ── Load opthamology services filtered by scheme_type, exactly like laboratory ──
+            $opthamologyServices = Service::where('scheme_type', $schemeSelected)
+                ->where('service_category', 'Opthamology')
+                ->get();
+
+            // Optional: keep pricing helper available for any downstream formatting
+            $pricingHelper = new ServicePricingHelper($paymentMethod);
 
             // Get previous opthamology orders
             $previousOrders = DB::table('opthamology_order_items')
@@ -42,11 +53,16 @@ class OpthamologyController extends Controller
                     'unit_price',
                     'total_price',
                     'status',
+                    'priority',
                     'created_at'
                 )
                 ->get();
 
-            Log::info('Opthamology services found:', ['count' => $opthamologyServices->count(), 'services' => $opthamologyServices->toArray()]);
+            Log::info('Opthamology services found:', [
+                'count'    => $opthamologyServices->count(),
+                'scheme'   => $schemeSelected,
+                'services' => $opthamologyServices->toArray(),
+            ]);
 
             return Inertia::render('patients/opthamology', [
                 'patientId'      => $patientId,
@@ -54,12 +70,15 @@ class OpthamologyController extends Controller
                 'previousOrders' => $previousOrders,
             ]);
         } catch (\Exception $e) {
-            Log::error('Opthamology Index Error: ' . $e->getMessage());
+            Log::error('Opthamology Index Error: ' . $e->getMessage(), [
+                'trace'      => $e->getTraceAsString(),
+                'patient_id' => $patientId,
+            ]);
 
             return Inertia::render('patients/opthamology', [
                 'patientId'      => $patientId,
                 'services'       => collect(),
-                'previousOrders' => [],
+                'previousOrders' => collect(),
                 'error'          => 'Unable to load opthamology data. Please try again.',
             ]);
         }
@@ -71,14 +90,16 @@ class OpthamologyController extends Controller
     public function orderOpthamologyService(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'patient_id'              => 'required|exists:patients,id',
-            'services'                => 'required|array|min:1',
-            'services.*.id'           => 'required|exists:services,id',
-            'services.*.service_name' => 'required|string',
-            'services.*.price'        => 'required|numeric|min:0',
-            'services.*.quantity'     => 'sometimes|integer|min:1',
-            'services.*.notes'        => 'nullable|string',
-            'scheme'                  => 'sometimes|in:cash,nhima,insurance,charity,mobile_money',
+            'patient_id'                   => 'required|exists:patients,id',
+            'services'                     => 'required|array|min:1',
+            'services.*.id'                => 'required|exists:services,id',
+            'services.*.service_name'      => 'required|string',
+            'services.*.service_category'  => 'sometimes|string',
+            'services.*.price'             => 'required|numeric|min:0',
+            'services.*.quantity'          => 'sometimes|integer|min:1',
+            'services.*.priority'          => 'sometimes|in:routine,urgent,stat',
+            'services.*.notes'             => 'nullable|string',
+            'scheme'                       => 'sometimes|in:cash,nhima,insurance,charity,mobile_money',
         ]);
 
         if ($validator->fails()) {
@@ -111,10 +132,11 @@ class OpthamologyController extends Controller
         DB::beginTransaction();
 
         try {
-            $patient = Patient::findOrFail($patientId);
+            $patient     = Patient::findOrFail($patientId);
+            $serviceType = 'opthamology';
             $totalAmount = 0;
-            $invoiceItems = [];
-            $opthamologyOrderItems = [];
+            $invoiceItems           = [];
+            $opthamologyOrderItems  = [];
 
             foreach ($request->input('services') as $service) {
                 $serviceRecord = Service::find($service['id']);
@@ -123,7 +145,8 @@ class OpthamologyController extends Controller
                     throw new \Exception("Service not found: {$service['service_name']}");
                 }
 
-                $quantity = (int) ($service['quantity'] ?? 1);
+                $quantity  = (int) ($service['quantity'] ?? 1);
+                $priority  = $service['priority'] ?? 'routine';
                 $unitPrice = $this->getPriceByScheme($serviceRecord, $paymentMethod);
 
                 // Allow frontend to override price
@@ -137,7 +160,7 @@ class OpthamologyController extends Controller
                     );
                 }
 
-                $totalPrice = $unitPrice * $quantity;
+                $totalPrice   = $unitPrice * $quantity;
                 $totalAmount += $totalPrice;
 
                 $invoiceItems[] = [
@@ -147,7 +170,8 @@ class OpthamologyController extends Controller
                     'price'            => $unitPrice,
                     'quantity'         => $quantity,
                     'total'            => $totalPrice,
-                    'type'             => 'opthamology',
+                    'type'             => $serviceType,
+                    'priority'         => $priority,
                     'created_at'       => now()->toDateTimeString(),
                 ];
 
@@ -155,17 +179,19 @@ class OpthamologyController extends Controller
                     'service_id'       => $service['id'],
                     'service_name'     => $service['service_name'],
                     'service_category' => $serviceRecord->service_category ?? 'Opthamology',
-                    'service_type'     => 'opthamology',
+                    'service_type'     => $serviceType,
                     'quantity'         => $quantity,
                     'unit_price'       => $unitPrice,
                     'total_price'      => $totalPrice,
-                    'notes'            => $service['notes'] ?? null,
+                    'priority'         => $priority,
+                    'notes'            => $service['notes']           ?? null,
+                    'collection_date'  => $service['collection_date'] ?? null,
                     'ordered_at'       => now(),
                     'visit_token'      => $token,
                 ];
             }
 
-            // Find or create invoice
+            // ── Find or create invoice ───────────────────────────────────
             $existingInvoice = Invoice::where('visit_token', $token)
                 ->whereIn('status', ['draft', 'unpaid'])
                 ->where('patient_id', $patientId)
@@ -186,7 +212,7 @@ class OpthamologyController extends Controller
 
                 // Merge new items
                 $mergedItems = array_merge($parsedExisting, $invoiceItems);
-                $newTotal = $existingInvoice->total + $totalAmount;
+                $newTotal    = $existingInvoice->total + $totalAmount;
 
                 $existingInvoice->update([
                     'items'      => $mergedItems,
@@ -195,12 +221,13 @@ class OpthamologyController extends Controller
                     'due_amount' => $existingInvoice->due_amount + $totalAmount,
                 ]);
 
-                $invoice = $existingInvoice->fresh();
+                $invoice    = $existingInvoice->fresh();
                 $isAppended = true;
 
                 Log::info('Opthamology: appended to existing invoice', [
                     'invoice_id'   => $invoice->id,
                     'visit_token'  => $token,
+                    'service_type' => $serviceType,
                     'items_added'  => count($invoiceItems),
                     'amount_added' => $totalAmount,
                 ]);
@@ -234,6 +261,7 @@ class OpthamologyController extends Controller
                     'invoice_id'     => $invoice->id,
                     'invoice_number' => $invoice->invoice_number,
                     'visit_token'    => $token,
+                    'service_type'   => $serviceType,
                     'items_count'    => count($invoiceItems),
                     'total'          => $totalAmount,
                 ]);
@@ -263,6 +291,8 @@ class OpthamologyController extends Controller
                 'total'    => $item['total'],
                 'category' => $item['service_category'],
                 'type'     => $item['type'],
+                'priority' => $item['priority'],
+                'date'     => $item['created_at'],
             ], $invoiceItems);
 
             return response()->json([
@@ -281,6 +311,7 @@ class OpthamologyController extends Controller
                     'order_items'  => $returnItems,
                     'is_appended'  => $isAppended,
                     'total_amount' => $totalAmount,
+                    'service_type' => $serviceType,
                     'items_count'  => count($invoiceItems),
                 ],
             ], 201);

@@ -1,5 +1,5 @@
 // resources/js/pages/reception/Dashboard.tsx
-import {  router } from '@inertiajs/react';
+import { router } from '@inertiajs/react';
 import {
     Users,
     WalletCards,
@@ -43,6 +43,7 @@ import {
     TrendingUp,
     TrendingDown,
     Minus,
+    BarChart3,
 } from 'lucide-react';
 import React, { useMemo, useState, useEffect } from 'react';
 import {
@@ -1962,69 +1963,12 @@ export default function Dashboard() {
                 { title: 'Reception', href: '/reception' },
             ]}
         >
-            <div className="h-full space-y-4 bg-blue-50 p-3 sm:space-y-6 sm:p-6">
-                {/* Header */}
-                <DashboardHeader
-                    onRefresh={handleRefresh}
-                    onDateChange={handleDateChange}
-                    loading={loading}
-                    lastUpdated={lastUpdated}
+            <div className="h-full bg-blue-50">
+                <PageHeader
+                    icon={<BarChart3 />}
+                    title="Dashboard"
+                    subtitle="Snapshot of reception"
                 />
-
-                {/* Core KPIs */}
-                <CoreKPIs overview={overview} billing={billing} />
-
-                {/* Patient Flow */}
-                <PatientFlowStrip overview={overview} />
-
-                {/* Appointments & Queue */}
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-                    <div className="lg:col-span-2">
-                        <TodayAppointments
-                            appointments={appointments}
-                            onAction={handleAppointmentAction}
-                        />
-                    </div>
-                    <div>
-                        <QueueStatus queue={queue} />
-                    </div>
-                </div>
-
-                {/* Billing & Insurance */}
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-                    <div className="lg:col-span-2">
-                        <BillingControl billing={billing} />
-                    </div>
-                    <div>
-                        <InsuranceMonitoring insurance={insurance} />
-                    </div>
-                </div>
-
-                {/* Cashier & Daily Trend */}
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-                    <div>
-                        <CashierReconciliation cashier={cashier} />
-                    </div>
-                    <div className="lg:col-span-2">
-                        <DailyTrendChart data={dailyTrend} />
-                    </div>
-                </div>
-
-                {/* Outstanding Accounts */}
-                <OutstandingAccounts accounts={outstandingAccounts} />
-
-                {/* Recent Payments */}
-                <RecentPayments payments={recentPayments} />
-
-                {/* Attention Required & Quick Actions */}
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-                    <div className="lg:col-span-2">
-                        <AttentionRequired alerts={alerts} />
-                    </div>
-                    <div>
-                        <QuickActions />
-                    </div>
-                </div>
             </div>
         </AppLayout>
     );

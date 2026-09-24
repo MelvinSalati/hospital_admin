@@ -1,275 +1,341 @@
+// resources/js/pages/laboratory/Nurses.tsx
 import { Link, usePage } from '@inertiajs/react';
 import {
-    ArrowLeftCircle,
-    Inbox,
-    MenuIcon,
-    Thermometer,
-    ThermometerSnowflake,
-    User2,
-    ClipboardCheck,
-    UserPlus,
-    Users,
-    Stethoscope,
-    ArrowLeft,
     MicroscopeIcon,
+    Users,
+    UserPlus,
+    ClipboardCheck,
+    ArrowLeft,
+    Eye,
+    FlaskConical,
+    Clock,
+    CheckCircle2,
+    AlertCircle,
 } from 'lucide-react';
 import { useState } from 'react';
+import { router } from '@inertiajs/react';
+import Notiflix from 'notiflix';
 import PageHeader from '@/components/PageHeader';
-import { Badge } from '@/components/ui/badge';
+import type { Column, Action } from '@/components/ReusableTable';
+import ReusableTable from '@/components/ReusableTable';
 import { Button } from '@/components/ui/button';
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
-    DialogTrigger,
-} from '@/components/ui/dialog';
 import AppLayout from '@/layouts/app-layout';
+import { cn } from '@/lib/utils';
 
+// ============ TYPES ============
+interface QueuePatient {
+    id: number;
+    token: string;
+    first_name: string;
+    last_name: string;
+    email: string | null;
+    phone: string | null;
+    gender: string | null;
+    status: 'active' | 'pending' | 'completed' | string;
+    created_at: string;
+    patient_number?: string;
+    visit_token?: string;
+}
+
+interface Props {
+    queue: QueuePatient[];
+    stats?: {
+        pending_assignment?: number;
+        assigned_today?: number;
+        completed_today?: number;
+    };
+}
+
+// ============ HELPERS ============
+const formatDate = (date: string | null): string => {
+    if (!date) return 'N/A';
+    try {
+        return new Date(date).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+        });
+    } catch {
+        return 'N/A';
+    }
+};
+
+const formatTime = (date: string | null): string => {
+    if (!date) return '';
+    try {
+        return new Date(date).toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit',
+        });
+    } catch {
+        return '';
+    }
+};
+
+const getStatusConfig = (status: string) => {
+    const map: Record<string, { label: string; badge: string; dot: string }> = {
+        active: {
+            label: 'In Queue',
+            badge: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800',
+            dot: 'bg-blue-500',
+        },
+        pending: {
+            label: 'Pending',
+            badge: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800',
+            dot: 'bg-amber-500',
+        },
+        completed: {
+            label: 'Completed',
+            badge: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800',
+            dot: 'bg-emerald-500',
+        },
+        cancelled: {
+            label: 'Cancelled',
+            badge: 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700',
+            dot: 'bg-slate-400',
+        },
+    };
+    return map[status] ?? map.pending;
+};
+
+// ============ COMPACT STAT CARD ============
+interface StatCardProps {
+    label: string;
+    value: number | string;
+    icon: React.ReactNode;
+    iconBg: string;
+    iconColor: string;
+}
+
+function StatCard({ label, value, icon, iconBg, iconColor }: StatCardProps) {
+    return (
+        <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-3 transition-shadow hover:shadow-sm">
+            <div
+                className={cn(
+                    'flex h-9 w-9 items-center justify-center rounded-md',
+                    iconBg,
+                )}
+            >
+                <span className={iconColor}>{icon}</span>
+            </div>
+            <div className="min-w-0">
+                <p className="truncate text-[11px] font-medium tracking-wide text-slate-500 uppercase">
+                    {label}
+                </p>
+                <p className="text-lg font-semibold text-slate-800 tabular-nums">
+                    {value}
+                </p>
+            </div>
+        </div>
+    );
+}
+
+// ============ MAIN COMPONENT ============
 export default function Nurses() {
-    const tabs = [
+    const { props } = usePage<Props>();
+    const queues = props.queue || [];
+    const stats = props.stats || {};
+
+    // ─── Handle "View Patient" ───
+    const viewPatient = (row: QueuePatient) => {
+        router.visit(`/patients/lab/${row.id}`);
+    };
+
+    // ─── Handle "Collect Sample" (example) ───
+    const collectSample = (row: QueuePatient) => {
+        Notiflix.Confirm.show(
+            'Collect Sample',
+            `Collect sample for ${row.first_name} ${row.last_name}?`,
+            'Confirm',
+            'Cancel',
+            () => {
+                router.post(
+                    `/laboratory/samples/${row.id}/collect`,
+                    {},
+                    {
+                        onSuccess: () => {
+                            Notiflix.Notify.success('Sample collected');
+                            router.reload();
+                        },
+                        onError: () =>
+                            Notiflix.Notify.failure('Failed to collect sample'),
+                    },
+                );
+            },
+        );
+    };
+
+    // ─── Columns ───
+    const columns: Column<QueuePatient>[] = [
         {
-            key: 1,
-            name: 'Queue',
+            id: 'token',
+            label: 'Token',
+            sortable: true,
+            format: (value) => (
+                <div className="flex items-center gap-2">
+                    <div className="rounded border border-slate-200 bg-slate-50 p-1 text-slate-600">
+                        <FlaskConical size={13} />
+                    </div>
+                    <span className="font-mono text-xs font-semibold text-slate-800">
+                        AMH-{value}
+                    </span>
+                </div>
+            ),
         },
         {
-            key: 2,
-            name: 'Samples Processed',
+            id: 'first_name',
+            label: 'Patient',
+            sortable: true,
+            filterable: true,
+            format: (_, row) => (
+                <div className="flex items-center gap-2">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-[10px] font-semibold text-slate-600">
+                        {row.first_name?.[0]}
+                        {row.last_name?.[0]}
+                    </div>
+                    <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-slate-800">
+                            {row.first_name} {row.last_name}
+                        </p>
+                        {row.patient_number && (
+                            <p className="font-mono text-[11px] text-slate-400">
+                                {row.patient_number}
+                            </p>
+                        )}
+                    </div>
+                </div>
+            ),
         },
         {
-            key: 3,
-            name: 'Management',
+            id: 'phone',
+            label: 'Contact',
+            format: (_, row) => (
+                <div className="text-xs text-slate-600">
+                    {row.phone && <div>{row.phone}</div>}
+                    {row.email && (
+                        <div className="truncate text-slate-400">
+                            {row.email}
+                        </div>
+                    )}
+                    {!row.phone && !row.email && (
+                        <span className="text-slate-400">—</span>
+                    )}
+                </div>
+            ),
+        },
+        {
+            id: 'gender',
+            label: 'Gender',
+            sortable: true,
+            format: (value) => (
+                <span className="text-xs text-slate-600 capitalize">
+                    {value || '—'}
+                </span>
+            ),
+        },
+        {
+            id: 'status',
+            label: 'Status',
+            sortable: true,
+            filterable: true,
+            filterType: 'status',
+            statusColors: {
+                active: 'info',
+                pending: 'warning',
+                completed: 'success',
+                cancelled: 'error',
+            },
+            format: (value) => {
+                const config = getStatusConfig(value);
+                return (
+                    <span
+                        className={cn(
+                            'inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11px] font-medium',
+                            config.badge,
+                        )}
+                    >
+                        <span
+                            className={cn(
+                                'h-1.5 w-1.5 rounded-full',
+                                config.dot,
+                            )}
+                        />
+                        {config.label}
+                    </span>
+                );
+            },
+        },
+        {
+            id: 'created_at',
+            label: 'Registered',
+            sortable: true,
+            format: (value) => (
+                <div className="text-xs text-slate-600">
+                    <div>{formatDate(value)}</div>
+                    <div className="text-slate-400">{formatTime(value)}</div>
+                </div>
+            ),
         },
     ];
 
-    const { props } = usePage();
-    const [activeTab, setActiveTab] = useState('Queue');
-    const [cartModal, setCartModal] = useState(false);
-    const queues = props.queue;
-    const stats = [];
-    const cartalogueHandler = () => {
-        setCartModal(true);
-    };
+    // ─── Actions ───
+    const actions: Action<QueuePatient>[] = [
+        {
+            label: 'View Patient',
+            icon: <Eye size={16} />,
+            color: 'info',
+            onClick: (row) => viewPatient(row),
+        },
+        {
+            label: 'Collect Sample',
+            icon: <FlaskConical size={16} />,
+            color: 'success',
+            show: (row) => row.status === 'active' || row.status === 'pending',
+            onClick: (row) => collectSample(row),
+        },
+    ];
+
+    // ─── Status filter options ───
+    const statusOptions = [
+        { value: 'active', label: 'In Queue' },
+        { value: 'pending', label: 'Pending' },
+        { value: 'completed', label: 'Completed' },
+        { value: 'cancelled', label: 'Cancelled' },
+    ];
 
     return (
         <AppLayout
             breadcrumbs={[
-                {
-                    href: '',
-                    title: 'Department',
-                },
-                {
-                    href: '',
-                    title: 'Laboratory',
-                },
+                { href: '/dashboard', title: 'Dashboard' },
+                { href: '', title: 'Laboratory' },
+                { href: '', title: 'Queue' },
             ]}
         >
-            <div className="bg-white p-4">
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                        <Button variant="outline" size="icon" asChild>
-                            <Link href="/dashboard">
-                                <ArrowLeft size={16} />
-                            </Link>
-                        </Button>
+            <div className="h-full space-y-4 bg-blue-50 p-4">
+                {/* ─── Header ─── */}
+                <PageHeader
+                    icon={<MicroscopeIcon className="h-5 w-5" />}
+                    title="Laboratory Department"
+                    subtitle="Manage patient queue, samples, and laboratory workflow"
+                />
 
-                        <div>
-                            <h1 className="flex items-center gap-2 text-xl font-semibold">
-                                <MicroscopeIcon size={18} />
-                                Laboratory Department
-                            </h1>
-                            <p className="text-sm text-gray-500">
-                                Manage patient consultations and medical records
-                            </p>
-                        </div>
-                    </div>
-                </div>
-                {/* Stats Cards */}
-                <div className="grid grid-cols-1 gap-4 p-2 md:grid-cols-3">
-                    <div>
-                        <div className="flex items-center justify-between rounded-lg bg-violet-100 p-4">
-                            <div>
-                                <p className="text-sm text-gray-500">
-                                    Total in Queue
-                                </p>
-                                <p className="text-2xl font-bold">
-                                    {queues.length || 0}
-                                </p>
-                            </div>
-                            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white">
-                                <Users className="h-6 w-6 text-blue-600" />
-                            </div>
-                        </div>
-                    </div>
-                    <div>
-                        <div className="flex items-center justify-between rounded-lg bg-green-200 p-4">
-                            <div>
-                                <p className="text-sm text-gray-500">
-                                    Pending Assignment
-                                </p>
-                                <p className="text-2xl font-bold">
-                                    {stats.pending_assignment || 0}
-                                </p>
-                            </div>
-                            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white">
-                                <UserPlus className="h-6 w-6 text-orange-600" />
-                            </div>
-                        </div>
-                    </div>
-                    <div>
-                        <div className="flex items-center justify-between rounded-lg bg-blue-200 p-4">
-                            <div>
-                                <p className="text-sm text-gray-500">
-                                    Assigned Today
-                                </p>
-                                <p className="text-2xl font-bold">
-                                    {queues.length || 0}
-                                </p>
-                            </div>
-                            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white">
-                                <ClipboardCheck className="h-6 w-6 text-green-600" />
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                {activeTab === 'Queue' && (
-                    <div className="p-4">
-                        {queues.length > 0 ? (
-                            <>
-                                <div className="hidden overflow-x-auto md:block">
-                                    <table className="w-full">
-                                        <thead className="bg-gray-50 dark:bg-gray-700">
-                                            <tr>
-                                                <th className="px-6 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase dark:text-gray-300">
-                                                    Token
-                                                </th>
-                                                <th className="px-6 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase dark:text-gray-300">
-                                                    Name
-                                                </th>
-                                                <th className="px-6 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase dark:text-gray-300">
-                                                    Contact
-                                                </th>
-                                                <th className="px-6 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase dark:text-gray-300">
-                                                    Gender
-                                                </th>
-                                                <th className="px-6 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase dark:text-gray-300">
-                                                    Status
-                                                </th>
-                                                <th className="px-6 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase dark:text-gray-300">
-                                                    Registered
-                                                </th>
-                                                <th className="px-6 py-3 text-right text-xs font-medium tracking-wider text-gray-500 uppercase dark:text-gray-300">
-                                                    Actions
-                                                </th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                                            {queues.length > 0 ? (
-                                                queues.map((patient) => (
-                                                    <tr
-                                                        key={patient.id}
-                                                        className="transition-colors hover:bg-gray-50 dark:hover:bg-gray-700"
-                                                    >
-                                                        <td className="p-2 text-sm font-semibold whitespace-nowrap text-blue-900 dark:text-blue-400">
-                                                            {'AMH-'}
-                                                            {patient.token}
-                                                        </td>
-                                                        <td className="px-6 py-4 whitespace-nowrap">
-                                                            <div className="text-sm font-medium text-gray-900 dark:text-white">
-                                                                {
-                                                                    patient.first_name
-                                                                }{' '}
-                                                                {
-                                                                    patient.last_name
-                                                                }
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-6 py-4 whitespace-nowrap">
-                                                            <div className="text-sm text-gray-500 dark:text-gray-400">
-                                                                <div>
-                                                                    {
-                                                                        patient.email
-                                                                    }
-                                                                </div>
-                                                                <div>
-                                                                    {
-                                                                        patient.phone
-                                                                    }
-                                                                </div>
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-6 py-4 text-sm whitespace-nowrap text-gray-500 capitalize dark:text-gray-400">
-                                                            {patient.gender}
-                                                        </td>
-                                                        <td className="px-6 py-4 whitespace-nowrap">
-                                                            <span
-                                                                className={`rounded-full px-2 py-1 text-xs font-medium ${
-                                                                    patient.status ===
-                                                                    'active'
-                                                                        ? 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100'
-                                                                        : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
-                                                                }`}
-                                                            >
-                                                                {'Pending'}
-                                                            </span>
-                                                        </td>
-                                                        <td className="px-6 py-4 text-sm whitespace-nowrap text-gray-500 dark:text-gray-400">
-                                                            {new Date(
-                                                                patient.created_at,
-                                                            ).toLocaleDateString()}
-                                                        </td>
-                                                        <td className="flex gap-2 px-6 py-4 text-right text-sm font-medium whitespace-nowrap">
-                                                            <Link
-                                                                href={`/patients/lab/${patient.id}`}
-                                                                className="rounded-3xl bg-black p-1 text-white"
-                                                            >
-                                                                View Patient
-                                                            </Link>
-                                                        </td>
-                                                    </tr>
-                                                ))
-                                            ) : (
-                                                <tr>
-                                                    <td
-                                                        colSpan={7}
-                                                        className="px-6 py-12 text-center text-gray-500 dark:text-gray-400"
-                                                    >
-                                                        <div className="flex flex-col items-center">
-                                                            <svg
-                                                                className="mb-3 h-12 w-12 text-gray-400"
-                                                                fill="none"
-                                                                stroke="currentColor"
-                                                                viewBox="0 0 24 24"
-                                                            >
-                                                                <path
-                                                                    strokeLinecap="round"
-                                                                    strokeLinejoin="round"
-                                                                    strokeWidth={
-                                                                        2
-                                                                    }
-                                                                    d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                                                                />
-                                                            </svg>
-                                                            <p className="text-lg font-medium">
-                                                                No patients
-                                                                found
-                                                            </p>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            )}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </>
-                        ) : (
-                            <></>
-                        )}
-                    </div>
-                )}
-         
+                {/* ─── Queue Table ─── */}
+                <ReusableTable
+                    title="Patient Queue"
+                    columns={columns}
+                    data={queues}
+                    actions={actions}
+                    loading={false}
+                    filterPlaceholder="Search by name, token, or phone..."
+                    statusFilterKey="status"
+                    statusOptions={statusOptions}
+                    rowsPerPageOptions={[8, 15, 25, 50]}
+                    defaultRowsPerPage={8}
+                    defaultOrderBy="created_at"
+                    defaultOrderDirection="asc"
+                    emptyMessage="No patients in the queue"
+                    className="shadow-sm"
+                />
             </div>
         </AppLayout>
     );

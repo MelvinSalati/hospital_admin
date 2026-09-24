@@ -1,17 +1,9 @@
 // components/payments/InvoicesTable.tsx
 
-import {
-    Search,
-    Eye,
-    DollarSign,
-    FileText,
-    AlertCircle,
-    Clock,
-    CheckCircle,
-    XCircle,
-} from 'lucide-react';
-import { useState } from 'react';
-import { Button } from '@/components/ui/button';
+import { Eye, DollarSign } from 'lucide-react';
+import { useMemo } from 'react';
+import type { Column, Action } from '@/components/ReusableTable';
+import ReusableTable from '@/components/ReusableTable';
 import StatusBadge from './StatusBadge';
 
 interface Invoice {
@@ -34,201 +26,194 @@ interface InvoicesTableProps {
     onView: (invoice: Invoice) => void;
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const formatCurrency = (amount: any): string => {
+    if (amount === null || amount === undefined) return 'ZMW 0.00';
+    const num = typeof amount === 'string' ? parseFloat(amount) : amount;
+    if (isNaN(num)) return 'ZMW 0.00';
+    return `ZMW ${num.toLocaleString('en-ZM', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    })}`;
+};
+
+const formatDate = (dateStr?: string): string => {
+    if (!dateStr) return '—';
+    try {
+        return new Date(dateStr).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+        });
+    } catch {
+        return dateStr;
+    }
+};
+
+const getInvoiceTotal = (invoice: Invoice): number => {
+    if (invoice.total !== undefined && invoice.total !== null)
+        return invoice.total;
+    if (invoice.amount !== undefined && invoice.amount !== null)
+        return invoice.amount;
+    return 0;
+};
+
+const getInvoiceDue = (invoice: Invoice): number => {
+    if (invoice.due_amount !== undefined && invoice.due_amount !== null)
+        return invoice.due_amount;
+    const total = getInvoiceTotal(invoice);
+    const paid = invoice.paid_amount || 0;
+    return total - paid;
+};
+
+const isOverdue = (invoice: Invoice): boolean => {
+    if (!invoice.due_date) return false;
+    if (invoice.status === 'paid' || invoice.status === 'cancelled')
+        return false;
+    return new Date(invoice.due_date) < new Date();
+};
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
 export default function InvoicesTable({
     invoices,
     onPay,
     onView,
 }: InvoicesTableProps) {
-    const [searchTerm, setSearchTerm] = useState('');
-    const [filterStatus, setFilterStatus] = useState('all');
+    const safeInvoices = useMemo(
+        () => (Array.isArray(invoices) ? invoices : []),
+        [invoices],
+    );
 
-    const safeInvoices = Array.isArray(invoices) ? invoices : [];
+    // ─── Columns ─────────────────────────────────────────────────────────────
 
-    const filtered = safeInvoices.filter((inv) => {
-        const matchSearch =
-            inv.invoice_number
-                ?.toLowerCase()
-                .includes(searchTerm.toLowerCase()) || false;
-        const matchStatus =
-            filterStatus === 'all' || inv.status === filterStatus;
-        return matchSearch && matchStatus;
-    });
+    const columns: Column<Invoice>[] = useMemo(
+        () => [
+            {
+                id: 'invoice_number',
+                label: 'Invoice',
+                sortable: true,
+                format: (value) => (
+                    <span className="font-mono text-[9px] font-medium text-slate-700 dark:text-slate-300">
+                        {value || 'N/A'}
+                    </span>
+                ),
+            },
+            {
+                id: 'created_at',
+                label: 'Date',
+                sortable: true,
+                format: (value) => (
+                    <span className="text-[9px] text-slate-500 dark:text-slate-400">
+                        {formatDate(value)}
+                    </span>
+                ),
+            },
+            {
+                id: 'due_date',
+                label: 'Due',
+                sortable: true,
+                format: (value, row) => {
+                    const overdue = isOverdue(row);
+                    return (
+                        <span
+                            className={`text-[9px] ${
+                                overdue
+                                    ? 'font-medium text-red-600 dark:text-red-400'
+                                    : 'text-slate-500 dark:text-slate-400'
+                            }`}
+                        >
+                            {formatDate(value)}
+                        </span>
+                    );
+                },
+            },
+            {
+                id: 'total',
+                label: 'Amount',
+                sortable: true,
+                format: (_value, row) => (
+                    <span className="text-[10px] font-semibold text-slate-800 tabular-nums dark:text-slate-200">
+                        {formatCurrency(getInvoiceTotal(row))}
+                    </span>
+                ),
+            },
+            {
+                id: 'due_amount',
+                label: 'Due',
+                sortable: true,
+                format: (_value, row) => (
+                    <span className="text-[10px] font-medium text-amber-600 tabular-nums dark:text-amber-400">
+                        {formatCurrency(getInvoiceDue(row))}
+                    </span>
+                ),
+            },
+            {
+                id: 'status',
+                label: 'Status',
+                sortable: true,
+                filterable: true,
+                filterType: 'status',
+                format: (value) => <StatusBadge status={value} />,
+            },
+        ],
+        [],
+    );
 
-    const formatCurrency = (amount: any) => {
-        if (amount === null || amount === undefined || isNaN(amount))
-            return 'ZMW 0.00';
-        const numAmount =
-            typeof amount === 'string' ? parseFloat(amount) : amount;
-        if (isNaN(numAmount)) return 'ZMW 0.00';
-        return `ZMW ${numAmount.toLocaleString('en-ZM', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    };
+    // ─── Actions ─────────────────────────────────────────────────────────────
 
-    const formatDate = (dateStr: string) => {
-        if (!dateStr) return '—';
-        try {
-            const date = new Date(dateStr);
-            return date.toLocaleDateString('en-US', {
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric',
-            });
-        } catch {
-            return dateStr;
-        }
-    };
+    const actions: Action<Invoice>[] = useMemo(
+        () => [
+            {
+                label: 'View',
+                icon: <Eye size={14} />,
+                color: 'info',
+                onClick: (row) => onView(row),
+            },
+            {
+                label: 'Pay',
+                icon: <DollarSign size={14} />,
+                color: 'success',
+                show: (row) => {
+                    const due = getInvoiceDue(row);
+                    return (
+                        row.status !== 'paid' &&
+                        row.status !== 'cancelled' &&
+                        due > 0
+                    );
+                },
+                onClick: (row) => onPay(row),
+            },
+        ],
+        [onPay, onView],
+    );
 
-    const getInvoiceTotal = (invoice: Invoice) => {
-        if (invoice.total !== undefined && invoice.total !== null)
-            return invoice.total;
-        if (invoice.amount !== undefined && invoice.amount !== null)
-            return invoice.amount;
-        return 0;
-    };
-
-    const getInvoiceDue = (invoice: Invoice) => {
-        if (invoice.due_amount !== undefined && invoice.due_amount !== null)
-            return invoice.due_amount;
-        const total = getInvoiceTotal(invoice);
-        const paid = invoice.paid_amount || 0;
-        return total - paid;
-    };
-
-    const isOverdue = (invoice: Invoice) => {
-        if (!invoice.due_date) return false;
-        if (invoice.status === 'paid' || invoice.status === 'cancelled')
-            return false;
-        return new Date(invoice.due_date) < new Date();
-    };
+    // ─── Render ──────────────────────────────────────────────────────────────
 
     return (
-        <div className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800/90">
-            {/* Compact Header */}
-            <div className="flex flex-wrap items-center justify-between gap-1.5 border-b border-slate-200 px-3 py-1.5 dark:border-slate-700">
-                <div className="flex items-center gap-2">
-                    <div className="relative">
-                        <Search className="absolute top-1/2 left-2 h-3 w-3 -translate-y-1/2 text-slate-400" />
-                        <input
-                            type="text"
-                            placeholder="Search..."
-                            className="h-7 w-36 rounded-lg border border-slate-200 pr-2 pl-7 text-[10px] focus:border-blue-400 focus:ring-1 focus:ring-blue-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                        />
-                    </div>
-                    <select
-                        value={filterStatus}
-                        onChange={(e) => setFilterStatus(e.target.value)}
-                        className="h-7 rounded-lg border border-slate-200 px-1.5 text-[9px] focus:border-blue-400 focus:ring-1 focus:ring-blue-400 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                    >
-                        <option value="all">All</option>
-                        <option value="draft">Draft</option>
-                        <option value="sent">Sent</option>
-                        <option value="pending">Pending</option>
-                        <option value="overdue">Overdue</option>
-                        <option value="partial">Partial</option>
-                        <option value="paid">Paid</option>
-                        <option value="cancelled">Cancelled</option>
-                    </select>
-                </div>
-                <div className="flex items-center gap-2 text-[9px] text-slate-500 dark:text-slate-400">
-                    <span>
-                        {filtered.length} of {safeInvoices.length}
-                    </span>
-                </div>
-            </div>
-
-            {/* Compact Table */}
-            <div className="overflow-x-auto">
-                <table className="w-full">
-                    <thead className="border-b border-slate-200 bg-slate-50 text-[8px] text-slate-600 uppercase dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-400">
-                        <tr>
-                            <th className="px-2 py-1 text-left">Invoice</th>
-                            <th className="px-2 py-1 text-left">Date</th>
-                            <th className="px-2 py-1 text-left">Due</th>
-                            <th className="px-2 py-1 text-right">Amount</th>
-                            <th className="px-2 py-1 text-right">Due</th>
-                            <th className="px-2 py-1 text-center">Status</th>
-                            <th className="px-2 py-1 text-center">Action</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 text-[10px] dark:divide-slate-700/50">
-                        {filtered.length === 0 ? (
-                            <tr>
-                                <td colSpan={7} className="py-6 text-center">
-                                    <FileText className="mx-auto h-6 w-6 text-slate-300 dark:text-slate-600" />
-                                    <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
-                                        No invoices found
-                                    </p>
-                                </td>
-                            </tr>
-                        ) : (
-                            filtered.map((invoice) => {
-                                const total = getInvoiceTotal(invoice);
-                                const due = getInvoiceDue(invoice);
-                                const overdue = isOverdue(invoice);
-
-                                return (
-                                    <tr
-                                        key={invoice.id}
-                                        className="hover:bg-slate-50 dark:hover:bg-slate-800/50"
-                                    >
-                                        <td className="px-2 py-1.5 font-mono text-[9px] font-medium text-slate-700 dark:text-slate-300">
-                                            {invoice.invoice_number || 'N/A'}
-                                        </td>
-                                        <td className="px-2 py-1.5 text-[9px] text-slate-500 dark:text-slate-400">
-                                            {formatDate(invoice.created_at)}
-                                        </td>
-                                        <td
-                                            className={`px-2 py-1.5 text-[9px] ${overdue ? 'font-medium text-red-600 dark:text-red-400' : 'text-slate-500 dark:text-slate-400'}`}
-                                        >
-                                            {formatDate(invoice.due_date)}
-                                        </td>
-                                        <td className="px-2 py-1.5 text-right text-[10px] font-semibold text-slate-800 dark:text-slate-200">
-                                            {formatCurrency(total)}
-                                        </td>
-                                        <td className="px-2 py-1.5 text-right text-[10px] font-medium text-amber-600 dark:text-amber-400">
-                                            {formatCurrency(due)}
-                                        </td>
-                                        <td className="px-2 py-1.5 text-center">
-                                            <StatusBadge
-                                                status={invoice.status}
-                                            />
-                                        </td>
-                                        <td className="px-2 py-1.5 text-center">
-                                            <div className="flex items-center justify-center gap-0.5">
-                                                <button
-                                                    onClick={() =>
-                                                        onView(invoice)
-                                                    }
-                                                    className="rounded p-0.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-blue-600 dark:hover:bg-slate-700 dark:hover:text-blue-400"
-                                                    title="View"
-                                                >
-                                                    <Eye className="h-3 w-3" />
-                                                </button>
-                                                {invoice.status !== 'paid' &&
-                                                    invoice.status !==
-                                                        'cancelled' &&
-                                                    due > 0 && (
-                                                        <button
-                                                            onClick={() =>
-                                                                onPay(invoice)
-                                                            }
-                                                            className="flex items-center gap-0.5 rounded bg-emerald-600 px-1.5 py-0.5 text-[9px] font-medium text-white transition-colors hover:bg-emerald-700"
-                                                            title="Pay"
-                                                        >
-                                                            <DollarSign className="h-2.5 w-2.5" />
-                                                            Pay
-                                                        </button>
-                                                    )}
-                                            </div>
-                                        </td>
-                                    </tr>
-                                );
-                            })
-                        )}
-                    </tbody>
-                </table>
-            </div>
-        </div>
+        <ReusableTable
+            title="Invoices"
+            columns={columns}
+            data={safeInvoices}
+            actions={actions}
+            loading={false}
+            filterPlaceholder="Search invoices..."
+            statusFilterKey="status"
+            statusOptions={[
+                { value: 'draft', label: 'Draft' },
+                { value: 'sent', label: 'Sent' },
+                { value: 'pending', label: 'Pending' },
+                { value: 'partial', label: 'Partial' },
+                { value: 'paid', label: 'Paid' },
+                { value: 'cancelled', label: 'Cancelled' },
+            ]}
+            rowsPerPageOptions={[5, 10, 25, 50]}
+            defaultRowsPerPage={5}
+            defaultOrderBy="created_at"
+            emptyMessage="No invoices found"
+            onRowClick={(row) => onView(row)}
+            className="border-0 shadow-none"
+        />
     );
 }

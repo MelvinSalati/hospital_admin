@@ -57,7 +57,7 @@ class LabOrder extends Model
         return $this->belongsTo(Admission::class, 'admission_id');
     }
 
-    public function items()
+    public function item()
     {
         return $this->hasMany(LabOrderItem::class, 'lab_order_id');
     }

@@ -6,83 +6,35 @@ use App\Models\Patients\Patient;
 use App\Models\Patients\Prescription;
 use App\Models\Patients\PrescriptionItem;
 use App\Models\Payments\Invoice;
+use App\Models\Patients\PatientVisitScheme;
+use App\Models\Payments\PaymentMethod;
+use App\Models\Services\Service;
+use App\Models\DrugItem;
+use App\Helpers\VisitTokenHelper;
+use App\Helpers\PaymentMethodHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use App\Models\DrugItem;
-use App\Http\Controllers\Controller;
-use App\Helpers\VisitTokenHelper;
-use App\Helpers\PaymentMethodHelper;
-use App\Models\Payments\PaymentMethod;
-use App\Models\Services\Service;
-use App\Models\Patients\PatientVisitScheme;
 use Illuminate\Support\Facades\Validator;
-use App\Helpers\ServicePricingHelper;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
+use App\Http\Controllers\Controller;
 
 class PrescriptionsController extends Controller
 {
-
-    public function index($patientId)
+    /**
+     * Show the prescription workspace for a patient.
+     */
+    public function index(int $patientId)
     {
-        // Initialize PaymentMethodHelper for this patient
-        $paymentHelper = new PaymentMethodHelper($patientId);
-        $paymentMethod = $paymentHelper->getPaymentMethod();
-        // Get active visit token for payment scheme
         $activeToken = VisitTokenHelper::getActiveTokenArray($patientId);
-        $paymentMethod = $activeToken['payment_method'] ?? 'cash';
-
-        // Get laboratory services with correct pricing
-        $pricingHelper = new ServicePricingHelper($paymentMethod);
-        $schemeSelected = PatientVisitScheme::where('token', $activeToken['token'])
+        $schemeId    = PatientVisitScheme::where('token', $activeToken['token'])
             ->value('scheme_id');
-        $drugs =  Service::where('scheme_type', $schemeSelected)
+
+        $drugs = Service::where('scheme_type', $schemeId)
             ->where('service_category', 'Drugs')
             ->get();
 
-
-        // Get drugs and transform them to match frontend expectations
-        // $drugs = DrugItem::all()->map(function ($drug) {
-        //     return [
-        //         'id' => $drug->id,
-        //         'service_name' => $drug->drug_name,
-        //         'service_category' => $drug->therapeutic_class ?? 'Pharmacy',
-        //         'service_code' => $drug->drug_code,
-        //         'description' => $drug->generic_name ?? null,
-        //         'price' => $drug->selling_price ?? 0,
-        //         'cash_price' => $drug->selling_price ?? 0,
-        //         'nhima_price' => $drug->nhima_price ?? 0,
-        //         'insurance_price' => $drug->insurance_price ?? 0,
-        //         'charity_price' => $drug->charity_price ?? 0,
-        //         'stock' => $drug->maximum_stock_level ?? 0,
-        //         'dosage' => $drug->dosage_form ?? null,
-        //         'dosage_form' => $drug->dosage_form ?? null,
-        //         'frequency' => null,
-        //         'route' => $drug->route_of_administration ?? null,
-        //         'route_of_administration' => $drug->route_of_administration ?? null,
-        //         'presentation' => $drug->dosage_form ?? null,
-        //         'strength' => $drug->strength ?? null,
-        //         'strength_unit' => $drug->unit_of_measure ?? null,
-        //         'unit_of_measure' => $drug->unit_of_measure ?? null,
-        //         'brand_name' => $drug->brand_name,
-        //         'generic_name' => $drug->generic_name,
-        //         'pack_size' => $drug->pack_size,
-        //         'barcode' => $drug->barcode,
-        //         'is_active' => $drug->is_active,
-        //         'track_batches' => $drug->track_batches,
-        //         'track_expiry' => $drug->track_expiry,
-        //         'minimum_stock_level' => $drug->minimum_stock_level,
-        //         'maximum_stock_level' => $drug->maximum_stock_level,
-        //         'reorder_level' => $drug->reorder_level,
-        //         'purchase_price' => $drug->purchase_price,
-        //         'selling_price' => $drug->selling_price,
-        //         // Keep original drug data for reference
-        //         '_original' => $drug->toArray(),
-        //     ];
-        // });
-
-        // Get default payment method (if needed for display)
         $defaultPaymentMethod = PaymentMethod::where('patient_id', $patientId)
             ->where('is_default', 1)
             ->where('type', 'mobile_money')
@@ -92,25 +44,26 @@ class PrescriptionsController extends Controller
             'prescriptions' => Prescription::where('patient_id', $patientId)
                 ->where('status', 'active')
                 ->get(),
-            'services' => $drugs, // Now properly transformed for frontend
+            'services' => $drugs,
             'patientId' => $patientId,
+            'defaultPaymentMethod' => $defaultPaymentMethod,
         ]);
     }
 
-    public function token($patientId)
+    /**
+     * Resolve the active visit token string for a patient.
+     */
+    public function token($patientId): string
     {
-        $patient = new VisitTokenHelper();
-        $tokenData = $patient->getActiveToken($patientId);
+        $helper    = new VisitTokenHelper();
+        $tokenData = $helper->getActiveToken($patientId);
 
-        // Extract just the token string
         if (is_array($tokenData) && isset($tokenData['token'])) {
             return $tokenData['token'];
         }
-
         if (is_object($tokenData) && isset($tokenData->token)) {
             return $tokenData->token;
         }
-
         if (is_string($tokenData)) {
             return $tokenData;
         }
@@ -118,385 +71,232 @@ class PrescriptionsController extends Controller
         return 'VISIT-' . $patientId . '-' . date('YmdHis');
     }
 
+    /**
+     * Store a prescription (create or append to existing).
+     *
+     * NOTE: No multiplication is performed here.
+     *       The frontend must send the LINE TOTAL in `items.*.price`.
+     *       `quantity` is stored only for display/dispensing reference.
+     */
     public function store(Request $request, int $patientId)
     {
         $validator = Validator::make($request->all(), [
-            'items' => 'required|array',
-            'items.*.id' => 'required|exists:services,id',
+            'items'            => 'required|array|min:1',
+            'items.*.id'       => 'required|exists:services,id',
             'items.*.quantity' => 'required|integer|min:1',
-            'items.*.dosage' => 'nullable|string',
+            'items.*.price'    => 'required|numeric|min:0', // line total
+            'items.*.dosage'   => 'nullable|string',
             'items.*.frequency' => 'nullable|string',
-            'items.*.route' => 'nullable|string',
-            'items.*.notes' => 'nullable|string',
-            'items.*.price' => 'nullable|numeric',
+            'items.*.route'    => 'nullable|string',
+            'items.*.notes'    => 'nullable|string',
             'admission_number' => 'nullable|string',
-            'is_admitted' => 'boolean',
-            'clinical_notes' => 'nullable|string',
+            'is_admitted'      => 'boolean',
+            'clinical_notes'   => 'nullable|string',
+            'scheme'           => 'nullable|string|in:cash,nhima,insurance,charity,mobile_money',
         ]);
 
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed.',
-                'errors' => $validator->errors(),
+                'errors'  => $validator->errors(),
             ], 422);
         }
 
-        $patient = Patient::findOrFail($patientId);
+        $patient    = Patient::findOrFail($patientId);
         $visitToken = $this->token($patientId);
-        Log::info('', [$visitToken]);
-        $scheme = $request->scheme ?? 'cash';
+        $scheme     = $this->normalizeScheme($request->scheme ?? 'cash');
 
         DB::beginTransaction();
 
         try {
-            // Prepare prescription items array (for JSON storage)
-            $prescriptionItemsArray = [];
-            $prescriptionItemsForTable = [];
-            $total = 0;
+            // ---------- Build item payloads (NO multiplication) ----------
+            [$itemsArray, $itemsForTable, $total] =
+                $this->buildPrescriptionItemPayloads(
+                    $request->items,
+                    $scheme,
+                    $visitToken,
+                    $patient
+                );
 
-            // Prepare items for storage
-            foreach ($request->items as $index => $item) {
-                $drug = Service::find($item['id']);
-                if (!$drug) {
-                    throw new \Exception("Drug with ID {$item['id']} not found");
-                }
-
-                // Get price based on scheme
-                $price = $item['price'] ?? $this->getPriceForScheme($drug, $scheme);
-                $itemTotal = $price * $item['quantity'];
-                $total += $itemTotal;
-
-                // Format for prescriptions.items JSON column (frontend expects this)
-                $prescriptionItemsArray[] = [
-                    'id' => $drug->id,
-                    'drug_id' => $drug->id,
-                    'drug_name' => $drug->drug_name ?? $drug->service_name ?? 'Unknown Drug',
-                    'service_name' => $drug->service_name,
-                    'name' => $drug->service_name,
-                    'category' => $drug->therapeutic_class ?? 'Pharmacy',
-                    'quantity' => $item['quantity'],
-                    'price' => $price,
-                    'total' => $itemTotal,
-                    'dosage' => $item['dosage'] ?? $drug->dosage_form ?? null,
-                    'frequency' => $item['frequency'] ?? null,
-                    'route' => $item['route'] ?? $drug->route_of_administration ?? null,
-                    'instructions' => $item['notes'] ?? null,
-                    'payment_status' => 'pending',
-                    'dispensation_status' => 'pending',
-                    'payment_method_used' => $scheme,
-                    'original_price_cash' => $drug->selling_price ?? 0,
-                    'original_price_nhima' => $drug->nhima_price ?? 0,
-                    'original_price_insurance' => $drug->insurance_price ?? 0,
-                    'original_price_charity' => $drug->charity_price ?? 0,
-                    'drug_code' => $drug->drug_code,
-                    'brand_name' => $drug->brand_name,
-                    'generic_name' => $drug->generic_name,
-                    'strength' => $drug->strength,
-                    'unit_of_measure' => $drug->unit_of_measure,
-                    'pack_size' => $drug->pack_size,
-                ];
-
-                // FIX: Ensure drug_name is not null with proper fallback
-                $drugName = $drug->drug_name ?? $drug->service_name ?? null;
-
-                // Log warning if drug_name is missing
-                if (empty($drugName)) {
-                    \Log::warning('Drug missing name fields', [
-                        'drug_id' => $drug->id,
-                        'service_name' => $drug->service_name,
-                        'drug_name' => $drug->drug_name
-                    ]);
-                    $drugName = 'Unknown Drug (ID: ' . $drug->id . ')';
-                }
-
-                // Format for prescription_items table (for payment tracking)
-                $prescriptionItemsForTable[] = [
-                    'visit_token' => $visitToken,
-                    'patient_id' => $patient->id,
-                    'service_id' => $drug->id,
-                    'drug_name' => $drugName, // FIX: Using fallback value
-                    'drug_code' => $drug->drug_code ?? null,
-                    'drug_category' => $drug->therapeutic_class ?? null,
-                    'dosage' => $item['dosage'] ?? $drug->dosage_form ?? null,
-                    'dosage_unit' => $drug->unit_of_measure ?? null,
-                    'frequency' => $item['frequency'] ?? null,
-                    'frequency_label' => $this->getFrequencyLabel($item['frequency'] ?? null),
-                    'route' => $item['route'] ?? $drug->route_of_administration ?? null,
-                    'instructions' => $item['notes'] ?? null,
-                    'quantity_prescribed' => $item['quantity'],
-                    'quantity_dispensed' => 0,
-                    'quantity_remaining' => $item['quantity'],
-                    'unit_price' => $price,
-                    'total_price' => $itemTotal,
-                    'currency' => 'ZMW',
-                    'payment_status' => 'pending',
-                    'payment_amount' => 0,
-                    'dispensation_status' => 'pending',
-                    'is_active' => true,
-                    'is_cancelled' => false,
-                    'payment_scheme' => $scheme,
-                    'brand_name' => $drug->brand_name,
-                    'generic_name' => $drug->generic_name,
-                    'strength' => $drug->strength,
-                ];
-            }
-
-            // Check for existing active prescription with same visit_token
+            // ---------- Find or create prescription ----------
             $existingPrescription = Prescription::where('visit_token', $visitToken)
                 ->where('patient_id', $patientId)
                 ->whereIn('status', ['active', 'draft'])
                 ->first();
 
-            // CRITICAL FIX: Check for existing invoice by visit_token FIRST
+            if ($existingPrescription) {
+                $merged = array_merge(
+                    $existingPrescription->items ?? [],
+                    $itemsArray
+                );
+
+                $existingPrescription->update([
+                    'items'        => $merged,
+                    'items_count'  => count($merged),
+                    'total_amount' => ($existingPrescription->total_amount ?? 0) + $total,
+                    'updated_at'   => now(),
+                ]);
+
+                $prescription = $existingPrescription->fresh();
+                $isNew        = false;
+
+                $prescriptionUuid = (string) Str::uuid();
+                foreach ($itemsForTable as $row) {
+                    PrescriptionItem::create([
+                        'prescription_id'   => $prescription->id,
+                        'prescription_uuid' => $prescriptionUuid,
+                        ...$row,
+                    ]);
+                }
+
+                \Log::info('Prescription appended', [
+                    'prescription_id' => $prescription->id,
+                    'visit_token'     => $visitToken,
+                    'items_added'     => count($itemsArray),
+                ]);
+            } else {
+                $prescription = Prescription::create([
+                    'visit_token'         => $visitToken,
+                    'patient_id'          => $patient->id,
+                    'user_id'             => auth()->id(),
+                    'prescription_number' => $this->generatePrescriptionNumber(),
+                    'items'               => $itemsArray,
+                    'status'              => 'active',
+                    'prescribed_date'     => now(),
+                    'clinical_notes'      => $request->clinical_notes,
+                    'is_admitted'         => $request->boolean('is_admitted'),
+                    'admission_number'    => $request->admission_number,
+                    'items_count'         => count($itemsArray),
+                    'payment_scheme'      => $scheme,
+                    'total_amount'        => $total,
+                ]);
+
+                if (!$prescription->id) {
+                    throw new \Exception('Failed to create prescription record');
+                }
+
+                $prescriptionUuid = (string) Str::uuid();
+                foreach ($itemsForTable as $row) {
+                    PrescriptionItem::create([
+                        'prescription_id'   => $prescription->id,
+                        'prescription_uuid' => $prescriptionUuid,
+                        ...$row,
+                    ]);
+                }
+
+                $isNew = true;
+
+                \Log::info('Prescription created', [
+                    'prescription_id' => $prescription->id,
+                    'visit_token'     => $visitToken,
+                    'items_count'     => count($itemsArray),
+                    'total'           => $total,
+                ]);
+            }
+
+            // ---------- Find or create invoice ----------
             $existingInvoice = Invoice::where('visit_token', $visitToken)
                 ->where('patient_id', $patientId)
                 ->whereIn('status', ['draft', 'unpaid'])
                 ->first();
 
-            $prescription = null;
-            $invoice = null;
-
-            if ($existingPrescription) {
-                // ============================================
-                // APPEND to existing prescription
-                // ============================================
-                $existingItems = $existingPrescription->items ?? [];
-                $mergedItems = array_merge($existingItems, $prescriptionItemsArray);
-                $newTotalItems = $existingPrescription->items_count + count($prescriptionItemsArray);
-
-                $existingPrescription->update([
-                    'items' => $mergedItems,
-                    'items_count' => count($mergedItems),
-                    'total_amount' => ($existingPrescription->total_amount ?? 0) + $total,
-                    'updated_at' => now(),
-                ]);
-
-                $prescription = $existingPrescription->fresh();
-
-                // Create prescription items in separate table for tracking
-                foreach ($prescriptionItemsForTable as $itemData) {
-                    PrescriptionItem::create([
-                        'prescription_id' => $prescription->id,
-                        'prescription_uuid' => (string) Str::uuid(),
-                        ...$itemData
-                    ]);
-                }
-
-                // ============================================
-                // CRITICAL FIX: Update existing invoice or create new one
-                // ============================================
-                if ($existingInvoice) {
-                    // USE THE SAME INVOICE - append items
-                    $existingInvoiceItems = $existingInvoice->items ?? [];
-
-                    // Handle both string and array cases
-                    if (is_string($existingInvoiceItems)) {
-                        $existingInvoiceItems = json_decode($existingInvoiceItems, true) ?: [];
-                    }
-
-                    $mergedInvoiceItems = array_merge($existingInvoiceItems, $prescriptionItemsArray);
-                    $newInvoiceTotal = $existingInvoice->total + $total;
-
-                    $existingInvoice->update([
-                        'items' => $mergedInvoiceItems,  // Model cast will handle JSON
-                        'subtotal' => $newInvoiceTotal,
-                        'total' => $newInvoiceTotal,
-                        'due_amount' => $newInvoiceTotal - $existingInvoice->paid_amount,
-                        'items_count' => count($mergedInvoiceItems),
-                        'updated_at' => now(),
-                    ]);
-
-                    $invoice = $existingInvoice->fresh();
-
-                    \Log::info('Appended to existing invoice', [
-                        'invoice_id' => $invoice->id,
-                        'invoice_number' => $invoice->invoice_number,
-                        'visit_token' => $visitToken,
-                        'old_total' => $existingInvoice->total,
-                        'new_total' => $newInvoiceTotal,
-                        'items_added' => count($prescriptionItemsArray)
-                    ]);
-                } else {
-                    // Create new invoice for this prescription (but this shouldn't happen if token exists)
-                    $invoice = $this->createInvoice($patient, $prescription, $prescriptionItemsArray, $total, $scheme, $request->admission_number, $visitToken);
-
-                    \Log::info('Created new invoice for existing prescription', [
-                        'invoice_id' => $invoice->id,
-                        'invoice_number' => $invoice->invoice_number,
-                        'visit_token' => $visitToken,
-                        'prescription_id' => $prescription->id
-                    ]);
-                }
-
-                DB::commit();
-
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Items appended to existing prescription and invoice successfully',
-                    'prescription' => $prescription->fresh(),
-                    'invoice' => $invoice,
-                    'appended_items' => count($prescriptionItemsArray),
-                    'invoice_number' => $invoice->invoice_number,
-                    'same_invoice' => true
-                ]);
+            if ($existingInvoice) {
+                $invoice = $this->appendToInvoice(
+                    $existingInvoice,
+                    $itemsArray,
+                    $total,
+                    $prescription
+                );
             } else {
-                // ============================================
-                // CREATE NEW prescription
-                // ============================================
-                $prescription = Prescription::create([
-                    'visit_token' => $visitToken,
-                    'patient_id' => $patient->id,
-                    'user_id' => auth()->id(),
-                    'prescription_number' => $this->generatePrescriptionNumber(),
-                    'items' => $prescriptionItemsArray,
-                    'status' => 'active',
-                    'prescribed_date' => now(),
-                    'clinical_notes' => $request->clinical_notes ?? null,
-                    'is_admitted' => $request->is_admitted ?? false,
-                    'admission_number' => $request->admission_number ?? null,
-                    'items_count' => count($prescriptionItemsArray),
-                    'payment_scheme' => $scheme,
-                    'total_amount' => $total,
-                ]);
-
-                // Verify prescription was created and has an ID
-                if (!$prescription->id) {
-                    throw new \Exception('Failed to create prescription record');
-                }
-
-                // Create prescription items in separate table for detailed tracking
-                foreach ($prescriptionItemsForTable as $itemData) {
-                    PrescriptionItem::create([
-                        'prescription_id' => $prescription->id,
-                        'prescription_uuid' => (string) Str::uuid(),
-                        ...$itemData
-                    ]);
-                }
-
-                // ============================================
-                // CRITICAL FIX: Check for existing invoice BEFORE creating new one
-                // ============================================
-                if ($existingInvoice) {
-                    // USE THE SAME INVOICE - append items
-                    $existingInvoiceItems = $existingInvoice->items ?? [];
-
-                    if (is_string($existingInvoiceItems)) {
-                        $existingInvoiceItems = json_decode($existingInvoiceItems, true) ?: [];
-                    }
-
-                    $mergedInvoiceItems = array_merge($existingInvoiceItems, $prescriptionItemsArray);
-                    $newInvoiceTotal = $existingInvoice->total + $total;
-
-                    $existingInvoice->update([
-                        'items' => $mergedInvoiceItems,
-                        'subtotal' => $newInvoiceTotal,
-                        'total' => $newInvoiceTotal,
-                        'due_amount' => $newInvoiceTotal - $existingInvoice->paid_amount,
-                        'items_count' => count($mergedInvoiceItems),
-                        'prescription_id' => $prescription->id, // Link to new prescription
-                        'updated_at' => now(),
-                    ]);
-
-                    $invoice = $existingInvoice->fresh();
-
-                    \Log::info('Added prescription to existing invoice', [
-                        'invoice_id' => $invoice->id,
-                        'invoice_number' => $invoice->invoice_number,
-                        'visit_token' => $visitToken,
-                        'prescription_id' => $prescription->id,
-                        'old_total' => $existingInvoice->total,
-                        'new_total' => $newInvoiceTotal
-                    ]);
-                } else {
-                    // Create brand new invoice
-                    $invoice = $this->createInvoice($patient, $prescription, $prescriptionItemsArray, $total, $scheme, $request->admission_number, $visitToken);
-
-                    \Log::info('Created new invoice for new prescription', [
-                        'invoice_id' => $invoice->id,
-                        'invoice_number' => $invoice->invoice_number,
-                        'visit_token' => $visitToken,
-                        'prescription_id' => $prescription->id
-                    ]);
-                }
-
-                // Link prescription to invoice
-                $prescription->update(['invoice_id' => $invoice->id]);
-
-                DB::commit();
-
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Prescription created and ' . ($existingInvoice ? 'added to existing invoice' : 'new invoice created'),
-                    'prescription' => $prescription,
-                    'invoice' => $invoice,
-                    'invoice_number' => $invoice->invoice_number,
-                    'same_invoice' => $existingInvoice ? true : false
-                ]);
+                $invoice = $this->createInvoice(
+                    $patient,
+                    $prescription,
+                    $itemsArray,
+                    $total,
+                    $scheme,
+                    $request->admission_number,
+                    $visitToken
+                );
             }
-        } catch (\Exception $e) {
+
+            $prescription->update(['invoice_id' => $invoice->id]);
+
+            DB::commit();
+
+            return response()->json([
+                'success'        => true,
+                'message'        => $isNew
+                    ? 'Prescription created and ' . ($existingInvoice ? 'added to existing invoice' : 'new invoice created')
+                    : 'Items appended to existing prescription and invoice',
+                'prescription'   => $prescription->fresh(),
+                'invoice'        => $invoice->fresh(),
+                'invoice_number' => $invoice->invoice_number,
+                'same_invoice'   => (bool) $existingInvoice,
+            ]);
+        } catch (\Throwable $e) {
             DB::rollBack();
-            Log::error('Prescription creation failed: ' . $e->getMessage());
-            \Log::error('Stack trace: ' . $e->getTraceAsString());
+            Log::error('Prescription creation failed: ' . $e->getMessage(), [
+                'trace'      => $e->getTraceAsString(),
+                'patient_id' => $patientId,
+            ]);
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to create/update prescription',
-                'error' => $e->getMessage()
+                'error'   => $e->getMessage(),
             ], 500);
         }
     }
+
     /**
-     * Get drugs with correct pricing based on patient's payment method
-     * API endpoint for dynamic drug pricing
+     * Bulk drug list with per-scheme pricing (API).
      */
     public function getDrugsWithPricing($patientId)
     {
         $paymentHelper = new PaymentMethodHelper($patientId);
 
-        $drugs = DrugItem::all()->map(function ($drug) {
-            return [
-                'id' => $drug->id,
-                'drug_name' => $drug->drug_name,
-                'service_name' => $drug->drug_name,
-                'price' => $drug->selling_price ?? 0,
-                'selling_price' => $drug->selling_price ?? 0,
-                'nhima_price' => $drug->nhima_price ?? 0,
-                'insurance_price' => $drug->insurance_price ?? 0,
-                'charity_price' => $drug->charity_price ?? 0,
-                'stock' => $drug->maximum_stock_level ?? 0,
-                'dosage_form' => $drug->dosage_form,
-                'route_of_administration' => $drug->route_of_administration,
-                'brand_name' => $drug->brand_name,
-                'generic_name' => $drug->generic_name,
-                'unit_of_measure' => $drug->unit_of_measure,
-                'pack_size' => $drug->pack_size,
-            ];
-        });
+        $drugs = DrugItem::all()->map(fn($drug) => [
+            'id'                      => $drug->id,
+            'drug_name'               => $drug->drug_name,
+            'service_name'            => $drug->drug_name,
+            'price'                   => $drug->selling_price ?? 0,
+            'selling_price'           => $drug->selling_price ?? 0,
+            'nhima_price'             => $drug->nhima_price ?? 0,
+            'insurance_price'         => $drug->insurance_price ?? 0,
+            'charity_price'           => $drug->charity_price ?? 0,
+            'stock'                   => $drug->maximum_stock_level ?? 0,
+            'dosage_form'             => $drug->dosage_form,
+            'route_of_administration' => $drug->route_of_administration,
+            'brand_name'              => $drug->brand_name,
+            'generic_name'            => $drug->generic_name,
+            'unit_of_measure'         => $drug->unit_of_measure,
+            'pack_size'               => $drug->pack_size,
+        ]);
 
         return response()->json([
             'success' => true,
             'data' => [
                 'payment_method' => $paymentHelper->getPaymentMethod(),
-                'price_column' => $paymentHelper->getPriceColumn(),
-                'drugs' => $drugs,
-                'currency' => 'ZMW'
-            ]
+                'price_column'   => $paymentHelper->getPriceColumn(),
+                'drugs'          => $drugs,
+                'currency'       => 'ZMW',
+            ],
         ]);
     }
 
     /**
-     * Get single drug price based on payment method
+     * Single drug price (API).
      */
     public function getDrugPrice($patientId, $drugId)
     {
         $paymentHelper = new PaymentMethodHelper($patientId);
-
-        $price = $paymentHelper->getDrugPrice($drugId);
+        $price         = $paymentHelper->getDrugPrice($drugId);
 
         if ($price === null) {
             return response()->json([
                 'success' => false,
-                'message' => 'Drug not found'
+                'message' => 'Drug not found',
             ], 404);
         }
 
@@ -505,153 +305,330 @@ class PrescriptionsController extends Controller
         return response()->json([
             'success' => true,
             'data' => [
-                'drug_id' => $drugId,
-                'drug_name' => $drug->drug_name,
-                'service_name' => $drug->drug_name,
+                'drug_id'        => $drugId,
+                'drug_name'      => $drug->drug_name,
+                'service_name'   => $drug->drug_name,
                 'payment_method' => $paymentHelper->getPaymentMethod(),
-                'price' => $price,
-                'selling_price' => $drug->selling_price ?? 0,
+                'price'          => $price,
+                'selling_price'  => $drug->selling_price ?? 0,
                 'original_prices' => [
-                    'cash' => $drug->selling_price ?? 0,
-                    'nhima' => $drug->nhima_price ?? 0,
+                    'cash'      => $drug->selling_price ?? 0,
+                    'nhima'     => $drug->nhima_price ?? 0,
                     'insurance' => $drug->insurance_price ?? 0,
-                    'charity' => $drug->charity_price ?? 0
-                ]
-            ]
+                    'charity'   => $drug->charity_price ?? 0,
+                ],
+            ],
         ]);
     }
 
     /**
-     * Calculate total for selected drugs based on payment method
+     * Calculate total for selected drugs (API).
+     *
+     * NOTE: Frontend should pass line totals directly, so this endpoint
+     *       simply sums the provided `price` fields — no multiplication.
      */
     public function calculateDrugTotal(Request $request, $patientId)
     {
         $request->validate([
-            'items' => 'required|array',
-            'items.*.id' => 'required|exists:drug_items,id',
-            'items.*.quantity' => 'required|integer|min:1'
+            'items'            => 'required|array',
+            'items.*.id'       => 'required|exists:drug_items,id',
+            'items.*.quantity' => 'required|integer|min:1',
+            'items.*.price'    => 'required|numeric|min:0',
         ]);
 
         $paymentHelper = new PaymentMethodHelper($patientId);
 
-        $drugIds = [];
-        $itemsWithQuantities = [];
+        $items = [];
+        $total = 0;
 
         foreach ($request->items as $item) {
-            $drugIds[] = $item['id'];
-            $itemsWithQuantities[$item['id']] = $item['quantity'];
-        }
+            $drug = DrugItem::find($item['id']);
+            if (!$drug) continue;
 
-        $drugs = DrugItem::whereIn('id', $drugIds)->get()->map(function ($drug) {
-            return (object) [
-                'id' => $drug->id,
-                'drug_name' => $drug->drug_name,
+            $lineTotal = (float) $item['price']; // already the line total
+            $total    += $lineTotal;
+
+            $items[] = [
+                'id'           => $drug->id,
+                'drug_name'    => $drug->drug_name,
                 'service_name' => $drug->drug_name,
-                'price' => $drug->selling_price ?? 0,
-                'selling_price' => $drug->selling_price ?? 0,
+                'quantity'     => $item['quantity'],
+                'price'        => $lineTotal,
+                'total'        => $lineTotal,
             ];
-        });
-
-        $total = 0;
-        foreach ($drugs as $drug) {
-            $quantity = $itemsWithQuantities[$drug->id] ?? 1;
-            $total += $drug->price * $quantity;
         }
 
         return response()->json([
             'success' => true,
             'data' => [
                 'payment_method' => $paymentHelper->getPaymentMethod(),
-                'items' => $drugs,
-                'total' => $total,
-                'currency' => 'ZMW'
-            ]
+                'items'          => $items,
+                'total'          => $total,
+                'currency'       => 'ZMW',
+            ],
         ]);
     }
 
-    private function createInvoice($patient, $prescription, $items, $total, $scheme, $admissionNumber = null, $visitToken)
+    // ================================================================
+    // PRIVATE HELPERS
+    // ================================================================
+
+    private function normalizeScheme(?string $scheme): string
     {
-        // Ensure prescription has an ID
+        return $scheme === 'mobile_money' ? 'cash' : ($scheme ?? 'cash');
+    }
+
+    /**
+     * Build the JSON array + per-item rows + grand total.
+     *
+     * NO MULTIPLICATION:
+     *   - `price` is treated as the LINE TOTAL.
+     *   - `quantity` is stored for reference/dispensing only.
+     *   - `total` = `price` (same value, for compatibility with existing UI).
+     *
+     * @return array{0: array, 1: array, 2: float}
+     */
+    private function buildPrescriptionItemPayloads(
+        array $items,
+        string $scheme,
+        string $visitToken,
+        Patient $patient
+    ): array {
+        $itemsArray    = [];
+        $itemsForTable = [];
+        $total         = 0;
+
+        foreach ($items as $item) {
+            $drug = Service::find($item['id']);
+            if (!$drug) {
+                throw new \Exception("Drug with ID {$item['id']} not found");
+            }
+
+            // Line total comes from the frontend — no multiplication
+            $lineTotal = (float) $item['price'];
+            $unitPrice = $item['quantity'] > 0
+                ? round($lineTotal / $item['quantity'], 2)
+                : $lineTotal; // derive unit price for display only
+
+            $total += $lineTotal;
+
+            // Resolve drug name with fallbacks
+            $drugName = $drug->drug_name
+                ?? $drug->service_name
+                ?? null;
+
+            if (empty($drugName)) {
+                \Log::warning('Drug missing name fields', [
+                    'drug_id'      => $drug->id,
+                    'service_name' => $drug->service_name,
+                    'drug_name'    => $drug->drug_name,
+                ]);
+                $drugName = 'Unknown Drug (ID: ' . $drug->id . ')';
+            }
+
+            // ---------- JSON column on prescriptions ----------
+            $itemsArray[] = [
+                'id'                       => $drug->id,
+                'drug_id'                  => $drug->id,
+                'drug_name'                => $drugName,
+                'service_name'             => $drug->service_name,
+                'name'                     => $drug->service_name,
+                'category'                 => $drug->therapeutic_class ?? 'Pharmacy',
+                'quantity'                 => $item['quantity'],
+                'price'                    => $lineTotal,   // line total (no multiply)
+                'unit_price'               => $unitPrice,   // derived, display only
+                'total'                    => $lineTotal,   // same as price
+                'dosage'                   => $item['dosage'] ?? $drug->dosage_form,
+                'frequency'                => $item['frequency'] ?? null,
+                'route'                    => $item['route'] ?? $drug->route_of_administration,
+                'instructions'             => $item['notes'] ?? null,
+                'payment_status'           => 'pending',
+                'dispensation_status'      => 'pending',
+                'payment_method_used'      => $scheme,
+                'original_price_cash'      => $drug->selling_price ?? 0,
+                'original_price_nhima'     => $drug->nhima_price ?? 0,
+                'original_price_insurance' => $drug->insurance_price ?? 0,
+                'original_price_charity'   => $drug->charity_price ?? 0,
+                'drug_code'                => $drug->drug_code,
+                'brand_name'               => $drug->brand_name,
+                'generic_name'             => $drug->generic_name,
+                'strength'                 => $drug->strength,
+                'unit_of_measure'          => $drug->unit_of_measure,
+                'pack_size'                => $drug->pack_size,
+            ];
+
+            // ---------- prescription_items table ----------
+            $itemsForTable[] = [
+                'visit_token'         => $visitToken,
+                'patient_id'          => $patient->id,
+                'service_id'          => $drug->id,
+                'drug_name'           => $drugName,
+                'drug_code'           => $drug->drug_code ?? null,
+                'drug_category'       => $drug->therapeutic_class ?? null,
+                'dosage'              => $item['dosage'] ?? $drug->dosage_form,
+                'dosage_unit'         => $drug->unit_of_measure ?? null,
+                'frequency'           => $item['frequency'] ?? null,
+                'frequency_label'     => $this->getFrequencyLabel($item['frequency'] ?? null),
+                'route'               => $item['route'] ?? $drug->route_of_administration,
+                'instructions'        => $item['notes'] ?? null,
+                'quantity_prescribed' => $item['quantity'],
+                'quantity_dispensed'  => 0,
+                'quantity_remaining'  => $item['quantity'],
+                'unit_price'          => $unitPrice,   // derived, display only
+                'total_price'         => $lineTotal,   // line total (no multiply)
+                'currency'            => 'ZMW',
+                'payment_status'      => 'pending',
+                'payment_amount'      => 0,
+                'dispensation_status' => 'pending',
+                'is_active'           => true,
+                'is_cancelled'        => false,
+                'payment_scheme'      => $scheme,
+                'brand_name'          => $drug->brand_name,
+                'generic_name'        => $drug->generic_name,
+                'strength'            => $drug->strength,
+            ];
+        }
+
+        return [$itemsArray, $itemsForTable, $total];
+    }
+
+    /**
+     * Append items to an existing invoice — sums line totals, no multiplication.
+     */
+    private function appendToInvoice(
+        Invoice $invoice,
+        array $itemsArray,
+        float $total,
+        Prescription $prescription
+    ): Invoice {
+        $existingItems = $invoice->items ?? [];
+
+        if (is_string($existingItems)) {
+            $existingItems = json_decode($existingItems, true) ?: [];
+        }
+
+        $merged   = array_merge($existingItems, $itemsArray);
+        $newTotal = (float) $invoice->total + $total;
+        $newDue   = $newTotal - (float) $invoice->paid_amount;
+
+        $invoice->update([
+            'items'           => $merged,
+            'subtotal'        => $newTotal,
+            'total'           => $newTotal,
+            'due_amount'      => $newDue,
+            'items_count'     => count($merged),
+            'prescription_id' => $prescription->id,
+            'updated_at'      => now(),
+        ]);
+
+        \Log::info('Appended items to invoice', [
+            'invoice_id'      => $invoice->id,
+            'invoice_number'  => $invoice->invoice_number,
+            'prescription_id' => $prescription->id,
+            'old_total'       => $invoice->getOriginal('total'),
+            'new_total'       => $newTotal,
+            'items_added'     => count($itemsArray),
+        ]);
+
+        return $invoice->fresh();
+    }
+
+    /**
+     * Create a brand-new invoice for a prescription.
+     */
+    private function createInvoice(
+        Patient $patient,
+        Prescription $prescription,
+        array $items,
+        float $total,
+        string $scheme,
+        ?string $admissionNumber,
+        string $visitToken
+    ): Invoice {
         if (!$prescription->id) {
             throw new \Exception('Cannot create invoice without a valid prescription ID');
         }
 
         return Invoice::create([
-            'visit_token' => $visitToken,
-            'invoice_number' => Invoice::generateInvoiceNumber(),
-            'patient_id' => $patient->id,
-            'user_id' => auth()->id(),
-            'prescription_id' => $prescription->id,
+            'visit_token'      => $visitToken,
+            'invoice_number'   => Invoice::generateInvoiceNumber(),
+            'patient_id'       => $patient->id,
+            'user_id'          => auth()->id(),
+            'prescription_id'  => $prescription->id,
             'admission_number' => $admissionNumber ?? $prescription->admission_number,
-            'customer_name' => $patient->name,
-            'customer_email' => $patient->email,
-            'customer_phone' => $patient->phone,
+            'customer_name'    => $patient->name
+                ?? trim(($patient->first_name ?? '') . ' ' . ($patient->last_name ?? '')),
+            'customer_email'   => $patient->email,
+            'customer_phone'   => $patient->phone,
             'customer_address' => $patient->address ?? null,
-            'subtotal' => $total,
-            'tax' => 0,
-            'discount' => 0,
-            'total' => $total,
-            'paid_amount' => 0,
-            'due_amount' => $total,
-            'currency' => 'ZMW',
-            'payment_scheme' => $scheme === 'mobile_money' ? 'cash' : $scheme,
-            'items' => $items,
-            'items_count' => count($items),
-            'issue_date' => now(),
-            'due_date' => now()->addDays(30),
-            'status' => 'draft',
-            'invoice_type' => 'prescription',
+            'subtotal'         => $total,
+            'tax'              => 0,
+            'discount'         => 0,
+            'total'            => $total,
+            'paid_amount'      => 0,
+            'due_amount'       => $total,
+            'currency'         => 'ZMW',
+            'payment_scheme'   => $scheme,
+            'items'            => $items,
+            'items_count'      => count($items),
+            'issue_date'       => now(),
+            'due_date'         => now()->addDays(30),
+            'status'           => 'draft',
+            'invoice_type'     => 'prescription',
         ]);
     }
 
-    private function getPriceForScheme($drug, $scheme)
+    /**
+     * Resolve unit price for a drug based on scheme.
+     */
+    private function getPriceForScheme(Service $drug, string $scheme): float
     {
-        $effectiveScheme = $scheme === 'mobile_money' ? 'cash' : $scheme;
-
-        switch ($effectiveScheme) {
-            case 'cash':
-                return $drug->selling_price ?? 0;
-            case 'nhima':
-                return $drug->nhima_price ?? 0;
-            case 'insurance':
-                return $drug->insurance_price ?? 0;
-            case 'charity':
-                return $drug->charity_price ?? 0;
-            default:
-                return $drug->selling_price ?? 0;
-        }
+        return match ($scheme) {
+            'cash'      => (float) ($drug->selling_price ?? 0),
+            'nhima'     => (float) ($drug->nhima_price ?? 0),
+            'insurance' => (float) ($drug->insurance_price ?? 0),
+            'charity'   => (float) ($drug->charity_price ?? 0),
+            default     => (float) ($drug->selling_price ?? 0),
+        };
     }
 
-    private function getFrequencyLabel($frequency)
+    /**
+     * Convert frequency code to human label.
+     */
+    private function getFrequencyLabel(?string $frequency): ?string
     {
-        $labels = [
-            'OD' => 'Once daily',
-            'BD' => 'Twice daily',
-            'TDS' => 'Three times daily',
-            'QID' => 'Four times daily',
-            'Q4H' => 'Every 4 hours',
-            'Q6H' => 'Every 6 hours',
-            'Q8H' => 'Every 8 hours',
+        if (!$frequency) return null;
+
+        return [
+            'OD'   => 'Once daily',
+            'BD'   => 'Twice daily',
+            'TDS'  => 'Three times daily',
+            'QID'  => 'Four times daily',
+            'Q4H'  => 'Every 4 hours',
+            'Q6H'  => 'Every 6 hours',
+            'Q8H'  => 'Every 8 hours',
             'Q12H' => 'Every 12 hours',
-            'PRN' => 'As needed',
+            'PRN'  => 'As needed',
             'STAT' => 'Immediately',
-        ];
-
-        return $labels[$frequency] ?? $frequency;
+        ][$frequency] ?? $frequency;
     }
 
-    private function generatePrescriptionNumber()
+    /**
+     * Generate sequential prescription number: RX-YYYYMM-0001.
+     */
+    private function generatePrescriptionNumber(): string
     {
-        $year = date('Y');
+        $year  = date('Y');
         $month = date('m');
-        $lastPrescription = Prescription::whereYear('created_at', $year)
+
+        $last = Prescription::whereYear('created_at', $year)
             ->whereMonth('created_at', $month)
-            ->orderBy('id', 'desc')
+            ->orderByDesc('id')
             ->first();
 
-        if ($lastPrescription && $lastPrescription->prescription_number) {
-            $lastNumber = intval(substr($lastPrescription->prescription_number, -4));
-            $newNumber = str_pad($lastNumber + 1, 4, '0', STR_PAD_LEFT);
+        if ($last && $last->prescription_number) {
+            $lastNumber = (int) substr($last->prescription_number, -4);
+            $newNumber  = str_pad($lastNumber + 1, 4, '0', STR_PAD_LEFT);
         } else {
             $newNumber = '0001';
         }

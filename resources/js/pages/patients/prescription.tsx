@@ -15,10 +15,13 @@ import {
     ChevronLeftIcon,
     PillBottleIcon,
     Pill,
+    Clock,
 } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
+import type { Column, Action } from '@/components/ReusableTable';
+import ReusableTable from '@/components/ReusableTable';
 import { Button } from '@/components/ui/button';
 import PatientLayout from '@/layouts/patients/PatientLayout';
 import Http from '@/utils/Http';
@@ -33,7 +36,6 @@ export type PricingScheme =
     | 'charity'
     | 'mobile_money';
 
-// Map mobile_money to cash for pricing
 const getEffectiveScheme = (scheme: PricingScheme): PricingScheme => {
     return scheme === 'mobile_money' ? 'cash' : scheme;
 };
@@ -126,14 +128,12 @@ interface PrescribedItem extends CartItem {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Convert any value to number safely */
 const toNumber = (value: any): number | null => {
     if (value === null || value === undefined) return null;
     const num = parseFloat(value);
     return isNaN(num) ? null : num;
 };
 
-/** Validate and normalize scheme */
 const normalizeScheme = (scheme: string | undefined): PricingScheme => {
     if (!scheme) return 'cash';
     const validSchemes: PricingScheme[] = [
@@ -151,7 +151,6 @@ const normalizeScheme = (scheme: string | undefined): PricingScheme => {
     return 'cash';
 };
 
-/** Get price for service - uses the price property from backend */
 const getPriceForScheme = (
     service: Service,
     scheme: PricingScheme | string,
@@ -180,7 +179,6 @@ const getPriceForScheme = (
     }
 };
 
-/** Format ZMW amount */
 const zmw = (amount: number | null | undefined): string => {
     if (amount === null || amount === undefined) return '—';
     const num = typeof amount === 'string' ? parseFloat(amount) : amount;
@@ -188,7 +186,6 @@ const zmw = (amount: number | null | undefined): string => {
     return `ZMW ${num.toFixed(2)}`;
 };
 
-/** Get scheme meta safely */
 const getSchemeMeta = (scheme: string | undefined) => {
     const defaultMeta = {
         label: 'Cash',
@@ -326,26 +323,35 @@ const PrescriptionBundleModal = ({
                 onClick={onClose}
             />
             <div className="relative flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl bg-white shadow-xl">
-                <div className="flex items-center justify-between border-b border-gray-100 bg-gradient-to-r from-blue-50 to-white px-6 py-4">
-                    <div>
-                        <h3 className="text-lg font-semibold text-gray-900">
-                            Prescription Bundle
-                        </h3>
-                        <p className="mt-1 text-xs text-gray-500">
-                            #{prescription.prescription_number || 'N/A'} •{' '}
-                            {actualItems.length} item
-                            {actualItems.length !== 1 ? 's' : ''} prescribed
-                        </p>
+                {/* Header — slate */}
+                <div className="flex items-center justify-between border-b border-slate-200 bg-slate-100 px-6 py-4">
+                    <div className="flex items-start gap-3">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 shadow-2xl">
+                            <Pill className="h-5 w-5 text-white" />
+                        </div>
+
+                        <div>
+                            <h3 className="text-lg font-semibold text-gray-900">
+                                Prescribed Medications
+                            </h3>
+
+                            <p className="mt-1 text-xs text-gray-500">
+                                #{prescription.prescription_number || 'N/A'} •{' '}
+                                {actualItems.length} item
+                                {actualItems.length !== 1 ? 's' : ''} prescribed
+                            </p>
+                        </div>
                     </div>
                     <button
                         onClick={onClose}
-                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-400 transition-colors hover:bg-gray-50 hover:text-gray-600"
+                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-gray-400 transition-colors hover:bg-slate-50 hover:text-gray-600"
                     >
                         <X className="h-4 w-4" />
                     </button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-6">
+                {/* Body — white */}
+                <div className="flex-1 overflow-y-auto bg-white p-6">
                     <div className="mb-4">
                         <span
                             className={`rounded-full px-3 py-1 text-xs font-medium ${getStatusColor(prescription.status)}`}
@@ -461,11 +467,17 @@ const PrescriptionBundleModal = ({
                     )}
                 </div>
 
-                <div className="flex justify-end border-t border-gray-100 bg-gray-50 px-6 py-4">
+                {/* Footer — slate */}
+                <div className="flex items-center justify-between border-t border-slate-200 bg-slate-100 px-6 py-4">
+                    <p className="text-xs text-slate-500">
+                        {actualItems.length} item
+                        {actualItems.length !== 1 ? 's' : ''} in this
+                        prescription
+                    </p>
                     <Button
                         onClick={onClose}
                         variant="outline"
-                        className="h-9 text-sm"
+                        className="h-9 border-slate-300 bg-white text-sm hover:bg-slate-50"
                     >
                         Close
                     </Button>
@@ -474,164 +486,6 @@ const PrescriptionBundleModal = ({
         </div>
     );
 };
-
-// ─── Prescribed Drugs Table ───────────────────────────────────────────────────
-
-const PrescribedDrugsTable = ({
-    prescriptions: propPrescriptions,
-}: {
-    prescriptions: PrescribedItem[];
-}) => {
-    const [selected, setSelected] = useState<PrescribedItem | null>(null);
-    const [prescriptionsList, setPrescriptionsList] = useState<
-        PrescribedItem[]
-    >([]);
-    const { prescriptions: pagePrescriptions } = usePage().props as {
-        prescriptions?: PrescribedItem[];
-    };
-
-    useEffect(() => {
-        const allPrescriptions = [
-            ...(propPrescriptions || []),
-            ...(pagePrescriptions || []),
-        ];
-
-        if (allPrescriptions.length > 0) {
-            setPrescriptionsList((prevList) => {
-                const itemsMap = new Map();
-                prevList.forEach((item) => {
-                    itemsMap.set(item.cartId, item);
-                });
-                allPrescriptions.forEach((item) => {
-                    itemsMap.set(item.cartId, item);
-                });
-                return Array.from(itemsMap.values());
-            });
-        }
-    }, [propPrescriptions, pagePrescriptions]);
-
-    const groupedPrescriptions = prescriptionsList.reduce(
-        (groups, item) => {
-            const prescriptionNumber =
-                item.prescription_number || `PRES-${item.id || 'unknown'}`;
-            if (!groups[prescriptionNumber]) {
-                groups[prescriptionNumber] = [];
-            }
-            groups[prescriptionNumber].push(item);
-            return groups;
-        },
-        {} as Record<string, PrescribedItem[]>,
-    );
-
-    if (!prescriptionsList?.length) return null;
-
-    return (
-        <div className="mt-6">
-            <h3 className="mb-3 text-sm font-semibold text-gray-700">
-                Prescribed drugs
-            </h3>
-            <div className="overflow-hidden rounded-xl border border-gray-100">
-                <table className="w-full text-sm">
-                    <thead className="border-b border-gray-100 bg-gray-50">
-                        <tr>
-                            <th className="px-4 py-3 text-left text-[11px] font-medium tracking-wide text-gray-400 uppercase">
-                                Prescription Number
-                            </th>
-                            <th className="px-4 py-3 text-left text-[11px] font-medium tracking-wide text-gray-400 uppercase">
-                                Items
-                            </th>
-                            <th className="px-4 py-3 text-left text-[11px] font-medium tracking-wide text-gray-400 uppercase">
-                                Status
-                            </th>
-                            <th className="px-4 py-3"></th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                        {Object.entries(groupedPrescriptions).map(
-                            ([prescriptionNumber, items]) => {
-                                const firstItem = items[0];
-                                const schemeMeta = getSchemeMeta(
-                                    firstItem.scheme,
-                                );
-
-                                return (
-                                    <tr
-                                        key={prescriptionNumber}
-                                        className="transition-colors hover:bg-gray-50/60"
-                                    >
-                                        <td className="px-4 py-3 font-mono text-xs font-medium text-gray-900">
-                                            {prescriptionNumber}
-                                        </td>
-                                        <td className="px-4 py-3">
-                                            <div className="space-y-1">
-                                                {items
-                                                    .slice(0, 2)
-                                                    .map((item, idx) => (
-                                                        <div
-                                                            key={idx}
-                                                            className="text-sm text-gray-700"
-                                                        >
-                                                            {item.service_name ||
-                                                                item.drug_name ||
-                                                                'Prescription Item'}
-                                                        </div>
-                                                    ))}
-                                                {items.length > 2 && (
-                                                    <div className="text-xs text-gray-400">
-                                                        +{items.length - 2} more
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </td>
-                                        <td className="px-4 py-3">
-                                            <span
-                                                className={`rounded-full px-2 py-0.5 text-xs font-medium ${firstItem.status === 'active' ? 'bg-emerald-100 text-emerald-700' : ''} ${firstItem.status === 'completed' ? 'bg-gray-100 text-gray-500' : ''} ${firstItem.status === 'cancelled' ? 'bg-red-100 text-red-600' : ''} ${!firstItem.status ? 'bg-gray-100 text-gray-500' : ''} `}
-                                            >
-                                                {firstItem.status
-                                                    ? firstItem.status
-                                                          .charAt(0)
-                                                          .toUpperCase() +
-                                                      firstItem.status.slice(1)
-                                                    : 'Active'}
-                                            </span>
-                                        </td>
-                                        <td className="px-4 py-3">
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                className="h-7 text-xs text-gray-500 hover:text-gray-900"
-                                                onClick={() =>
-                                                    setSelected({
-                                                        ...firstItem,
-                                                        items: items,
-                                                        prescription_number:
-                                                            prescriptionNumber,
-                                                    })
-                                                }
-                                            >
-                                                <Eye className="mr-1 h-3.5 w-3.5" />
-                                                View Bundle
-                                            </Button>
-                                        </td>
-                                    </tr>
-                                );
-                            },
-                        )}
-                    </tbody>
-                </table>
-            </div>
-
-            {selected && (
-                <PrescriptionBundleModal
-                    prescription={selected}
-                    items={selected.items || []}
-                    onClose={() => setSelected(null)}
-                />
-            )}
-        </div>
-    );
-};
-
 // ─── Add Prescription Modal ───────────────────────────────────────────────────
 
 const AddPrescriptionModal = ({
@@ -869,7 +723,6 @@ Prescription Details:
             itemPerDose: 1,
             frequency: 'OD',
             duration: 7,
-
             durationUnit: 'days',
             route: '',
             startDate: new Date().toISOString().split('T')[0],
@@ -917,7 +770,8 @@ Prescription Details:
                 className="relative flex w-full max-w-5xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
                 style={{ maxHeight: 'min(90vh, 680px)' }}
             >
-                <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+                {/* Header — slate */}
+                <div className="flex items-center justify-between border-b border-slate-200 bg-slate-100 px-6 py-4">
                     <div className="flex items-center gap-3">
                         <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-600 text-white shadow-2xl">
                             <Pill className="h-5 w-5" />
@@ -936,14 +790,15 @@ Prescription Details:
                         <StepIndicator step={step} />
                         <button
                             onClick={onClose}
-                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-gray-200 text-gray-400 hover:text-gray-600"
+                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-gray-400 hover:text-gray-600"
                         >
                             <X className="h-4 w-4" />
                         </button>
                     </div>
                 </div>
 
-                <div className="border-b border-gray-100 bg-gray-50/60 px-6 py-3">
+                {/* Search bar — white body */}
+                <div className="border-b border-slate-200 bg-white px-6 py-3">
                     <div className="relative">
                         <Search className="absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
                         <input
@@ -956,18 +811,19 @@ Prescription Details:
                     </div>
                 </div>
 
-                <div className="flex min-h-0 flex-1 overflow-hidden">
-                    <div className="flex w-[58%] flex-col overflow-hidden border-r border-gray-100">
+                {/* Body — white, split panels */}
+                <div className="flex min-h-0 flex-1 overflow-hidden bg-white">
+                    <div className="flex w-[58%] flex-col overflow-hidden border-r border-slate-200">
                         {!showDrugForm ? (
                             <>
-                                <div className="border-b border-gray-100 bg-gray-50/60 px-4 py-2">
+                                <div className="border-b border-slate-200 bg-white px-4 py-2">
                                     <span className="text-[11px] font-medium tracking-wide text-gray-400 uppercase">
                                         Available drugs
                                         {searchTerm &&
                                             ` · ${filteredServices.length} result${filteredServices.length !== 1 ? 's' : ''}`}
                                     </span>
                                 </div>
-                                <div className="flex-1 overflow-y-auto">
+                                <div className="flex-1 overflow-y-auto bg-white">
                                     {filteredServices.length === 0 ? (
                                         <div className="flex flex-col items-center justify-center gap-2 py-16 text-gray-400">
                                             <Search className="h-8 w-8 opacity-30" />
@@ -1144,7 +1000,7 @@ Prescription Details:
                                 </div>
                             </>
                         ) : (
-                            <div className="flex h-full flex-col">
+                            <div className="flex h-full flex-col bg-white">
                                 <div className="flex items-center justify-between border-b border-blue-100 bg-blue-50/60 px-4 py-2">
                                     <div>
                                         <span className="text-[11px] font-medium tracking-wide text-blue-700 uppercase">
@@ -1442,7 +1298,8 @@ Prescription Details:
                                     </div>
                                 </div>
 
-                                <div className="border-t border-gray-100 bg-gray-50/60 p-4">
+                                {/* Footer — slate */}
+                                <div className="border-t border-slate-200 bg-slate-100 p-4">
                                     <Button
                                         onClick={addToCartWithDetails}
                                         className="h-9 w-full text-sm"
@@ -1462,8 +1319,8 @@ Prescription Details:
                         )}
                     </div>
 
-                    <div className="flex w-[42%] flex-col overflow-hidden bg-gray-50/40">
-                        <div className="flex items-center justify-between border-b border-gray-100 bg-gray-50/60 px-4 py-2">
+                    <div className="flex w-[42%] flex-col overflow-hidden bg-white">
+                        <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-2">
                             <span className="text-[11px] font-medium tracking-wide text-gray-400 uppercase">
                                 Prescription cart
                             </span>
@@ -1475,7 +1332,7 @@ Prescription Details:
                             )}
                         </div>
 
-                        <div className="flex-1 space-y-2 overflow-y-auto p-3">
+                        <div className="flex-1 space-y-2 overflow-y-auto bg-white p-3">
                             {cart.length === 0 ? (
                                 <div className="flex h-full flex-col items-center justify-center gap-2 py-12 text-gray-400">
                                     <ShoppingCart className="h-10 w-10 opacity-25" />
@@ -1543,16 +1400,16 @@ Prescription Details:
                         </div>
 
                         {cart.length > 0 && (
-                            <div className="space-y-3 border-t border-gray-100 bg-white p-4">
+                            <div className="space-y-3 border-t border-slate-200 bg-slate-100 p-4">
                                 <div className="flex items-end justify-between">
                                     <div>
-                                        <p className="text-xs text-gray-400">
+                                        <p className="text-xs text-slate-500">
                                             Total · {schemeMeta.label}
                                         </p>
                                         <p className="text-lg font-semibold text-gray-900 tabular-nums">
                                             {zmw(total)}
                                         </p>
-                                        <p className="text-[9px] text-gray-400">
+                                        <p className="text-[9px] text-slate-400">
                                             Sum of course prices (not per unit)
                                         </p>
                                     </div>
@@ -1576,6 +1433,284 @@ Prescription Details:
     );
 };
 
+// ─── Prescribed Drugs Table (using ReusableTable) ─────────────────────────────
+
+interface PrescriptionGroup {
+    prescription_number: string;
+    items: PrescribedItem[];
+    firstItem: PrescribedItem;
+    totalItems: number;
+    status: string;
+    scheme: PricingScheme;
+    prescribedDate: string;
+    totalPrice: number;
+    drugNames: string[];
+}
+
+const PrescribedDrugsTable = ({
+    prescriptions: propPrescriptions,
+}: {
+    prescriptions: PrescribedItem[];
+}) => {
+    const [selected, setSelected] = useState<PrescribedItem | null>(null);
+    const [prescriptionsList, setPrescriptionsList] = useState<
+        PrescribedItem[]
+    >([]);
+    const { prescriptions: pagePrescriptions } = usePage().props as {
+        prescriptions?: PrescribedItem[];
+    };
+
+    useEffect(() => {
+        const allPrescriptions = [
+            ...(propPrescriptions || []),
+            ...(pagePrescriptions || []),
+        ];
+
+        if (allPrescriptions.length > 0) {
+            setPrescriptionsList((prevList) => {
+                const itemsMap = new Map();
+                prevList.forEach((item) => {
+                    itemsMap.set(item.cartId, item);
+                });
+                allPrescriptions.forEach((item) => {
+                    itemsMap.set(item.cartId, item);
+                });
+                return Array.from(itemsMap.values());
+            });
+        }
+    }, [propPrescriptions, pagePrescriptions]);
+
+    // Group prescriptions and flatten into rows for the table
+    const groupedData: PrescriptionGroup[] = React.useMemo(() => {
+        const groups = prescriptionsList.reduce(
+            (acc, item) => {
+                const prescriptionNumber =
+                    item.prescription_number || `PRES-${item.id || 'unknown'}`;
+                if (!acc[prescriptionNumber]) {
+                    acc[prescriptionNumber] = [];
+                }
+                acc[prescriptionNumber].push(item);
+                return acc;
+            },
+            {} as Record<string, PrescribedItem[]>,
+        );
+
+        return Object.entries(groups).map(([prescriptionNumber, items]) => {
+            const firstItem = items[0];
+            const totalPrice = items.reduce((sum, item) => {
+                const price = getPriceForScheme(item, item.scheme);
+                return sum + (price || 0);
+            }, 0);
+
+            return {
+                prescription_number: prescriptionNumber,
+                items,
+                firstItem,
+                totalItems: items.length,
+                status: firstItem.status || 'active',
+                scheme: normalizeScheme(firstItem.scheme),
+                prescribedDate: firstItem.prescribedDate || 'N/A',
+                totalPrice,
+                drugNames: items.map(
+                    (item) =>
+                        item.service_name ||
+                        item.drug_name ||
+                        'Prescription Items',
+                ),
+            };
+        });
+    }, [prescriptionsList]);
+
+    // Get status badge config
+    const getStatusBadge = (status: string) => {
+        const configs: Record<
+            string,
+            { label: string; gradient: string; icon: JSX.Element }
+        > = {
+            active: {
+                label: 'Active',
+                gradient: 'from-emerald-400 to-emerald-500',
+                icon: <CheckCircle2 size={14} />,
+            },
+            completed: {
+                label: 'Completed',
+                gradient: 'from-gray-400 to-gray-500',
+                icon: <CheckCircle2 size={14} />,
+            },
+            cancelled: {
+                label: 'Cancelled',
+                gradient: 'from-red-400 to-red-500',
+                icon: <X size={14} />,
+            },
+        };
+        return configs[status?.toLowerCase()] || configs['active'];
+    };
+
+    // Define columns for ReusableTable
+    const columns: Column<PrescriptionGroup>[] = [
+        {
+            id: 'prescription_number',
+            label: 'Prescription #',
+            sortable: true,
+            format: (value) => (
+                <div className="flex items-center gap-2">
+                    <div className="rounded-lg bg-blue-100 p-1.5 text-blue-600">
+                        <Pill size={14} />
+                    </div>
+                    <span className="font-mono text-sm font-semibold text-blue-600">
+                        {value}
+                    </span>
+                </div>
+            ),
+        },
+        {
+            id: 'drugNames',
+            label: 'Items',
+            sortable: false,
+            format: (value, row) => (
+                <div className="space-y-1">
+                    {row.drugNames.slice(0, 2).map((name, idx) => (
+                        <div key={idx} className="text-sm text-gray-700">
+                            {name}
+                        </div>
+                    ))}
+                    {row.drugNames.length > 2 && (
+                        <div className="text-xs text-gray-400">
+                            +{row.drugNames.length - 2} more
+                        </div>
+                    )}
+                </div>
+            ),
+        },
+        {
+            id: 'totalItems',
+            label: 'Total Items',
+            sortable: true,
+            format: (value) => (
+                <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700">
+                    {value} {value === 1 ? 'item' : 'items'}
+                </span>
+            ),
+        },
+        {
+            id: 'scheme',
+            label: 'Scheme',
+            sortable: true,
+            filterable: true,
+            filterType: 'status',
+            format: (value) => {
+                const meta = getSchemeMeta(value);
+                return (
+                    <span
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${meta.bg} ${meta.color}`}
+                    >
+                        {meta.label}
+                    </span>
+                );
+            },
+        },
+        {
+            id: 'prescribedDate',
+            label: 'Date',
+            sortable: true,
+            format: (value) => (
+                <div className="flex items-center gap-2">
+                    <Clock size={14} className="text-gray-400" />
+                    <span className="text-sm text-gray-700">{value}</span>
+                </div>
+            ),
+        },
+        {
+            id: 'status',
+            label: 'Status',
+            sortable: true,
+            filterable: true,
+            filterType: 'status',
+            statusColors: {
+                active: 'success',
+                completed: 'info',
+                cancelled: 'error',
+            },
+            format: (value) => {
+                const config = getStatusBadge(value);
+                return (
+                    <span
+                        className={`inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r ${config.gradient} px-3 py-1 text-xs font-medium text-white shadow-sm`}
+                    >
+                        {config.icon}
+                        {config.label}
+                    </span>
+                );
+            },
+        },
+    ];
+
+    // Define actions for ReusableTable
+    const actions: Action<PrescriptionGroup>[] = [
+        {
+            label: 'View Bundle',
+            icon: <Eye size={16} />,
+            color: 'info',
+            onClick: (row) => {
+                setSelected({
+                    ...row.firstItem,
+                    items: row.items,
+                    prescription_number: row.prescription_number,
+                });
+            },
+        },
+    ];
+
+    if (!prescriptionsList?.length) {
+        return (
+            <div className="mt-6">
+                <ReusableTable
+                    title="Prescribed Drugs"
+                    columns={columns}
+                    data={[]}
+                    actions={actions}
+                    loading={false}
+                    emptyMessage="No prescriptions found"
+                    filterPlaceholder="Search prescriptions..."
+                    rowsPerPageOptions={[8, 15, 25, 50]}
+                    defaultRowsPerPage={8}
+                />
+            </div>
+        );
+    }
+
+    return (
+        <div className="mt-6">
+            <ReusableTable
+                title="Prescribed Drugs"
+                columns={columns}
+                data={groupedData}
+                actions={actions}
+                loading={false}
+                filterPlaceholder="Search by prescription or drug name..."
+                statusFilterKey="status"
+                statusOptions={[
+                    { value: 'active', label: 'Active' },
+                    { value: 'completed', label: 'Completed' },
+                    { value: 'cancelled', label: 'Cancelled' },
+                ]}
+                rowsPerPageOptions={[8, 15, 25, 50]}
+                defaultRowsPerPage={8}
+                defaultOrderBy="prescribedDate"
+                emptyMessage="No prescriptions found"
+            />
+
+            {selected && (
+                <PrescriptionBundleModal
+                    prescription={selected}
+                    items={selected.items || []}
+                    onClose={() => setSelected(null)}
+                />
+            )}
+        </div>
+    );
+};
+
 // ─── Prescriptions Tab ────────────────────────────────────────────────────────
 
 const PrescriptionsTab = ({
@@ -1591,7 +1726,6 @@ const PrescriptionsTab = ({
     const [prescriptions, setPrescriptions] = useState<PrescribedItem[]>([]);
     const [loading, setLoading] = useState(true);
 
-    // Fetch prescriptions on mount
     useEffect(() => {
         const fetchPrescriptions = async () => {
             try {
@@ -1748,8 +1882,10 @@ const PrescriptionsTab = ({
             <div className="py-12 text-center">Loading prescriptions...</div>
         );
     }
+
     const { props } = usePage();
     console.log(props);
+
     return (
         <div className="space-y-6 bg-blue-50">
             <PageHeader
