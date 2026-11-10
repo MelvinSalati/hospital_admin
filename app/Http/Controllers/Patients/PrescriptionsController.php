@@ -31,8 +31,52 @@ class PrescriptionsController extends Controller
         $schemeId    = PatientVisitScheme::where('token', $activeToken['token'])
             ->value('scheme_id');
 
-        $drugs = Service::where('scheme_type', $schemeId)
-            ->where('service_category', 'Drugs')
+        $drugs = DB::table('department_stock_ledger_items as l')
+            ->join('products as p', 'p.id', '=', 'l.drug_id')
+            ->leftJoin('services as s', function ($join) use ($schemeId) {
+                $join->on('s.product_uuid', '=', 'p.product_uuid')
+                    ->where('s.scheme_type', '=', $schemeId);
+            })
+            ->whereIn('l.id', function ($q) {
+                $q->selectRaw('l2.id')
+                    ->from('department_stock_ledger_items as l2')
+                    ->whereRaw('l2.transaction_date = (
+                SELECT MAX(l3.transaction_date)
+                FROM department_stock_ledger_items l3
+                WHERE l3.drug_id = l2.drug_id
+                  AND l3.department_id = l2.department_id
+            )');
+            })
+            ->where('l.balance_after', '>', 0)
+            ->select([
+                'p.id as drug_id',
+                'p.product_name as drug_name',
+                'p.product_code',
+                'p.strength',
+                'p.pack_size',
+                'p.unit',
+                'l.department_id',
+                's.id as service_id',
+                's.price as price',
+                's.service_name',
+                's.service_category',
+                DB::raw('SUM(l.balance_after) as closing_balance'),
+                DB::raw('MAX(l.transaction_date) as last_movement_at'),
+            ])
+            ->groupBy(
+                'p.id',
+                'p.product_name',
+                'p.product_code',
+                'p.strength',
+                'p.pack_size',
+                'p.unit',
+                'l.department_id',
+                's.id',
+                's.price',
+                's.service_name',
+                's.service_category',
+            )
+            ->orderBy('p.product_name')
             ->get();
 
         $defaultPaymentMethod = PaymentMethod::where('patient_id', $patientId)
@@ -81,18 +125,18 @@ class PrescriptionsController extends Controller
     public function store(Request $request, int $patientId)
     {
         $validator = Validator::make($request->all(), [
-            'items'            => 'required|array|min:1',
-            'items.*.id'       => 'required|exists:services,id',
-            'items.*.quantity' => 'required|integer|min:1',
-            'items.*.price'    => 'required|numeric|min:0', // line total
-            'items.*.dosage'   => 'nullable|string',
+            'items'             => 'required|array|min:1',
+            'items.*.id'        => 'required|exists:products,id',
+            'items.*.quantity'  => 'required|integer|min:1',
+            'items.*.price'     => 'required|numeric|min:0', // line total
+            'items.*.dosage'    => 'nullable|string',
             'items.*.frequency' => 'nullable|string',
-            'items.*.route'    => 'nullable|string',
-            'items.*.notes'    => 'nullable|string',
-            'admission_number' => 'nullable|string',
-            'is_admitted'      => 'boolean',
-            'clinical_notes'   => 'nullable|string',
-            'scheme'           => 'nullable|string|in:cash,nhima,insurance,charity,mobile_money',
+            'items.*.route'     => 'nullable|string',
+            'items.*.notes'     => 'nullable|string',
+            'admission_number'  => 'nullable|string',
+            'is_admitted'       => 'boolean',
+            'clinical_notes'    => 'nullable|string',
+            'scheme'            => 'nullable|string|in:cash,nhima,insurance,charity,mobile_money',
         ]);
 
         if ($validator->fails()) {
@@ -123,6 +167,7 @@ class PrescriptionsController extends Controller
             $existingPrescription = Prescription::where('visit_token', $visitToken)
                 ->where('patient_id', $patientId)
                 ->whereIn('status', ['active', 'draft'])
+                ->lockForUpdate()
                 ->first();
 
             if ($existingPrescription) {
@@ -140,21 +185,6 @@ class PrescriptionsController extends Controller
 
                 $prescription = $existingPrescription->fresh();
                 $isNew        = false;
-
-                $prescriptionUuid = (string) Str::uuid();
-                foreach ($itemsForTable as $row) {
-                    PrescriptionItem::create([
-                        'prescription_id'   => $prescription->id,
-                        'prescription_uuid' => $prescriptionUuid,
-                        ...$row,
-                    ]);
-                }
-
-                \Log::info('Prescription appended', [
-                    'prescription_id' => $prescription->id,
-                    'visit_token'     => $visitToken,
-                    'items_added'     => count($itemsArray),
-                ]);
             } else {
                 $prescription = Prescription::create([
                     'visit_token'         => $visitToken,
@@ -168,7 +198,6 @@ class PrescriptionsController extends Controller
                     'is_admitted'         => $request->boolean('is_admitted'),
                     'admission_number'    => $request->admission_number,
                     'items_count'         => count($itemsArray),
-                    'payment_scheme'      => $scheme,
                     'total_amount'        => $total,
                 ]);
 
@@ -176,40 +205,29 @@ class PrescriptionsController extends Controller
                     throw new \Exception('Failed to create prescription record');
                 }
 
-                $prescriptionUuid = (string) Str::uuid();
-                foreach ($itemsForTable as $row) {
-                    PrescriptionItem::create([
-                        'prescription_id'   => $prescription->id,
-                        'prescription_uuid' => $prescriptionUuid,
-                        ...$row,
-                    ]);
-                }
-
                 $isNew = true;
-
-                \Log::info('Prescription created', [
-                    'prescription_id' => $prescription->id,
-                    'visit_token'     => $visitToken,
-                    'items_count'     => count($itemsArray),
-                    'total'           => $total,
-                ]);
             }
+
+            // ---------- Insert prescription items (both branches identical) ----------
+            $this->createPrescriptionItems($prescription, $itemsForTable);
+
+            Log::info($isNew ? 'Prescription created' : 'Prescription appended', [
+                'prescription_id' => $prescription->id,
+                'visit_token'     => $visitToken,
+                'items_added'     => count($itemsArray),
+                'total'           => $total,
+            ]);
 
             // ---------- Find or create invoice ----------
             $existingInvoice = Invoice::where('visit_token', $visitToken)
                 ->where('patient_id', $patientId)
                 ->whereIn('status', ['draft', 'unpaid'])
+                ->lockForUpdate()
                 ->first();
 
-            if ($existingInvoice) {
-                $invoice = $this->appendToInvoice(
-                    $existingInvoice,
-                    $itemsArray,
-                    $total,
-                    $prescription
-                );
-            } else {
-                $invoice = $this->createInvoice(
+            $invoice = $existingInvoice
+                ? $this->appendToInvoice($existingInvoice, $itemsArray, $total, $prescription)
+                : $this->createInvoice(
                     $patient,
                     $prescription,
                     $itemsArray,
@@ -218,7 +236,6 @@ class PrescriptionsController extends Controller
                     $request->admission_number,
                     $visitToken
                 );
-            }
 
             $prescription->update(['invoice_id' => $invoice->id]);
 
@@ -250,6 +267,30 @@ class PrescriptionsController extends Controller
     }
 
     /**
+     * Insert prescription_items rows for a prescription.
+     * `$itemsForTable` must already contain `drug_id` (set by the builder).
+     */
+    private function createPrescriptionItems(Prescription $prescription, array $itemsForTable): void
+    {
+        if (empty($itemsForTable)) {
+            return;
+        }
+
+        $prescriptionUuid = (string) Str::uuid();
+        $now = now();
+
+        $rows = array_map(fn(array $row) => [
+            'prescription_id'   => $prescription->id,
+            'prescription_uuid' => $prescriptionUuid,
+            'created_at'        => $now,
+            'updated_at'        => $now,
+            ...$row,
+        ], $itemsForTable);
+
+        PrescriptionItem::insert($rows);
+    }
+
+    /**
      * Bulk drug list with per-scheme pricing (API).
      */
     public function getDrugsWithPricing($patientId)
@@ -268,8 +309,6 @@ class PrescriptionsController extends Controller
             'stock'                   => $drug->maximum_stock_level ?? 0,
             'dosage_form'             => $drug->dosage_form,
             'route_of_administration' => $drug->route_of_administration,
-            'brand_name'              => $drug->brand_name,
-            'generic_name'            => $drug->generic_name,
             'unit_of_measure'         => $drug->unit_of_measure,
             'pack_size'               => $drug->pack_size,
         ]);
@@ -323,9 +362,6 @@ class PrescriptionsController extends Controller
 
     /**
      * Calculate total for selected drugs (API).
-     *
-     * NOTE: Frontend should pass line totals directly, so this endpoint
-     *       simply sums the provided `price` fields — no multiplication.
      */
     public function calculateDrugTotal(Request $request, $patientId)
     {
@@ -345,7 +381,7 @@ class PrescriptionsController extends Controller
             $drug = DrugItem::find($item['id']);
             if (!$drug) continue;
 
-            $lineTotal = (float) $item['price']; // already the line total
+            $lineTotal = (float) $item['price'];
             $total    += $lineTotal;
 
             $items[] = [
@@ -381,10 +417,13 @@ class PrescriptionsController extends Controller
     /**
      * Build the JSON array + per-item rows + grand total.
      *
-     * NO MULTIPLICATION:
-     *   - `price` is treated as the LINE TOTAL.
+     * IMPORTANT:
+     *   - `price` is the LINE TOTAL (no multiplication).
      *   - `quantity` is stored for reference/dispensing only.
-     *   - `total` = `price` (same value, for compatibility with existing UI).
+     *   - `drug_id` on `prescription_items` MUST be the **service ID**
+     *     because of FK `fk_prescription_items_drug` → `services(id)`.
+     *   - The product reference is preserved separately (`product_id`,
+     *     `product_uuid`) for traceability.
      *
      * @return array{0: array, 1: array, 2: float}
      */
@@ -398,94 +437,122 @@ class PrescriptionsController extends Controller
         $itemsForTable = [];
         $total         = 0;
 
+        // Resolve scheme ID using the existing visit scheme relationship.
+        $schemeId = PatientVisitScheme::where('token', $visitToken)
+            ->value('scheme_id');
+
+        if (!$schemeId) {
+            throw new \Exception("No payment scheme configured for visit {$visitToken}");
+        }
+
         foreach ($items as $item) {
-            $drug = Service::find($item['id']);
-            if (!$drug) {
-                throw new \Exception("Drug with ID {$item['id']} not found");
+
+            // 1. Resolve the actual product.
+            $product = \App\Models\BulkStores\Product::where('id', $item['id'])
+                ->first();
+
+            if (!$product) {
+                throw new \Exception("Product with ID {$item['id']} not found");
             }
 
-            // Line total comes from the frontend — no multiplication
+            // 2. Resolve the billable service through product_uuid.
+            $service = Service::where('product_uuid', $product->product_uuid)
+                ->where('scheme_type', $schemeId)
+                ->first();
+
+            if (!$service) {
+                throw new \Exception(
+                    "No billable service found for product {$product->product_name} under the selected payment scheme."
+                );
+            }
+
+            // 3. Frontend supplies the LINE TOTAL.
             $lineTotal = (float) $item['price'];
+
             $unitPrice = $item['quantity'] > 0
                 ? round($lineTotal / $item['quantity'], 2)
-                : $lineTotal; // derive unit price for display only
+                : $lineTotal;
 
             $total += $lineTotal;
 
-            // Resolve drug name with fallbacks
-            $drugName = $drug->drug_name
-                ?? $drug->service_name
+            // Fallbacks so we never emit "?" or empty strings into the DB.
+            $drugName     = $product->product_name
+                ?? $service->service_name
+                ?? 'Unknown Product';
+            $category     = $product->therapeutic_class
+                ?? $service->service_category
+                ?? 'Pharmacy';
+            $route        = $item['route']
+                ?? $product->route_of_administration
+                ?? $service->route_of_administration
                 ?? null;
+            $dosage       = $item['dosage']
+                ?? $product->dosage_form
+                ?? null;
+            $dosageUnit   = $product->unit
+                ?? $product->unit_of_measure
+                ?? null;
+            $frequencyRaw = $item['frequency'] ?? null;
 
-            if (empty($drugName)) {
-                \Log::warning('Drug missing name fields', [
-                    'drug_id'      => $drug->id,
-                    'service_name' => $drug->service_name,
-                    'drug_name'    => $drug->drug_name,
-                ]);
-                $drugName = 'Unknown Drug (ID: ' . $drug->id . ')';
-            }
-
-            // ---------- JSON column on prescriptions ----------
+            // 4. Prescription JSON payload (kept for downstream consumers).
             $itemsArray[] = [
-                'id'                       => $drug->id,
-                'drug_id'                  => $drug->id,
+                'id'                       => $product->id,
+                'drug_id'                  => $service->id,   // FK target
+                'product_id'               => $product->id,
+                'service_id'               => $service->id,
+                'product_uuid'             => $product->product_uuid,
                 'drug_name'                => $drugName,
-                'service_name'             => $drug->service_name,
-                'name'                     => $drug->service_name,
-                'category'                 => $drug->therapeutic_class ?? 'Pharmacy',
+                'service_name'             => $service->service_name,
+                'name'                     => $drugName,
+                'category'                 => $category,
                 'quantity'                 => $item['quantity'],
-                'price'                    => $lineTotal,   // line total (no multiply)
-                'unit_price'               => $unitPrice,   // derived, display only
-                'total'                    => $lineTotal,   // same as price
-                'dosage'                   => $item['dosage'] ?? $drug->dosage_form,
-                'frequency'                => $item['frequency'] ?? null,
-                'route'                    => $item['route'] ?? $drug->route_of_administration,
+                'price'                    => $lineTotal,
+                'unit_price'               => $unitPrice,
+                'total'                    => $lineTotal,
+                'dosage'                   => $dosage,
+                'frequency'                => $frequencyRaw,
+                'route'                    => $route,
                 'instructions'             => $item['notes'] ?? null,
                 'payment_status'           => 'pending',
                 'dispensation_status'      => 'pending',
                 'payment_method_used'      => $scheme,
-                'original_price_cash'      => $drug->selling_price ?? 0,
-                'original_price_nhima'     => $drug->nhima_price ?? 0,
-                'original_price_insurance' => $drug->insurance_price ?? 0,
-                'original_price_charity'   => $drug->charity_price ?? 0,
-                'drug_code'                => $drug->drug_code,
-                'brand_name'               => $drug->brand_name,
-                'generic_name'             => $drug->generic_name,
-                'strength'                 => $drug->strength,
-                'unit_of_measure'          => $drug->unit_of_measure,
-                'pack_size'                => $drug->pack_size,
+                'strength'                 => $product->strength,
+                'unit_of_measure'          => $dosageUnit,
+                'pack_size'                => $product->pack_size,
+                'product_code'             => $product->product_code,
             ];
 
-            // ---------- prescription_items table ----------
+            // 5. Prescription database row.
+            //
+            //    ⚠️ `drug_id` MUST be `$service->id` (NOT `$product->id`).
+            //    The FK `fk_prescription_items_drug` references `services(id)`.
+            //    If you migrate that FK to `products(id)` later, swap it back
+            //    and migrate historical rows at the same time.
             $itemsForTable[] = [
                 'visit_token'         => $visitToken,
                 'patient_id'          => $patient->id,
-                'service_id'          => $drug->id,
+                'drug_id'             => $service->id,        // ✅ FK-safe
                 'drug_name'           => $drugName,
-                'drug_code'           => $drug->drug_code ?? null,
-                'drug_category'       => $drug->therapeutic_class ?? null,
-                'dosage'              => $item['dosage'] ?? $drug->dosage_form,
-                'dosage_unit'         => $drug->unit_of_measure ?? null,
-                'frequency'           => $item['frequency'] ?? null,
-                'frequency_label'     => $this->getFrequencyLabel($item['frequency'] ?? null),
-                'route'               => $item['route'] ?? $drug->route_of_administration,
+                'drug_code'           => $product->product_code ?? null,
+                'drug_category'       => $category,
+                'dosage'              => $dosage,
+                'dosage_unit'         => $dosageUnit,
+                'frequency'           => $frequencyRaw,
+                'frequency_label'     => $this->getFrequencyLabel($frequencyRaw),
+                'route'               => $route,
+                'strength'            => $product->strength,
                 'instructions'        => $item['notes'] ?? null,
                 'quantity_prescribed' => $item['quantity'],
                 'quantity_dispensed'  => 0,
                 'quantity_remaining'  => $item['quantity'],
-                'unit_price'          => $unitPrice,   // derived, display only
-                'total_price'         => $lineTotal,   // line total (no multiply)
+                'unit_price'          => $unitPrice,
+                'total_price'         => $lineTotal,
                 'currency'            => 'ZMW',
                 'payment_status'      => 'pending',
                 'payment_amount'      => 0,
                 'dispensation_status' => 'pending',
                 'is_active'           => true,
                 'is_cancelled'        => false,
-                'payment_scheme'      => $scheme,
-                'brand_name'          => $drug->brand_name,
-                'generic_name'        => $drug->generic_name,
-                'strength'            => $drug->strength,
             ];
         }
 
@@ -521,7 +588,7 @@ class PrescriptionsController extends Controller
             'updated_at'      => now(),
         ]);
 
-        \Log::info('Appended items to invoice', [
+        Log::info('Appended items to invoice', [
             'invoice_id'      => $invoice->id,
             'invoice_number'  => $invoice->invoice_number,
             'prescription_id' => $prescription->id,

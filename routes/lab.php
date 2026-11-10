@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Patients\LabOrderController;
 use App\Http\Controllers\Laboratories\LaboratoryController;
+use App\Http\Controllers\Reports\LaboratoryReportController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
@@ -36,3 +37,15 @@ Route::prefix('v1')->group(function () {
     // Available tests route
     Route::get('/laboratory-tests/available', [LabOrderController::class, 'getAvailableTests']);
 });
+
+Route::prefix('v1')->group(function () {
+    Route::post('{userId}/laboratory/{patientId}/orders/{lab_order_id}/results/upload', [LaboratoryController::class, 'uploadResults']);
+
+    Route::post('laboratory/reports/{departmentId}', [LaboratoryReportController::class, 'getReport']);
+});
+
+
+Route::get(
+    '/reports/verify/{reportId}/{sig}',
+    [LaboratoryReportController::class, 'verify'],
+)->name('reports.verify');

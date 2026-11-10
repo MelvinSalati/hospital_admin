@@ -17,7 +17,8 @@ class AppointmentController extends Controller
 
     public function appointments(): array
     {
-        $appointments = Appointment::with(['patient', 'creator', 'department'])->get()->map(function ($appointment) {
+        $appointments = Appointment::with(['patient', 'creator', 'department'])
+        ->where('status','pending')->get()->map(function ($appointment) {
             return [
                 'id' => $appointment->id,
                 'patient_id' => $appointment->patient_id? $appointment->patient->patient_number : 'Unknown',
@@ -33,5 +34,10 @@ class AppointmentController extends Controller
         return [
             'appointments' => $appointments
         ];
+    } 
+
+    public function updateAppointment(Request $request, int $appointmentId){
+        $appointment = Appointment::findOrFail($appointmentId);
+        return $appointment->update(['status'=>$request->status]);
     }
 }

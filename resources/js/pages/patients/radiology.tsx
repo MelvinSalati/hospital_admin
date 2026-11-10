@@ -8,13 +8,11 @@ import {
     ShoppingCart,
     Eye,
     ChevronLeft,
-    ChevronRight,
     Save,
     RadiationIcon,
-    FileText,
-    Calendar,
     Filter,
     ClipboardList,
+    Image as ImageIcon,
 } from 'lucide-react';
 import Notiflix from 'notiflix';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
@@ -33,6 +31,9 @@ import PatientLayout from '@/layouts/patients/PatientLayout';
 import Http from '@/utils/Http';
 import type { Column } from './components/Table';
 import { Table as ReusableTable } from './components/Table';
+import RadiologyImagesDrawer, {
+    type ImagingFile,
+} from './RadiologyImagesDrawer';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -61,6 +62,7 @@ export interface RadiologyOrder {
     priority?: string;
     created_at: string;
     items?: any[];
+    files?: ImagingFile[]; // ← NEW
 }
 
 interface RadiologyOrdersTableProps {
@@ -524,7 +526,6 @@ const RadiologyServiceModal = ({
                     </div>
 
                     <div className="flex min-h-[500px] flex-col md:flex-row">
-                        {/* Left - Available Services */}
                         <div className="w-full border-b p-4 md:w-1/2 md:border-r md:border-b-0">
                             <div className="relative mb-4">
                                 <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -619,7 +620,6 @@ const RadiologyServiceModal = ({
                             )}
                         </div>
 
-                        {/* Right - Cart */}
                         <div className="w-full bg-gray-50 p-4 md:w-1/2">
                             <h3 className="mb-3 font-semibold">
                                 Order Cart ({cart.length} items)
@@ -769,7 +769,6 @@ const RadiologyBundleModal = ({
                     onClick={onClose}
                 />
                 <div className="relative flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-slate-900/5">
-                    {/* Header — non-scrollable */}
                     <div className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-gradient-to-r from-slate-50 via-white to-slate-50 px-6 py-5">
                         <div className="flex items-center gap-4">
                             <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/30">
@@ -794,7 +793,6 @@ const RadiologyBundleModal = ({
                         </button>
                     </div>
 
-                    {/* Body — scrollable */}
                     <div className="flex-1 overflow-y-auto bg-slate-50/40">
                         <div className="space-y-5 px-6 py-6">
                             <div>
@@ -937,7 +935,6 @@ const RadiologyBundleModal = ({
                         </div>
                     </div>
 
-                    {/* Footer — non-scrollable */}
                     <div className="flex shrink-0 items-center justify-end gap-3 border-t border-slate-200 bg-gradient-to-r from-slate-50 via-white to-slate-50 px-6 py-4">
                         <Button
                             onClick={onClose}
@@ -964,6 +961,12 @@ export default function RadiologyOrdersTable({
         null,
     );
     const [isBundleModalOpen, setIsBundleModalOpen] = useState(false);
+    const { auth } = usePage().props;
+
+    // ── NEW: images drawer state ────────────────────────────────
+    const [imagesOrder, setImagesOrder] = useState<RadiologyOrder | null>(null);
+    const [imagesOpen, setImagesOpen] = useState(false);
+
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState('all');
     const itemsPerPage = 5;
@@ -985,6 +988,7 @@ export default function RadiologyOrdersTable({
                 unit_price: order.unit_price ?? 0,
                 total_price: order.total_price ?? 0,
                 created_at: order.created_at || new Date().toISOString(),
+                files: order.files ?? [],
             })),
         [safeOrders],
     );
@@ -1011,7 +1015,6 @@ export default function RadiologyOrdersTable({
     const { currentPage, totalPages, paginatedItems, setCurrentPage } =
         usePagination(filteredOrders, itemsPerPage);
 
-    // Reset page when filters change
     useEffect(() => {
         setCurrentPage(1);
     }, [searchTerm, statusFilter, setCurrentPage]);
@@ -1021,11 +1024,34 @@ export default function RadiologyOrdersTable({
         setIsBundleModalOpen(true);
     }, []);
 
+    // ── NEW: images drawer openers/closers ──────────────────────
+    const openImages = useCallback((order: RadiologyOrder) => {
+        setImagesOrder(order);
+        setImagesOpen(true);
+    }, []);
+
+    const closeImages = useCallback(() => {
+        setImagesOpen(false);
+        setTimeout(() => setImagesOrder(null), 250);
+    }, []);
+
+    // ── NEW: dispatch row click by whether files exist ──────────
+    const handleRowClick = useCallback(
+        (order: RadiologyOrder) => {
+            if ((order.files?.length ?? 0) > 0) {
+                openImages(order);
+            } else {
+                handleViewBundle(order);
+            }
+        },
+        [openImages, handleViewBundle],
+    );
+
     const handleNewOrder = useCallback(() => {
         setIsOrderModalOpen(true);
     }, []);
 
-    // ─── Save Order Handler (business logic unchanged) ──────────────────────
+    // ─── Save Order Handler ────────────────────────────────────
     const handleSaveOrder = useCallback(
         async (items: RadiologyCartItem[], patientId: string) => {
             try {
@@ -1049,12 +1075,8 @@ export default function RadiologyOrdersTable({
                         body_part: item.body_part || null,
                     })),
                     total_amount: totalAmount,
+                    ordered_by: auth.user.id,
                 };
-
-                console.log(
-                    '📤 Sending radiology order:',
-                    JSON.stringify(orderData, null, 2),
-                );
 
                 const response = await Http.post(
                     `/patients/${patientId}/radiology/orders`,
@@ -1070,15 +1092,8 @@ export default function RadiologyOrdersTable({
 
                 return response.data;
             } catch (error: any) {
-                console.error('❌ Error saving radiology order:', error);
-
                 if (error?.response?.status === 422) {
                     const errors = error.response.data.errors;
-
-                    console.log(
-                        '🔍 Validation Errors:',
-                        JSON.stringify(errors, null, 2),
-                    );
 
                     if (typeof errors === 'object') {
                         Object.entries(errors).forEach(([field, messages]) => {
@@ -1115,11 +1130,6 @@ export default function RadiologyOrdersTable({
                                 );
                             }
                         });
-
-                        console.error('📋 Validation errors summary:');
-                        Object.entries(errors).forEach(([field, messages]) => {
-                            console.error(`  • ${field}:`, messages);
-                        });
                     }
                 } else {
                     const errorMessage =
@@ -1136,7 +1146,7 @@ export default function RadiologyOrdersTable({
         [],
     );
 
-    // ─── Table Columns ─────────────────────────────────────────────────────
+    // ─── Table Columns ─────────────────────────────────────────
     const columns: Column<any>[] = [
         {
             key: 'order_number',
@@ -1153,7 +1163,17 @@ export default function RadiologyOrdersTable({
             header: 'Service',
             render: (value, row) => (
                 <div>
-                    <div className="font-medium text-slate-800">{value}</div>
+                    <div className="flex items-center gap-2">
+                        <span className="font-medium text-slate-800">
+                            {value}
+                        </span>
+                        {(row.files?.length ?? 0) > 0 && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">
+                                <ImageIcon className="h-2.5 w-2.5" />
+                                {row.files.length}
+                            </span>
+                        )}
+                    </div>
                     {row.items && row.items.length > 1 && (
                         <div className="text-xs text-slate-400">
                             +{row.items.length - 1} more
@@ -1206,19 +1226,36 @@ export default function RadiologyOrdersTable({
         },
     ];
 
+    // ── NEW: dual-action renderer ──────────────────────────────
     const renderActions = (order: RadiologyOrder) => (
-        <Button
-            size="sm"
-            onClick={(e) => {
-                e.stopPropagation();
-                handleViewBundle(order);
-            }}
-            variant="outline"
-            className="border-slate-200 text-slate-600 hover:bg-slate-50"
-        >
-            <Eye className="mr-1 h-3 w-3" />
-            View
-        </Button>
+        <div className="flex items-center gap-1">
+            {(order.files?.length ?? 0) > 0 && (
+                <Button
+                    size="sm"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        openImages(order);
+                    }}
+                    variant="outline"
+                    className="border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                >
+                    <ImageIcon className="mr-1 h-3 w-3" />
+                    Images ({order.files!.length})
+                </Button>
+            )}
+            <Button
+                size="sm"
+                onClick={(e) => {
+                    e.stopPropagation();
+                    handleViewBundle(order);
+                }}
+                variant="outline"
+                className="border-slate-200 text-slate-600 hover:bg-slate-50"
+            >
+                <Eye className="mr-1 h-3 w-3" />
+                View
+            </Button>
+        </div>
     );
 
     const hasActiveFilters = searchTerm !== '' || statusFilter !== 'all';
@@ -1366,7 +1403,7 @@ export default function RadiologyOrdersTable({
                                     ? 'No orders match your filters'
                                     : 'No radiology orders available'
                             }
-                            onRowClick={handleViewBundle}
+                            onRowClick={handleRowClick}
                             actions={renderActions}
                             searchable={false}
                             pagination={{
@@ -1414,6 +1451,15 @@ export default function RadiologyOrdersTable({
                             setSelectedOrder(null);
                         }}
                         order={selectedOrder}
+                    />
+                )}
+
+                {/* NEW: images drawer */}
+                {imagesOrder && (
+                    <RadiologyImagesDrawer
+                        order={imagesOrder}
+                        isOpen={imagesOpen}
+                        onClose={closeImages}
                     />
                 )}
             </div>

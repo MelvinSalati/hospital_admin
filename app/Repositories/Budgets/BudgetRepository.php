@@ -10,54 +10,83 @@ use Illuminate\Support\Facades\DB;
 
 class BudgetRepository implements BudgetRepositoryInterface
 {
+    // public function findByCode(string $budgetCode, ?int $departmentId = null): ?BudgetAllocation
+    // {
+    //     return BudgetAllocation::with(['department', 'category'])
+    //         ->where('budget_code', $budgetCode)
+    //         ->when($departmentId, function ($query) use ($departmentId) {
+    //             return $query->where('department_id', $departmentId);
+    //         })
+    //         ->first();
+    // }
+
     public function findByCode(string $budgetCode, ?int $departmentId = null): ?BudgetAllocation
     {
-        return BudgetAllocation::with(['department', 'category'])
+        return BudgetAllocation::query()
+            ->with(['category', 'department'])   // if you rely on these in the summary
             ->where('budget_code', $budgetCode)
-            ->when($departmentId, function ($query) use ($departmentId) {
-                return $query->where('department_id', $departmentId);
-            })
-            ->first();
-    }
-
-    public function getActiveBudgets(array $filters = []): Collection
-    {
-        $query = BudgetAllocation::with(['department', 'category'])
-            ->where('status', 'active');
-
-        if (!empty($filters['department_id'])) {
-            $query->where('department_id', $filters['department_id']);
-        }
-
-        if (!empty($filters['search'])) {
-            $query->where(function ($q) use ($filters) {
-                $q->where('budget_code', 'LIKE', "%{$filters['search']}%")
-                    ->orWhere('budget_name', 'LIKE', "%{$filters['search']}%");
-            });
-        }
-
-        if (!empty($filters['year'])) {
-            $query->where('fiscal_year', $filters['year']);
-        }
-
-        if (!empty($filters['has_available'])) {
-            $query->where('available_amount', '>', 0);
-        }
-
-        return $query->orderBy('budget_code')->get();
+            ->when($departmentId, fn($q) => $q->where('department_id', $departmentId))
+            ->first();   // ✅ execute the query
     }
 
     public function getDepartmentBudgets(int $departmentId, ?int $year = null): Collection
     {
-        $year = $year ?? date('Y');
+        $year ??= now()->year;
 
-        return BudgetAllocation::with(['category'])
+        return BudgetAllocation::query()
+            ->with('category')
             ->where('department_id', $departmentId)
             ->where('fiscal_year', $year)
-            ->where('status', 'active')
-            ->orderBy('budget_code')
             ->get();
     }
+
+    public function getActiveBudgets(array $filters = []): Collection
+    {
+        return BudgetAllocation::query()
+            ->with(['category', 'department'])
+            ->where('status', 'active')
+            ->when($filters['department_id'] ?? null, fn($q, $v) => $q->where('department_id', $v))
+            ->get();
+    }
+
+    // public function getActiveBudgets(array $filters = []): Collection
+    // {
+    //     $query = BudgetAllocation::with(['department', 'category'])
+    //         ->where('status', 'active');
+
+    //     if (!empty($filters['department_id'])) {
+    //         $query->where('department_id', $filters['department_id']);
+    //     }
+
+    //     if (!empty($filters['search'])) {
+    //         $query->where(function ($q) use ($filters) {
+    //             $q->where('budget_code', 'LIKE', "%{$filters['search']}%")
+    //                 ->orWhere('budget_name', 'LIKE', "%{$filters['search']}%");
+    //         });
+    //     }
+
+    //     if (!empty($filters['year'])) {
+    //         $query->where('fiscal_year', $filters['year']);
+    //     }
+
+    //     if (!empty($filters['has_available'])) {
+    //         $query->where('available_amount', '>', 0);
+    //     }
+
+    //     return $query->orderBy('budget_code')->get();
+    // }
+
+    // public function getDepartmentBudgets(int $departmentId, ?int $year = null): Collection
+    // {
+    //     $year = $year ?? date('Y');
+
+    //     return BudgetAllocation::with(['category'])
+    //         ->where('department_id', $departmentId)
+    //         ->where('fiscal_year', $year)
+    //         ->where('status', 'active')
+    //         ->orderBy('budget_code')
+    //         ->get();
+    // }
 
     public function updateAmounts(BudgetAllocation $budget, array $data): BudgetAllocation
     {
@@ -140,9 +169,10 @@ class BudgetRepository implements BudgetRepositoryInterface
             })
             ->lockForUpdate()
             ->first();
-    } 
+    }
 
-    public function getAllActiveBudgets(){
+    public function getAllActiveBudgets()
+    {
         return BudgetAllocation::with(['category'])->get();
     }
 }

@@ -7,13 +7,16 @@ use App\Models\Budgets\BudgetAllocation;
 use App\Models\Budgets\BudgetTransaction;
 use App\Models\BulkStores\PurchaseRequisition;
 use App\Models\User;
-use Illuminate\Http\Request;
-use App\Services\UserService;
-use App\Services\Budgets\BudgetService;
-use App\Helpers\NumberGenerator;
 use App\Policies\ApprovePurchaseRequestPolicy;
+use App\Services\Budgets\BudgetService;
+use App\Services\UserService;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
+use Inertia\Inertia;
 
 class AdminController extends Controller
 {
@@ -72,27 +75,105 @@ class AdminController extends Controller
     /**
      * Get all pending purchase requisitions
      */
-    public function getPurchaseRequisitions()
+    public function getPurchaseRequisitions(Request $request)
     {
         try {
-            $purchaseRequisition = PurchaseRequisition::with([
-                'department',
-                'requester',
-                'supplier',
-                'budgetAllocation',
-                'items.product'
-            ])->where('status', '<>', 'approved')->get();
+            $query = PurchaseRequisition::query()
+                ->with([
+                    'department',
+                    'requester',
+                    'supplier',
+                    'budgetAllocation',
+                    'items.product',
+                ])
+                ->where('status', '!=', 'approved');   // only non-approved rows
 
-            return response()->json([
-                'orders' => $purchaseRequisition,
-                'success' => true
+            // ---- Filters ----
+            if ($search = $request->input('search')) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('pr_number', 'like', "%{$search}%")
+                        ->orWhereHas('department', fn($d) =>
+                        $d->where('name', 'like', "%{$search}%"))
+                        ->orWhereHas('requester', fn($u) =>
+                        $u->where('name', 'like', "%{$search}%"));
+                });
+            }
+
+            if ($status = $request->input('status')) {
+                $query->where('status', $status);
+            }
+
+            if ($priority = $request->input('priority')) {
+                $query->where('priority', $priority);
+            }
+
+            if ($department = $request->input('department')) {
+                $query->where('department_id', $department);
+            }
+
+            // ---- Paginate ----
+            $perPage = (int) $request->input('page_size', 10);
+            $orders  = $query->latest('created_at')->paginate($perPage)->withQueryString();
+
+            // ---- Stats (same scope: non-approved) ----
+            $statsBase = PurchaseRequisition::query()->where('status', '!=', 'approved');
+
+            $stats = [
+                'total'               => (clone $statsBase)->count(),
+                'pending'             => (clone $statsBase)->where('status', 'pending')->count(),
+                'approved'            => 0, // always 0 here: this page excludes approved
+                'rejected'            => (clone $statsBase)->where('status', 'rejected')->count(),
+                'total_value'         => (float) (clone $statsBase)->sum('estimated_total'),
+                'urgent_count'        => (clone $statsBase)->where('priority', 'urgent')->count(),
+                'high_priority_count' => (clone $statsBase)->where('priority', 'high')->count(),
+                'funds_released'      => (clone $statsBase)->where('funds_released', true)->count(),
+            ];
+
+            return Inertia::render('admin/PurchaseRequisitions', [
+                'orders'     => $orders->items(),
+                'pagination' => [
+                    'currentPage' => $orders->currentPage(),
+                    'pageSize'    => $orders->perPage(),
+                    'totalItems'  => $orders->total(),
+                    'totalPages'  => $orders->lastPage(),
+                ],
+                'filters' => [
+                    'search'     => (string) $request->input('search', ''),
+                    'status'     => (string) $request->input('status', ''),
+                    'priority'   => (string) $request->input('priority', ''),
+                    'department' => (string) $request->input('department', ''),
+                ],
+                'stats' => $stats,
             ]);
         } catch (\Exception $e) {
             Log::error('Failed to fetch purchase requisitions: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => $e->getMessage()
-            ], 500);
+
+            return Inertia::render('admin/PurchaseRequisitions', [
+                'orders'     => [],
+                'pagination' => [
+                    'currentPage' => 1,
+                    'pageSize'    => 10,
+                    'totalItems'  => 0,
+                    'totalPages'  => 1,
+                ],
+                'filters' => [
+                    'search'     => '',
+                    'status'     => '',
+                    'priority'   => '',
+                    'department' => '',
+                ],
+                'stats' => [
+                    'total' => 0,
+                    'pending' => 0,
+                    'approved' => 0,
+                    'rejected' => 0,
+                    'total_value' => 0,
+                    'urgent_count' => 0,
+                    'high_priority_count' => 0,
+                    'funds_released' => 0,
+                ],
+                'error' => 'Failed to load purchase requisitions.',
+            ]);
         }
     }
 
@@ -123,76 +204,44 @@ class AdminController extends Controller
         }
     }
 
-    /**
-     * Check budget availability for a requisition
-     */
-    public function checkBudget($requisitionId, Request $request)
+    // ------------------------------------------------------------------
+    // Check budget (reserves funds, idempotent)
+    // ------------------------------------------------------------------
+    public function checkBudget(int $requisitionId, Request $request)
     {
         try {
             DB::beginTransaction();
 
-            $requisition = PurchaseRequisition::with(['budgetAllocation'])->findOrFail($requisitionId);
-            $user = auth()->user();
+            $requisition = PurchaseRequisition::lockForUpdate()->findOrFail($requisitionId);
+            $user = Auth::user();
 
-            Log::info('Check budget called', [
-                'requisition_id' => $requisitionId,
-                'user_id' => $user ? $user->id : null,
-                'user_is_admin' => $user ? $user->is_admin : null,
-                'user_approval_code' => $user ? $user->approval_code : null
-            ]);
-
-            // Check if user has permission to approve
             if (!$this->policy->approve($user, $requisition)) {
-                Log::warning('User does not have permission to approve', [
-                    'user_id' => $user ? $user->id : null,
-                    'requisition_id' => $requisitionId
-                ]);
-                return response()->json([
-                    'success' => false,
-                    'message' => 'You do not have permission to approve this requisition. Only admins and supervisors can approve.'
-                ], 403);
+                throw new \DomainException('You do not have permission to approve this requisition. Only admins and supervisors can approve.', 403);
             }
-
             if (!$requisition->budget_code) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'No budget code assigned to this requisition.'
-                ], 400);
+                throw new \DomainException('No budget code assigned to this requisition.', 400);
             }
-
-            // Check if requisition is pending
             if ($requisition->status !== 'pending') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Requisition is not in pending status.'
-                ], 400);
+                throw new \DomainException('Requisition is not in pending status.', 400);
             }
 
-            $budgetAllocation = BudgetAllocation::where('budget_code', $requisition->budget_code)
+            $budget = BudgetAllocation::where('budget_code', $requisition->budget_code)
                 ->where('status', 'active')
                 ->first();
 
-            if (!$budgetAllocation) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Budget allocation not found for the given budget code.'
-                ], 404);
+            if (!$budget) {
+                throw new \DomainException('Budget allocation not found for the given budget code.', 404);
             }
 
-            $amount = floatval($requisition->estimated_total);
-            $available = floatval($budgetAllocation->available_amount);
-            $hasSufficientFunds = $available >= $amount;
+            $amount = round((float) $requisition->estimated_total, 2);
 
-            // Create a reservation transaction if funds are sufficient
-            if ($hasSufficientFunds) {
-                $budgetAllocation->reserveBudget($amount, 'PR', $requisition->id);
+            // Money this PR already holds + money still free to promise
+            $held = max(0, $this->reservedFor($requisition));
+            $free = round((float) $budget->uncommitted_amount + $held, 2);
+            $hasSufficientFunds = $free >= $amount;
 
-                Log::info('Budget reserved successfully', [
-                    'requisition_id' => $requisition->id,
-                    'pr_number' => $requisition->pr_number,
-                    'amount' => $amount,
-                    'user_id' => $user ? $user->id : null
-                ]);
+            if ($hasSufficientFunds && !$this->syncReservation($budget, $requisition, $amount)) {
+                throw new \DomainException('Failed to reserve budget funds. Please try again.', 409);
             }
 
             DB::commit();
@@ -202,465 +251,229 @@ class AdminController extends Controller
                 'data' => [
                     'budget_check' => [
                         'has_sufficient_funds' => $hasSufficientFunds,
-                        'budget_code' => $budgetAllocation->budget_code,
-                        'available_balance' => $available,
-                        'requested_amount' => $amount,
-                        'budget_line' => $budgetAllocation->budget_name,
-                        'budget_holder' => $budgetAllocation->creator->name ?? 'N/A',
-                        'currency' => 'ZMW',
-                        'message' => $hasSufficientFunds
+                        'budget_code'          => $budget->budget_code,
+                        'available_balance'    => $free,
+                        'cash_available'       => (float) $budget->available_amount,
+                        'requested_amount'     => $amount,
+                        'budget_line'          => $budget->budget_name,
+                        'budget_holder'        => $budget->creator->name ?? 'N/A',
+                        'currency'             => 'ZMW',
+                        'message'              => $hasSufficientFunds
                             ? 'Budget has sufficient funds. You can proceed with approval.'
-                            : 'Insufficient budget funds. Available: ' . number_format($available, 2)
-                    ]
-                ]
+                            : 'Insufficient budget funds. Available: ' . number_format($free, 2),
+                    ],
+                ],
             ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Failed to check budget: ' . $e->getMessage(), [
-                'requisition_id' => $requisitionId,
-                'trace' => $e->getTraceAsString()
-            ]);
-
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to check budget: ' . $e->getMessage()
-            ], 500);
+        } catch (\Throwable $e) {
+            return $this->failure($e, 'Failed to check budget', ['requisition_id' => $requisitionId]);
         }
     }
 
-    /**
-     * Approve a purchase requisition
-     */
-    public function approveRequisition($requisitionId, Request $request)
+    // ------------------------------------------------------------------
+    // Approve (reserved -> committed)
+    // ------------------------------------------------------------------
+    public function approveRequisition(int $requisitionId, Request $request)
     {
         try {
+            $request->validate([
+                'approval_code' => 'required|string',
+                'comments'      => 'nullable|string',
+                'approved_by'   => 'required|integer|exists:users,id',
+            ]);
+
             DB::beginTransaction();
 
-            Log::info('Approve requisition called', [
-                'requisition_id' => $requisitionId,
-                'request_data' => $request->all(),
-                'user_id' => $request->approved_by
-            ]);
+            $requisition = PurchaseRequisition::lockForUpdate()->findOrFail($requisitionId);
+            $user = User::findOrFail($request->approved_by);
 
-            // Validate request
-            $validator = validator($request->all(), [
-                'approval_code' => 'required|string',
-                'comments' => 'nullable|string',
-                'approved_by' => 'required|integer|exists:users,id',
-            ]);
-
-            if ($validator->fails()) {
-                Log::warning('Validation failed', [
-                    'errors' => $validator->errors()->toArray()
-                ]);
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Validation failed',
-                    'errors' => $validator->errors()
-                ], 422);
-            }
-
-            // Find the requisition with relationships
-            $requisition = PurchaseRequisition::with(['items', 'budgetAllocation'])->findOrFail($requisitionId);
-
-            // Find the user who is approving
-            $user = User::find($request->approved_by);
-            if (!$user) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'User not found with ID: ' . $request->approved_by
-                ], 404);
-            }
-
-            Log::info('Found requisition and user', [
-                'requisition_id' => $requisition->id,
-                'requisition_status' => $requisition->status,
-                'requisition_department_id' => $requisition->department_id,
-                'requisition_budget_code' => $requisition->budget_code,
-                'requisition_amount' => $requisition->estimated_total,
-                'user_id' => $user->id,
-                'user_is_admin' => $user->is_admin,
-                'user_is_supervisor' => $user->is_supervisor,
-                'user_department_id' => $user->department_id,
-                'user_approval_code' => $user->approval_code,
-            ]);
-
-            // Check if user has permission to approve
-            $canApprove = $this->policy->approve($user, $requisition);
-            Log::info('Can approve check result', ['can_approve' => $canApprove]);
-
-            if (!$canApprove) {
-                $role = $this->policy->getUserRole($user);
+            if (!$this->policy->approve($user, $requisition)) {
                 $message = 'You do not have permission to approve this requisition. ';
-                if ($role === 'supervisor') {
-                    $message .= 'Supervisors can only approve requisitions from their department (Department ID: ' . $user->department_id . ').';
-                } else {
-                    $message .= 'Only admins and supervisors can approve.';
-                }
-                return response()->json([
-                    'success' => false,
-                    'message' => $message
-                ], 403);
+                $message .= $this->policy->getUserRole($user) === 'supervisor'
+                    ? 'Supervisors can only approve requisitions from their department (Department ID: ' . $user->department_id . ').'
+                    : 'Only admins and supervisors can approve.';
+                throw new \DomainException($message, 403);
             }
 
-            // Check if requisition is in pending status
             if ($requisition->status !== 'pending') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'This requisition is not in pending status. Current status: ' . $requisition->status
-                ], 400);
+                throw new \DomainException('This requisition is not in pending status. Current status: ' . $requisition->status, 400);
             }
-
-            // Check the user's approval_code from the users table
             if (empty($user->approval_code)) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'User does not have an approval code assigned. Please contact administrator.'
-                ], 400);
+                throw new \DomainException('User does not have an approval code assigned. Please contact administrator.', 400);
+            }
+            if (!hash_equals((string) $user->approval_code, (string) $request->approval_code)) {
+                throw new \DomainException('Invalid approval code. Please enter the correct approval code.', 400);
             }
 
-            // Verify the approval code matches the user's approval_code
-            if ($user->approval_code !== $request->approval_code) {
-                Log::warning('Invalid approval code', [
-                    'provided' => $request->approval_code,
-                    'expected' => $user->approval_code
-                ]);
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Invalid approval code. Please enter the correct approval code.'
-                ], 400);
-            }
-
-            // Get budget allocation
-            $budgetAllocation = BudgetAllocation::where('budget_code', $requisition->budget_code)
+            $budget = BudgetAllocation::where('budget_code', $requisition->budget_code)
                 ->where('status', 'active')
                 ->first();
 
-            Log::info('budget found', [$budgetAllocation]);
-
-            if (!$budgetAllocation) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Budget allocation not found or inactive for budget code: ' . $requisition->budget_code
-                ], 404);
+            if (!$budget) {
+                throw new \DomainException('Budget allocation not found or inactive for budget code: ' . $requisition->budget_code, 404);
             }
 
-            $amount = floatval($requisition->estimated_total);
+            $amount = round((float) $requisition->estimated_total, 2);
 
-            // Update requisition status
-            $requisition->status = 'approved';
+            // 1) make sure exactly $amount is reserved for this PR (covers "check budget never ran")
+            if (!$this->syncReservation($budget, $requisition, $amount)) {
+                throw new \DomainException('Insufficient budget to approve this requisition.', 422);
+            }
+
+            // 2) reserved -> committed. Abort the whole approval if it fails.
+            if (!$budget->commitBudget($amount, 'PR', $requisition->id)) {
+                throw new \DomainException('Failed to commit budget funds for this requisition.', 409);
+            }
+
+            // 3) only now flip the status
+            $requisition->status      = 'approved';
             $requisition->approved_by = $request->approved_by;
             $requisition->approved_at = now();
             $requisition->save();
 
-            // Use the model's commitBudget method to move from reserved to committed
-            $budgetAllocation->commitBudget($amount, 'PR', $requisition->id);
-
             DB::commit();
-
-            Log::info('Requisition approved successfully', [
-                'requisition_id' => $requisition->id,
-                'pr_number' => $requisition->pr_number,
-                'budget_code' => $requisition->budget_code,
-                'amount' => $amount,
-                'approved_by' => $request->approved_by,
-                'approver_role' => $this->policy->getUserRole($user)
-            ]);
 
             return response()->json([
                 'success' => true,
                 'message' => 'Requisition approved successfully',
-                'data' => [
-                    'requisition' => $requisition,
-                    'budget_allocation' => $budgetAllocation
-                ]
+                'data'    => ['requisition' => $requisition, 'budget_allocation' => $budget],
             ]);
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Validation failed',
-                'errors' => $e->errors()
-            ], 422);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Failed to approve requisition: ' . $e->getMessage(), [
-                'requisition_id' => $requisitionId,
-                'trace' => $e->getTraceAsString()
-            ]);
-
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to approve requisition: ' . $e->getMessage()
-            ], 500);
+        } catch (\Throwable $e) {
+            return $this->failure($e, 'Failed to approve requisition', ['requisition_id' => $requisitionId]);
         }
     }
 
-    /**
-     * Reject a purchase requisition
-     */
-    public function rejectRequisition($requisitionId, Request $request)
+    // ------------------------------------------------------------------
+    // Reject (release whatever this PR still holds in reserved)
+    // ------------------------------------------------------------------
+    public function rejectRequisition(int $requisitionId, Request $request)
     {
         try {
-            DB::beginTransaction();
-
             $request->validate([
-                'approval_code' => 'required|string',
+                'approval_code'    => 'required|string',
                 'rejection_reason' => 'required|string',
-                'rejected_by' => 'required|integer|exists:users,id',
+                'rejected_by'      => 'required|integer|exists:users,id',
             ]);
 
-            $requisition = PurchaseRequisition::with(['budgetAllocation'])->findOrFail($requisitionId);
+            DB::beginTransaction();
+
+            $requisition = PurchaseRequisition::lockForUpdate()->findOrFail($requisitionId);
             $user = User::findOrFail($request->rejected_by);
 
-            // Check if user has permission to reject
             if (!$this->policy->approve($user, $requisition)) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'You do not have permission to reject this requisition.'
-                ], 403);
+                throw new \DomainException('You do not have permission to reject this requisition.', 403);
             }
-
             if ($requisition->status !== 'pending') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'This requisition is not in pending status.'
-                ], 400);
+                throw new \DomainException('This requisition is not in pending status.', 400);
+            }
+            if (!hash_equals((string) $user->approval_code, (string) $request->approval_code)) {
+                throw new \DomainException('Invalid approval code.', 400);
             }
 
-            // Verify the approval code matches the user's approval_code
-            if ($user->approval_code !== $request->approval_code) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Invalid approval code.'
-                ], 400);
-            }
+            $held = $this->reservedFor($requisition);
 
-            // Update requisition status
-            $requisition->status = 'rejected';
-            $requisition->approved_by = $request->rejected_by;
-            $requisition->approved_at = now();
-            $requisition->justification = ($requisition->justification ? $requisition->justification . "\n\n" : '') .
-                "Rejection Reason: " . $request->rejection_reason;
-            $requisition->save();
+            if ($held > 0) {
+                // no 'active' filter: a frozen budget must still get its reservation back
+                $budget = BudgetAllocation::where('budget_code', $requisition->budget_code)->first();
 
-            // Check if there were any reservations for this requisition
-            $reservedAmount = BudgetTransaction::where('reference_type', 'PR')
-                ->where('reference_id', $requisition->id)
-                ->where('transaction_type', 'reservation')
-                ->sum('amount');
-
-            if ($reservedAmount > 0 && $requisition->budget_code) {
-                $budgetAllocation = BudgetAllocation::where('budget_code', $requisition->budget_code)
-                    ->where('status', 'active')
-                    ->first();
-
-                if ($budgetAllocation) {
-                    // Reverse the reservation - release the reserved funds
-                    $budgetAllocation->reserved_amount = floatval($budgetAllocation->reserved_amount) - $reservedAmount;
-                    // Recalculate available amount and utilization
-                    $allocated = floatval($budgetAllocation->allocated_amount);
-                    $used = floatval($budgetAllocation->committed_amount) +
-                        floatval($budgetAllocation->actual_spent) +
-                        floatval($budgetAllocation->reserved_amount);
-                    $budgetAllocation->available_amount = $allocated - $used;
-                    $budgetAllocation->utilization_percentage = $allocated > 0 ? ($used / $allocated) * 100 : 0;
-                    $budgetAllocation->save();
-
-                    // Create reversal transaction
-                    $transactionNo = NumberGenerator::generate(
-                        'BT',
-                        BudgetTransaction::class,
-                        'custom',
-                        [
-                            'field' => 'transaction_no',
-                            'length' => 5,
-                            'separator' => '-',
-                            'include_date' => true,
-                            'date_format' => 'Ymd',
-                            'reset_on' => 'day'
-                        ]
-                    );
-
-                    BudgetTransaction::create([
-                        'transaction_no' => $transactionNo,
-                        'budget_code' => $requisition->budget_code,
-                        'transaction_type' => 'reversal',
-                        'reference_type' => 'PR',
-                        'reference_id' => $requisition->id,
-                        'amount' => -$reservedAmount,
-                        'balance_before' => $budgetAllocation->available_amount + $reservedAmount,
-                        'balance_after' => $budgetAllocation->available_amount,
-                        'description' => "Reversal of reservation for rejected requisition: {$requisition->pr_number}",
-                        'transaction_date' => now(),
-                        'created_by' => $request->rejected_by,
-                    ]);
+                if (!$budget || !$budget->releaseReservedFunds($held, 'PR', $requisition->id)) {
+                    throw new \DomainException('Could not release the reserved funds for this requisition.', 409);
                 }
             }
 
-            DB::commit();
+            $requisition->status        = 'rejected';
+            $requisition->approved_by   = $request->rejected_by;
+            $requisition->approved_at   = now();
+            $requisition->justification = ($requisition->justification ? $requisition->justification . "\n\n" : '')
+                . 'Rejection Reason: ' . $request->rejection_reason;
+            $requisition->save();
 
-            Log::info('Requisition rejected', [
-                'requisition_id' => $requisition->id,
-                'pr_number' => $requisition->pr_number,
-                'reason' => $request->rejection_reason,
-                'rejected_by' => $request->rejected_by
-            ]);
+            DB::commit();
 
             return response()->json([
                 'success' => true,
                 'message' => 'Requisition rejected successfully',
-                'data' => ['requisition' => $requisition]
+                'data'    => ['requisition' => $requisition],
             ]);
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Validation failed',
-                'errors' => $e->errors()
-            ], 422);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Failed to reject requisition: ' . $e->getMessage(), [
-                'requisition_id' => $requisitionId,
-                'trace' => $e->getTraceAsString()
-            ]);
-
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to reject requisition: ' . $e->getMessage()
-            ], 500);
+        } catch (\Throwable $e) {
+            return $this->failure($e, 'Failed to reject requisition', ['requisition_id' => $requisitionId]);
         }
     }
 
-    /**
-     * Release funds for an approved requisition
-     * ONLY ADMIN can release funds
-     */
-    public function releaseFunds($requisitionId, Request $request)
+    // ------------------------------------------------------------------
+    // Release funds (committed -> actual_spent). ADMIN only.
+    // ------------------------------------------------------------------
+    public function releaseFunds(int $id, Request $request)
     {
         try {
-            DB::beginTransaction();
-
             $request->validate([
                 'approval_code' => 'required|string',
-                'comments' => 'nullable|string',
-                'released_by' => 'required|integer|exists:users,id',
+                'comments'      => 'nullable|string',
+                'released_by'   => 'required|integer|exists:users,id',
             ]);
 
-            Log::info('Release funds request data', ['request' => $request->all()]);
+            DB::beginTransaction();
 
-            $requisition = PurchaseRequisition::with(['budgetAllocation'])->findOrFail($requisitionId);
+            $requisition = PurchaseRequisition::lockForUpdate()->findOrFail($id);
             $user = User::findOrFail($request->released_by);
 
-            // ONLY ADMIN can release funds - check if user is admin
             if (!$user->is_admin) {
-                Log::warning('Non-admin user attempted to release funds', [
-                    'user_id' => $user->id,
-                    'requisition_id' => $requisitionId
-                ]);
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Only administrators can release funds.'
-                ], 403);
+                throw new \DomainException('Only administrators can release funds.', 403);
             }
-
-            // Check if requisition is approved
             if ($requisition->status !== 'approved') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'This requisition is not approved.'
-                ], 400);
+                throw new \DomainException('This requisition is not approved.', 400);
             }
-
-            // Check if funds are already released
             if ($requisition->funds_released) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Funds have already been released for this requisition.'
-                ], 400);
+                throw new \DomainException('Funds have already been released for this requisition.', 400);
+            }
+            if (!hash_equals((string) $user->approval_code, (string) $request->approval_code)) {
+                throw new \DomainException('Invalid approval code.', 400);
             }
 
-            Log::info('Approval code validation', [
-                'provided' => $request->approval_code,
-                'user_approval_code' => $user->approval_code
-            ]);
-
-            // Verify the approval code matches the user's approval_code
-            if ($user->approval_code !== $request->approval_code) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Invalid approval code.'
-                ], 400);
-            }
-
-            // Get budget allocation
-            $budgetAllocation = BudgetAllocation::where('budget_code', $requisition->budget_code)
+            $budget = BudgetAllocation::where('budget_code', $requisition->budget_code)
                 ->where('status', 'active')
                 ->first();
 
-            if (!$budgetAllocation) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Budget allocation not found or inactive.'
-                ], 404);
+            if (!$budget) {
+                throw new \DomainException('Budget allocation not found or inactive.', 404);
             }
 
-            $amount = floatval($requisition->estimated_total);
+            $amount = round((float) $requisition->estimated_total, 2);
 
-            // Update requisition
-            $requisition->funds_released = true;
+            // Safety net for PRs approved while the old code was silently failing
+            if (!$this->ensureCommitted($budget, $requisition, $amount)) {
+                throw new \DomainException('Insufficient budget to release these funds.', 422);
+            }
+
+            // committed -> actual_spent; the model's saving hook recalculates available + utilization
+            if (!$budget->actualizeBudget($amount, 'PR', $requisition->id)) {
+                throw new \DomainException('Failed to release funds: committed amount is lower than the requisition total.', 409);
+            }
+
+            $requisition->funds_released    = true;
             $requisition->funds_released_at = now();
             $requisition->funds_released_by = $request->released_by;
             $requisition->save();
 
-            // Use the model's actualizeBudget method to move from committed to actual spent
-            $budgetAllocation->actualizeBudget($amount, 'PR', $requisition->id);
-
             DB::commit();
-
-            Log::info('Funds released for requisition', [
-                'requisition_id' => $requisition->id,
-                'pr_number' => $requisition->pr_number,
-                'amount' => $amount,
-                'released_by' => $request->released_by,
-                'released_by_admin' => $user->is_admin
-            ]);
 
             return response()->json([
                 'success' => true,
                 'message' => 'Funds released successfully',
-                'data' => [
-                    'requisition' => $requisition,
-                    'budget_allocation' => $budgetAllocation
-                ]
+                'data'    => ['requisition' => $requisition, 'budget_allocation' => $budget],
             ]);
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Validation failed',
-                'errors' => $e->errors()
-            ], 422);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Failed to release funds: ' . $e->getMessage(), [
-                'requisition_id' => $requisitionId,
-                'trace' => $e->getTraceAsString()
-            ]);
-
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to release funds: ' . $e->getMessage()
-            ], 500);
+        } catch (\Throwable $e) {
+            return $this->failure($e, 'Failed to release funds', ['requisition_id' => $id]);
         }
     }
 
     /**
      * Get user permissions for requisition actions
      */
-    public function getUserPermissions($requisitionId)
+    public function getUserPermissions(int $requisitionId)
     {
         try {
             $requisition = PurchaseRequisition::findOrFail($requisitionId);
-            $user = auth()->user();
+            $user = request()->user();
 
             return response()->json([
                 'success' => true,
@@ -697,9 +510,8 @@ class AdminController extends Controller
 
             $user = User::findOrFail($request->user_id);
 
-            Log::info('User details on validate approval code', ['user' => $user]);
-
-            $isValid = $user->approval_code !== null && $user->approval_code === $request->approval_code;
+            $isValid = $user->approval_code !== null
+                && hash_equals((string) $user->approval_code, (string) $request->approval_code);
 
             return response()->json([
                 'success' => true,
@@ -716,20 +528,76 @@ class AdminController extends Controller
         }
     }
 
-    /**
-     * Calculate utilization percentage
-     */
-    private function calculateUtilization($budgetAllocation): float
+    // ==================================================================
+    // HELPERS
+    // ==================================================================
+
+    /** Sum of budget_transactions of one type for this PR */
+    private function txTotal(PurchaseRequisition $pr, string $type): float
     {
-        $allocated = floatval($budgetAllocation->allocated_amount);
-        if ($allocated <= 0) {
-            return 0;
+        return (float) BudgetTransaction::where('budget_code', $pr->budget_code)
+            ->where('reference_type', 'PR')
+            ->where('reference_id', $pr->id)
+            ->where('transaction_type', $type)
+            ->sum('amount');
+    }
+
+    /** Money this PR currently holds in reserved_amount (reservations - reversals - commitments) */
+    private function reservedFor(PurchaseRequisition $pr): float
+    {
+        return round(
+            $this->txTotal($pr, 'reservation')
+                + $this->txTotal($pr, 'reversal')      // stored negative
+                - $this->txTotal($pr, 'commitment'),
+            2
+        );
+    }
+
+    /** Make reserved money for this PR equal exactly $amount (idempotent) */
+    private function syncReservation(BudgetAllocation $budget, PurchaseRequisition $pr, float $amount): bool
+    {
+        $diff = round($amount - max(0, $this->reservedFor($pr)), 2);
+
+        if ($diff > 0) return $budget->reserveBudget($diff, 'PR', $pr->id);
+        if ($diff < 0) return $budget->releaseReservedFunds(abs($diff), 'PR', $pr->id);
+
+        return true;
+    }
+
+    /** Make sure $amount is committed for this PR (repairs rows where commit silently failed) */
+    private function ensureCommitted(BudgetAllocation $budget, PurchaseRequisition $pr, float $amount): bool
+    {
+        $need = round($amount - $this->txTotal($pr, 'commitment'), 2);
+        if ($need <= 0) return true;
+
+        $held = max(0, $this->reservedFor($pr));
+
+        if ($held < $need && !$budget->reserveBudget(round($need - $held, 2), 'PR', $pr->id)) {
+            return false;
         }
 
-        $used = floatval($budgetAllocation->actual_spent) +
-            floatval($budgetAllocation->committed_amount) +
-            floatval($budgetAllocation->reserved_amount);
+        return $budget->commitBudget($need, 'PR', $pr->id);
+    }
 
-        return min(100, ($used / $allocated) * 100);
+    /** Roll back and turn any exception into a JSON response */
+    private function failure(\Throwable $e, string $context, array $logContext = [])
+    {
+        if (DB::transactionLevel() > 0) {
+            DB::rollBack();
+        }
+
+        if ($e instanceof ValidationException) {
+            return response()->json(['success' => false, 'message' => 'Validation failed', 'errors' => $e->errors()], 422);
+        }
+        if ($e instanceof ModelNotFoundException) {
+            return response()->json(['success' => false, 'message' => 'Record not found.'], 404);
+        }
+        if ($e instanceof \DomainException) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], $e->getCode() ?: 400);
+        }
+
+        Log::error("{$context}: " . $e->getMessage(), $logContext + ['trace' => $e->getTraceAsString()]);
+
+        return response()->json(['success' => false, 'message' => "{$context}: " . $e->getMessage()], 500);
     }
 }

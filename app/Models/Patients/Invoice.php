@@ -5,6 +5,7 @@ namespace App\Models\Patients;
 use Illuminate\Database\Eloquent\Model;
 use App\Models\Patients\Patient;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Models\Patients\Payment;
 use App\Models\User;
 
 class Invoice extends Model
@@ -86,5 +87,8 @@ class Invoice extends Model
     {
         return $this->belongsTo(VisitToken::class, 'visit_token', 'token');
     }
-
+    public function payments()
+    {
+        return $this->hasMany(Payment::class, 'invoice_id', 'id');
+    }
 }

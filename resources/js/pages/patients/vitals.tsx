@@ -1,46 +1,21 @@
 import { usePage, router } from '@inertiajs/react';
-import axios from 'axios';
 import { format } from 'date-fns';
 import {
     Heart,
     Activity,
-    Thermometer,
-    Ruler,
     Search,
-    Calendar,
-    Download,
     AlertCircle,
-    AlertTriangle,
-    Info,
-    Droplet,
-    TrendingUp,
-    TrendingDown,
-    Minus,
-    Gauge,
-    Wind,
-    BarChart3,
     ChevronLeft,
     ChevronRight,
     ChevronsLeft,
     ChevronsRight,
     Plus,
-    X,
     Save,
-    Clock,
     Stethoscope,
 } from 'lucide-react';
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useMemo } from 'react';
 import { toast } from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import {
-    Breadcrumb,
-    BreadcrumbItem,
-    BreadcrumbLink,
-    BreadcrumbList,
-    BreadcrumbPage,
-    BreadcrumbSeparator,
-} from '@/components/ui/breadcrumb';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import {
@@ -49,7 +24,6 @@ import {
     DialogDescription,
     DialogHeader,
     DialogTitle,
-    DialogTrigger,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -61,9 +35,6 @@ import Http from '@/utils/Http';
 // 1. UTILITY FUNCTIONS
 // ============================================================
 
-/**
- * Format a value for display, returning '—' for null/undefined/empty
- */
 const formatVitalValue = (value) => {
     if (
         value === null ||
@@ -76,37 +47,25 @@ const formatVitalValue = (value) => {
     return value;
 };
 
-/**
- * Calculate BMI from height (cm) and weight (kg)
- */
 const calculateBMI = (heightCm, weightKg) => {
     if (!heightCm || !weightKg || heightCm <= 0 || weightKg <= 0) {
         return null;
     }
     const heightM = heightCm / 100;
     const bmi = weightKg / (heightM * heightM);
-    return Math.round(bmi * 100) / 100; // Round to 2 decimal places
+    return Math.round(bmi * 100) / 100;
 };
 
-/**
- * Get the latest vital observation from an array
- */
 const getLatestVital = (vitals) => {
     if (!vitals || vitals.length === 0) return null;
-
-    // Sort by recorded_at (or created_at) descending
     const sorted = [...vitals].sort((a, b) => {
         const dateA = new Date(a.recorded_at || a.created_at);
         const dateB = new Date(b.recorded_at || b.created_at);
         return dateB - dateA;
     });
-
     return sorted[0] || null;
 };
 
-/**
- * Format date for display
- */
 const formatDate = (date) => {
     if (!date) return '—';
     try {
@@ -116,9 +75,6 @@ const formatDate = (date) => {
     }
 };
 
-/**
- * Format time for display
- */
 const formatTime = (date) => {
     if (!date) return '—';
     try {
@@ -132,9 +88,6 @@ const formatTime = (date) => {
 // 2. SUB-COMPONENTS
 // ============================================================
 
-/**
- * Compact metric display for the latest vitals summary
- */
 const VitalMetric = ({ label, value, unit, status, className = '' }) => {
     const displayValue = formatVitalValue(value);
     const statusColor =
@@ -163,27 +116,19 @@ const VitalMetric = ({ label, value, unit, status, className = '' }) => {
     );
 };
 
-/**
- * Compact Anthropometry section
- */
-const AnthropometrySummary = ({ height, weight, bmi }) => {
-    return (
-        <div className="space-y-1">
-            <div className="text-xs font-semibold tracking-wider text-blue-500 uppercase">
-                Anthropometry
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-                <VitalMetric label="Height" value={height} unit="cm" />
-                <VitalMetric label="Weight" value={weight} unit="kg" />
-                <VitalMetric label="BMI" value={bmi} unit="kg/m²" />
-            </div>
+const AnthropometrySummary = ({ height, weight, bmi }) => (
+    <div className="space-y-1">
+        <div className="text-xs font-semibold tracking-wider text-blue-500 uppercase">
+            Anthropometry
         </div>
-    );
-};
+        <div className="grid grid-cols-3 gap-2">
+            <VitalMetric label="Height" value={height} unit="cm" />
+            <VitalMetric label="Weight" value={weight} unit="kg" />
+            <VitalMetric label="BMI" value={bmi} unit="kg/m²" />
+        </div>
+    </div>
+);
 
-/**
- * Compact Vital Signs section
- */
 const VitalSignsSummary = ({
     temperature,
     systolic_bp,
@@ -192,7 +137,6 @@ const VitalSignsSummary = ({
     respiratory_rate,
     spO2,
 }) => {
-    // Determine BP display
     const bpDisplay =
         systolic_bp && diastolic_bp
             ? `${formatVitalValue(systolic_bp)}/${formatVitalValue(diastolic_bp)}`
@@ -204,7 +148,7 @@ const VitalSignsSummary = ({
             <div className="text-xs font-semibold tracking-wider text-gray-500 uppercase">
                 Vital Signs
             </div>
-            <div className="grid gap-2 bg-green-100 sm:grid-cols-3 lg:grid-cols-5">
+            <div className="grid gap-2 rounded-lg bg-green-50 p-3 sm:grid-cols-3 lg:grid-cols-5">
                 <VitalMetric
                     label="Temperature"
                     value={temperature}
@@ -227,89 +171,69 @@ const VitalSignsSummary = ({
     );
 };
 
-/**
- * Empty state component
- */
-const EmptyState = ({ onAddVital }) => {
-    return (
+const EmptyState = ({ onAddVital }) => (
+    <Card>
+        <CardContent className="py-12 text-center">
+            <div className="flex flex-col items-center justify-center text-gray-500">
+                <Heart className="mb-4 h-12 w-12 text-gray-300" />
+                <p className="text-lg font-medium text-gray-400">
+                    No vital signs recorded
+                </p>
+                <p className="mt-1 text-sm text-gray-400">
+                    This patient has no vital observations yet.
+                </p>
+                <Button onClick={onAddVital} className="mt-4">
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Vital
+                </Button>
+            </div>
+        </CardContent>
+    </Card>
+);
+
+const LoadingState = () => (
+    <Card>
+        <CardContent className="py-8">
+            <div className="flex items-center justify-center space-x-3">
+                <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600" />
+                <span className="text-sm text-gray-500">Loading vitals...</span>
+            </div>
+        </CardContent>
+    </Card>
+);
+
+const ErrorState = ({ onRetry }) => (
+    <div className="p-2">
         <Card>
-            <CardContent className="py-12 text-center">
+            <CardContent className="py-8">
                 <div className="flex flex-col items-center justify-center text-gray-500">
-                    <Heart className="mb-4 h-12 w-12 text-gray-300" />
-                    <p className="text-lg font-medium text-gray-400">
-                        No vital signs recorded
+                    <AlertCircle className="mb-2 h-8 w-8 text-red-400" />
+                    <p className="text-sm font-medium text-red-600">
+                        Unable to load vital signs
                     </p>
-                    <p className="mt-1 text-sm text-gray-400">
-                        This patient has no vital observations yet.
-                    </p>
-                    <Button onClick={onAddVital} className="mt-4">
-                        <Plus className="mr-2 h-4 w-4" />
-                        Add Vital
+                    <Button
+                        variant="outline"
+                        onClick={onRetry}
+                        className="mt-3"
+                    >
+                        Retry
                     </Button>
                 </div>
             </CardContent>
         </Card>
-    );
-};
+    </div>
+);
 
-/**
- * Loading state component
- */
-const LoadingState = () => {
-    return (
-        <Card>
-            <CardContent className="py-8">
-                <div className="flex items-center justify-center space-x-3">
-                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600" />
-                    <span className="text-sm text-gray-500">
-                        Loading vitals...
-                    </span>
-                </div>
-            </CardContent>
-        </Card>
-    );
-};
+// ============================================================
+// ADD VITAL FORM
+// ============================================================
 
-/**
- * Error state component
- */
-const ErrorState = ({ onRetry }) => {
-    return (
-        <div className="p-2">
-            <Card>
-                <CardContent className="py-8">
-                    <div className="flex flex-col items-center justify-center text-gray-500">
-                        <AlertCircle className="mb-2 h-8 w-8 text-red-400" />
-                        <p className="text-sm font-medium text-red-600">
-                            Unable to load vital signs
-                        </p>
-                        <Button
-                            variant="outline"
-                            onClick={onRetry}
-                            className="mt-3"
-                        >
-                            Retry
-                        </Button>
-                    </div>
-                </CardContent>
-            </Card>
-        </div>
-    );
-};
-
-/**
- * Add Vital Form Component (inside Modal)
- */
 const AddVitalForm = ({ patientId, onSuccess, onCancel, createdBy }) => {
-    // Form state
     const [formData, setFormData] = useState({
-        encounter_date: '',
         recorded_at: '',
-        // Anthropometry
         height: '',
         weight: '',
         bmi: '',
-        // Vital Signs
         temperature: '',
         systolic_bp: '',
         diastolic_bp: '',
@@ -323,11 +247,9 @@ const AddVitalForm = ({ patientId, onSuccess, onCancel, createdBy }) => {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [errors, setErrors] = useState({});
 
-    // Auto-calculate BMI when height or weight changes
     const handleAnthropometryChange = (field, value) => {
         const updatedData = { ...formData, [field]: value };
 
-        // Calculate BMI if both height and weight are present
         if (field === 'height' || field === 'weight') {
             const height = parseFloat(
                 field === 'height' ? value : formData.height,
@@ -338,76 +260,58 @@ const AddVitalForm = ({ patientId, onSuccess, onCancel, createdBy }) => {
 
             if (!isNaN(height) && !isNaN(weight) && height > 0 && weight > 0) {
                 const calculatedBMI = calculateBMI(height, weight);
-                if (calculatedBMI !== null) {
-                    updatedData.bmi = calculatedBMI.toString();
-                }
+                updatedData.bmi =
+                    calculatedBMI !== null ? calculatedBMI.toString() : '';
             } else {
                 updatedData.bmi = '';
             }
         }
 
         setFormData(updatedData);
-        // Clear error for this field if it exists
-        if (errors[field]) {
-            setErrors({ ...errors, [field]: null });
-        }
+        if (errors[field]) setErrors({ ...errors, [field]: null });
     };
 
-    // Generic change handler
     const handleChange = (field, value) => {
         setFormData({ ...formData, [field]: value });
-        if (errors[field]) {
-            setErrors({ ...errors, [field]: null });
-        }
+        if (errors[field]) setErrors({ ...errors, [field]: null });
     };
 
-    // Validate form
     const validateForm = () => {
         const newErrors = {};
 
-        // Basic validation - positive numbers where applicable
-        if (formData.height && parseFloat(formData.height) <= 0) {
+        if (formData.height && parseFloat(formData.height) <= 0)
             newErrors.height = 'Height must be a positive number';
-        }
-        if (formData.weight && parseFloat(formData.weight) <= 0) {
+        if (formData.weight && parseFloat(formData.weight) <= 0)
             newErrors.weight = 'Weight must be a positive number';
-        }
-        if (formData.temperature && isNaN(parseFloat(formData.temperature))) {
+        if (formData.temperature && isNaN(parseFloat(formData.temperature)))
             newErrors.temperature = 'Temperature must be a valid number';
-        }
         if (
             formData.pulse_rate &&
             (isNaN(parseFloat(formData.pulse_rate)) ||
                 parseFloat(formData.pulse_rate) < 0)
-        ) {
+        )
             newErrors.pulse_rate = 'Pulse rate must be a non-negative number';
-        }
         if (
             formData.respiratory_rate &&
             (isNaN(parseFloat(formData.respiratory_rate)) ||
                 parseFloat(formData.respiratory_rate) < 0)
-        ) {
+        )
             newErrors.respiratory_rate =
                 'Respiratory rate must be a non-negative number';
-        }
-        if (formData.systolic_bp && parseFloat(formData.systolic_bp) <= 0) {
+        if (formData.systolic_bp && parseFloat(formData.systolic_bp) <= 0)
             newErrors.systolic_bp = 'Systolic BP must be a positive number';
-        }
-        if (formData.diastolic_bp && parseFloat(formData.diastolic_bp) <= 0) {
+        if (formData.diastolic_bp && parseFloat(formData.diastolic_bp) <= 0)
             newErrors.diastolic_bp = 'Diastolic BP must be a positive number';
-        }
         if (
             formData.spO2 &&
             (parseFloat(formData.spO2) < 0 || parseFloat(formData.spO2) > 100)
-        ) {
+        )
             newErrors.spO2 = 'SpO2 must be between 0 and 100';
-        }
 
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
     };
 
-    // Submit form
     const handleSubmit = async (e) => {
         e.preventDefault();
 
@@ -422,7 +326,6 @@ const AddVitalForm = ({ patientId, onSuccess, onCancel, createdBy }) => {
             const submitData = {
                 patient_id: patientId,
                 encounter_date:
-                    formData.encounter_date ||
                     formData.recorded_at ||
                     new Date().toISOString().split('T')[0],
                 recorded_at: formData.recorded_at || new Date().toISOString(),
@@ -440,17 +343,15 @@ const AddVitalForm = ({ patientId, onSuccess, onCancel, createdBy }) => {
                 created_by: createdBy,
             };
 
-            console.log(submitData);
-
-            // Use the existing API endpoint
             const response = await Http.post(
                 `/patients/vital-signs/${patientId}`,
                 submitData,
             );
 
-            if (response.data.success) {
+            if (response.status === 200) {
                 toast.success('Vital signs saved successfully');
-                onSuccess(); // Refresh parent data
+                // Parent will close modal + reload
+                onSuccess();
             } else {
                 toast.error(
                     response.data.message || 'Failed to save vital signs',
@@ -470,29 +371,13 @@ const AddVitalForm = ({ patientId, onSuccess, onCancel, createdBy }) => {
     };
 
     return (
-        <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Group 1: Measurement Information */}
+        <form onSubmit={handleSubmit} className="space-y-5">
+            {/* Measurement Information */}
             <div>
                 <h3 className="mb-2 text-xs font-semibold tracking-wider text-gray-500 uppercase">
                     Measurement Information
                 </h3>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                    {/* <div>
-                        <Label
-                            htmlFor="encounter_date"
-                            className="text-xs text-gray-600"
-                        ></Label>
-                        <Input
-                            type="hidden"
-                            id="encounter_date"
-                            type="date"
-                            value={formData.encounter_date}
-                            onChange={(e) =>
-                                handleChange('encounter_date', e.target.value)
-                            }
-                            className="mt-1 h-8 text-sm"
-                        />
-                    </div> */}
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div>
                         <Label
                             htmlFor="recorded_at"
@@ -546,7 +431,7 @@ const AddVitalForm = ({ patientId, onSuccess, onCancel, createdBy }) => {
                 </div>
             </div>
 
-            {/* Group 2: Anthropometry */}
+            {/* Anthropometry */}
             <div>
                 <h3 className="mb-2 text-xs font-semibold tracking-wider text-gray-500 uppercase">
                     Anthropometry
@@ -623,18 +508,18 @@ const AddVitalForm = ({ patientId, onSuccess, onCancel, createdBy }) => {
                             placeholder="Auto-calculated"
                         />
                         <p className="mt-0.5 text-xs text-gray-400">
-                            Auto-calculated from height and weight
+                            Auto-calculated
                         </p>
                     </div>
                 </div>
             </div>
 
-            {/* Group 3: Vital Signs */}
+            {/* Vital Signs */}
             <div>
                 <h3 className="mb-2 text-xs font-semibold tracking-wider text-gray-500 uppercase">
                     Vital Signs
                 </h3>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                     <div>
                         <Label
                             htmlFor="temperature"
@@ -785,21 +670,21 @@ const AddVitalForm = ({ patientId, onSuccess, onCancel, createdBy }) => {
                 </Label>
                 <Textarea
                     id="notes"
-                    type="text"
                     value={formData.notes}
                     onChange={(e) => handleChange('notes', e.target.value)}
-                    className="mt-1 h-8 text-sm"
+                    className="mt-1 min-h-[60px] text-sm"
                     placeholder="Additional observations or comments..."
                 />
             </div>
 
             {/* Footer Actions */}
-            <div className="flex justify-end gap-3 border-t bg-white pt-3">
+            <div className="flex justify-end gap-3 border-t pt-4">
                 <Button
                     type="button"
                     variant="outline"
                     onClick={onCancel}
                     size="sm"
+                    disabled={isSubmitting}
                     className="min-w-[80px]"
                 >
                     Cancel
@@ -808,7 +693,7 @@ const AddVitalForm = ({ patientId, onSuccess, onCancel, createdBy }) => {
                     type="submit"
                     disabled={isSubmitting}
                     size="sm"
-                    className="min-w-[100px]"
+                    className="min-w-[110px]"
                 >
                     {isSubmitting ? (
                         <>
@@ -827,9 +712,10 @@ const AddVitalForm = ({ patientId, onSuccess, onCancel, createdBy }) => {
     );
 };
 
-/**
- * History table component
- */
+// ============================================================
+// HISTORY TABLE
+// ============================================================
+
 const HistoryTable = ({ vitals, onViewDetails }) => {
     if (!vitals || vitals.length === 0) {
         return (
@@ -844,36 +730,25 @@ const HistoryTable = ({ vitals, onViewDetails }) => {
             <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                     <tr>
-                        <th className="px-4 py-2 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">
-                            Date
-                        </th>
-                        <th className="px-4 py-2 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">
-                            Time
-                        </th>
-                        <th className="px-4 py-2 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">
-                            BP
-                        </th>
-                        <th className="px-4 py-2 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">
-                            Pulse
-                        </th>
-                        <th className="px-4 py-2 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">
-                            Temp
-                        </th>
-                        <th className="px-4 py-2 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">
-                            RR
-                        </th>
-                        <th className="px-4 py-2 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">
-                            SpO₂
-                        </th>
-                        <th className="px-4 py-2 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">
-                            Weight
-                        </th>
-                        <th className="px-4 py-2 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">
-                            BMI
-                        </th>
-                        <th className="px-4 py-2 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">
-                            Action
-                        </th>
+                        {[
+                            'Date',
+                            'Time',
+                            'BP',
+                            'Pulse',
+                            'Temp',
+                            'RR',
+                            'SpO₂',
+                            'Weight',
+                            'BMI',
+                            'Action',
+                        ].map((h) => (
+                            <th
+                                key={h}
+                                className="px-4 py-2 text-left text-xs font-medium tracking-wider text-gray-500 uppercase"
+                            >
+                                {h}
+                            </th>
+                        ))}
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 bg-white">
@@ -943,30 +818,21 @@ const HistoryTable = ({ vitals, onViewDetails }) => {
 // ============================================================
 
 export default function Vitals() {
-    // Get patientId from props
     const { props } = usePage();
     const patientId =
         props.patientId || window.location.pathname.split('/').pop();
     const vitals = props.vitals;
 
-    // State
-    // const [vitals, setVitals] = useState(vitalSigns);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState(null);
     const [showHistory, setShowHistory] = useState(false);
     const [selectedVital, setSelectedVital] = useState(null);
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-    const [dateFilter, setDateFilter] = useState('all');
     const [searchTerm, setSearchTerm] = useState('');
 
-    // Pagination state for history
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage] = useState(10);
 
-    // Get latest vital
     const latestVital = useMemo(() => getLatestVital(vitals), [vitals]);
 
-    // Calculate BMI for latest if not present
     const latestBMI = useMemo(() => {
         if (latestVital?.bmi) return latestVital.bmi;
         if (latestVital?.height && latestVital?.weight) {
@@ -975,13 +841,10 @@ export default function Vitals() {
         return null;
     }, [latestVital]);
 
-    // Filtered vitals for history
     const filteredVitals = useMemo(() => {
         if (!vitals) return [];
-
         let filtered = [...vitals];
 
-        // Apply search
         if (searchTerm) {
             const term = searchTerm.toLowerCase();
             filtered = filtered.filter(
@@ -991,7 +854,6 @@ export default function Vitals() {
             );
         }
 
-        // Sort by date descending (newest first)
         filtered.sort((a, b) => {
             const dateA = new Date(a.recorded_at || a.created_at);
             const dateB = new Date(b.recorded_at || b.created_at);
@@ -1001,7 +863,6 @@ export default function Vitals() {
         return filtered;
     }, [vitals, searchTerm]);
 
-    // Pagination
     const totalPages = Math.ceil(filteredVitals.length / itemsPerPage);
     const indexOfLastItem = currentPage * itemsPerPage;
     const indexOfFirstItem = indexOfLastItem - itemsPerPage;
@@ -1010,14 +871,24 @@ export default function Vitals() {
         indexOfLastItem,
     );
 
-    // Handlers
-    const handleAddVital = () => {
-        setIsAddModalOpen(true);
-    };
+    const handleAddVital = () => setIsAddModalOpen(true);
 
+    /**
+     * FIX: Close modal first, THEN reload data.
+     * Using setTimeout ensures the Dialog close animation
+     * completes and React unmounts the modal before Inertia
+     * triggers a page reload (which could otherwise cause the
+     * Dialog to briefly re-open due to state timing).
+     */
     const handleAddVitalSuccess = () => {
         setIsAddModalOpen(false);
-        // Refresh data
+        setTimeout(() => {
+            router.reload({
+                only: ['vitals'],
+                preserveUrl: true,
+                preserveState: true,
+            });
+        }, 200);
     };
 
     const handleViewDetails = (vital) => {
@@ -1025,11 +896,8 @@ export default function Vitals() {
         setShowHistory(true);
     };
 
-    // Determine if we should show the main content
     const hasVitals = vitals && vitals.length > 0;
-    const showLoading = loading && !hasVitals;
-    const showError = error && !hasVitals;
-    const showEmpty = !loading && !error && !hasVitals;
+    const showEmpty = !hasVitals;
 
     return (
         <PatientLayout
@@ -1039,10 +907,7 @@ export default function Vitals() {
             ]}
         >
             <div className="min-h-screen bg-blue-50 p-6">
-                <div className="">
-                    {/* ============================================================
-                        SECTION HEADER - Using PageHeader from your file
-                        ============================================================ */}
+                <div className="space-y-4">
                     <PageHeader
                         icon={<Activity />}
                         title="Vitals & Anthropometry"
@@ -1055,26 +920,13 @@ export default function Vitals() {
                         ]}
                     />
 
-                    {/* ============================================================
-                        MAIN CONTENT
-                        ============================================================ */}
-
-                    {/* Loading State */}
-                    {showLoading && <LoadingState />}
-
-                    {/* Error State */}
-                    {showError && <ErrorState onRetry={handleRetry} />}
-
-                    {/* Empty State */}
                     {showEmpty && <EmptyState onAddVital={handleAddVital} />}
 
-                    {/* Main Content */}
-                    {hasVitals && !loading && (
-                        <div className="">
-                            {/* Latest Vitals Display */}
+                    {hasVitals && (
+                        <div className="space-y-4">
+                            {/* Latest Vitals */}
                             <Card>
                                 <CardContent className="sm:p-5">
-                                    {/* Date/Time header */}
                                     <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-600">
                                         {latestVital?.encounter_date && (
                                             <span>
@@ -1119,7 +971,6 @@ export default function Vitals() {
                                             )}
                                     </div>
 
-                                    {/* Anthropometry */}
                                     <div className="mb-4">
                                         <AnthropometrySummary
                                             height={latestVital?.height}
@@ -1128,7 +979,6 @@ export default function Vitals() {
                                         />
                                     </div>
 
-                                    {/* Vital Signs */}
                                     <VitalSignsSummary
                                         temperature={latestVital?.temperature}
                                         systolic_bp={latestVital?.systolic_bp}
@@ -1140,7 +990,6 @@ export default function Vitals() {
                                         spO2={latestVital?.spO2}
                                     />
 
-                                    {/* Additional info if present */}
                                     {latestVital?.notes && (
                                         <div className="mt-3 border-t border-gray-100 pt-3">
                                             <p className="text-xs text-gray-400">
@@ -1154,7 +1003,7 @@ export default function Vitals() {
                                 </CardContent>
                             </Card>
 
-                            {/* History Section */}
+                            {/* History */}
                             <Card>
                                 <CardContent className="p-4 sm:p-5">
                                     <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1186,7 +1035,6 @@ export default function Vitals() {
                                         onViewDetails={handleViewDetails}
                                     />
 
-                                    {/* Pagination */}
                                     {totalPages > 1 && (
                                         <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-3">
                                             <div className="text-xs text-gray-500">
@@ -1270,32 +1118,33 @@ export default function Vitals() {
             </div>
 
             {/* ============================================================
-                ADD VITAL MODAL - With Icon and Compact Design
+                ADD VITAL MODAL
+                - Fixed header
+                - Scrollable body only
+                - Flex column layout for proper height control
                 ============================================================ */}
             <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
-                <DialogContent className="max-h-[90vh] overflow-y-auto p-0 sm:max-w-3xl">
-                    {/* Modal Header with Icon */}
-                    <div className="sticky top-0 z-10 border-b bg-slate-50 px-6 py-4">
-                        <div className="flex items-start justify-between">
-                            <div className="flex items-center gap-3">
-                                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-500">
-                                    <Stethoscope className="h-6 w-6 text-white" />
-                                </div>
-                                <div>
-                                    <DialogTitle className="text-base font-semibold text-gray-900">
-                                        Add Vital Signs
-                                    </DialogTitle>
-                                    <DialogDescription className="text-xs text-gray-500">
-                                        Record patient's vital signs and
-                                        anthropometric measurements
-                                    </DialogDescription>
-                                </div>
+                <DialogContent className="flex max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
+                    {/* Fixed Header */}
+                    <DialogHeader className="flex-shrink-0 border-b bg-slate-50 px-6 py-4">
+                        <div className="flex items-center gap-3">
+                            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-500">
+                                <Stethoscope className="h-5 w-5 text-white" />
+                            </div>
+                            <div>
+                                <DialogTitle className="text-base font-semibold text-gray-900">
+                                    Add Vital Signs
+                                </DialogTitle>
+                                <DialogDescription className="text-xs text-gray-500">
+                                    Record patient's vital signs and
+                                    anthropometric measurements
+                                </DialogDescription>
                             </div>
                         </div>
-                    </div>
+                    </DialogHeader>
 
-                    {/* Modal Body with bg-slate-50 */}
-                    <div className="px-6 py-4">
+                    {/* Scrollable Body */}
+                    <div className="flex-1 overflow-y-auto px-6 py-4">
                         <AddVitalForm
                             patientId={patientId}
                             onSuccess={handleAddVitalSuccess}
@@ -1319,7 +1168,6 @@ export default function Vitals() {
                     </DialogHeader>
                     {selectedVital && (
                         <div className="space-y-4">
-                            {/* Date/Time */}
                             <div className="grid grid-cols-2 gap-3 text-sm">
                                 <div>
                                     <span className="font-medium text-gray-500">
@@ -1357,7 +1205,6 @@ export default function Vitals() {
                                 )}
                             </div>
 
-                            {/* Anthropometry */}
                             <div className="border-t border-gray-100 pt-3">
                                 <h4 className="mb-2 text-xs font-semibold tracking-wider text-gray-500 uppercase">
                                     Anthropometry
@@ -1399,7 +1246,6 @@ export default function Vitals() {
                                 </div>
                             </div>
 
-                            {/* Vital Signs */}
                             <div className="border-t border-gray-100 pt-3">
                                 <h4 className="mb-2 text-xs font-semibold tracking-wider text-gray-500 uppercase">
                                     Vital Signs
@@ -1475,7 +1321,6 @@ export default function Vitals() {
                                 </div>
                             </div>
 
-                            {/* Notes */}
                             {selectedVital.notes && (
                                 <div className="border-t border-gray-100 pt-3">
                                     <h4 className="mb-1 text-xs font-semibold tracking-wider text-gray-500 uppercase">
@@ -1487,7 +1332,6 @@ export default function Vitals() {
                                 </div>
                             )}
 
-                            {/* Recorder */}
                             {selectedVital.recorder?.name && (
                                 <div className="border-t border-gray-100 pt-3 text-xs text-gray-400">
                                     Recorded by: {selectedVital.recorder.name}

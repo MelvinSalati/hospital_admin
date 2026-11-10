@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\Log;
 use App\Models\Patients\PatientVisitScheme;
 use App\Models\Patients\ImagingOrderItem;
 use App\Models\Payments\Invoice;
-
+use App\Events\ImagingOrderCreated; // <-- Added for broadcasting
 
 class RadiologyController extends Controller
 {
@@ -36,32 +36,71 @@ class RadiologyController extends Controller
     public function index(int $patientId)
     {
         try {
-
-         // Get active visit token for payment scheme
+            // Get active visit token for payment scheme
             $activeToken = VisitTokenHelper::getActiveTokenArray($patientId);
             $schemeSelected = PatientVisitScheme::where('token', $activeToken['token'])
                 ->value('scheme_id');
-            $radiology =  Service::where('scheme_type', $schemeSelected)
+
+            $radiology = Service::where('scheme_type', $schemeSelected)
                 ->where('service_category', 'Imaging')
                 ->get();
 
-
-            $imagingOrders = ImagingOrder::where('patient_id', $patientId)
+            $imagingOrders = ImagingOrder::with(['items', 'resultFiles'])
+                ->where('patient_id', $patientId)
+                ->orderByDesc('created_at')
                 ->get()
-                ->map(function ($order) {
+                ->map(function (ImagingOrder $order) {
+                    $firstItem = $order->items->first();
+
+                    $files = $order->resultFiles->map(fn($f) => [
+                        'id'          => $f->id,
+                        'name'        => $f->file_name,
+                        'url'         => $f->file_path
+                            ? asset('storage/' . ltrim($f->file_path, '/'))
+                            : null,
+                        'mime'        => $f->mime_type,
+                        'size'        => $f->file_size,
+                        'type'        => $f->file_type,
+                        'uploaded_at' => optional($f->created_at)->toIso8601String(),
+                    ])->values()->all();
+
                     return [
-                        'id' => $order->id,
-                        'order_number' => $order->order_number,
-                        'service_name' => $order->items->first()->service_name ?? 'Imaging Service',
+                        'id'               => $order->id,
+                        'order_number'     => $order->order_number,
+                        'service_name'     => $firstItem?->service_name
+                            ?? (trim(($order->modality ?? '') . ' ' . ($order->body_part ?? '')) ?: 'Imaging Service'),
                         'service_category' => 'Imaging',
-                        'quantity' => $order->quantity,
-                        'unit_price' => $order->total_amount / ($order->quantity ?: 1),
-                        'total_price' => $order->total_amount,
-                        'status' => $order->status,
-                        'priority' => $order->priority,
-                        'modality' => $order->modality,
-                        'body_part' => $order->body_part,
-                        'created_at' => $order->created_at?->toDateTimeString(),
+                        'quantity'         => $order->items->sum('quantity') ?: 1,
+                        'unit_price'       => (float) ($firstItem?->price ?? 0),
+                        'total_price'      => (float) ($order->total_amount ?? 0),
+                        'status'           => $order->status,
+                        'priority'         => $order->priority,
+                        'modality'         => $order->modality,
+                        'body_part'        => $order->body_part,
+                        'created_at'       => optional($order->created_at)->toDateTimeString(),
+                        'performed_at'     => optional($order->performed_date)->toIso8601String(),
+                        'reported_at'      => optional($order->reported_date)->toIso8601String(),
+                        'findings'         => $order->findings,
+                        'impression'       => $order->impression,
+                        'recommendations'  => $order->recommendations,
+
+                        // Line items — used by RadiologyBundleModal
+                        'items' => $order->items->map(fn(ImagingOrderItem $i) => [
+                            'id'           => $i->id,
+                            'service_name' => $i->service_name
+                                ?? (trim(($i->modality ?? '') . ' ' . ($i->body_part ?? '')) ?: 'Imaging Study'),
+                            'modality'     => $i->modality,
+                            'body_part'    => $i->body_part,
+                            'quantity'     => (int) ($i->quantity ?? 1),
+                            'price'        => (float) ($i->price ?? 0),
+                            'total'        => (float) ($i->total ?? 0),
+                            'priority'     => $i->priority,
+                            'notes'        => $i->notes ?? null,
+                            'status'       => $i->status,
+                        ])->values()->all(),
+
+                        // Files — used by RadiologyImagesDrawer
+                        'files' => $files,
                     ];
                 });
 
@@ -73,27 +112,28 @@ class RadiologyController extends Controller
             $patient = Patient::find($patientId);
 
             return Inertia::render('patients/radiology', [
-                'patientId' => $patientId,
-                'services' =>  $radiology,
+                'patientId'      => $patientId,
+                'services'       => $radiology,
                 'previousOrders' => $imagingOrders,
+                'patient'        => $patient,
+                'admissionNumber' => $admission?->admission_number,
             ]);
         } catch (\Exception $e) {
             Log::error('Radiology Index Error: ' . $e->getMessage());
 
             return Inertia::render('patients/radiology', [
-                'patientId' => $patientId,
-                'services' => [],
-                'previousOrders' => [],
-                'patient' => null,
+                'patientId'       => $patientId,
+                'services'        => [],
+                'previousOrders'  => [],
+                'patient'         => null,
                 'admissionNumber' => null,
-                'error' => 'Unable to load radiology data. Please try again.',
+                'error'           => 'Unable to load radiology data. Please try again.',
             ]);
         }
     }
 
     /**
      * Store a newly created imaging order.
-     * Matches the endpoint expected by ImagingTab
      */
     public function store(Request $request, int $patientId)
     {
@@ -110,6 +150,7 @@ class RadiologyController extends Controller
             'items.*.body_part' => 'nullable|string',
             'total_amount' => 'required|numeric|min:0',
             'patient_id' => 'required|exists:patients,id',
+            'ordered_by' => 'required|exists:users,id'
         ]);
 
         if ($validator->fails()) {
@@ -133,9 +174,6 @@ class RadiologyController extends Controller
         DB::beginTransaction();
 
         try {
-            // ------------------------------------------------------------------
-            // 1. Resolve visit token
-            // ------------------------------------------------------------------
             $activeToken = VisitTokenHelper::getActiveTokenArray($patientId);
             $visitToken = $activeToken['token'] ?? null;
 
@@ -147,7 +185,6 @@ class RadiologyController extends Controller
                 ], 400);
             }
 
-            // Normalise payment scheme (mirror laboratory behaviour)
             $paymentMethod = $request->input('scheme', $activeToken['payment_method'] ?? 'cash');
             if ($paymentMethod === 'mobile_money') {
                 $paymentMethod = 'cash';
@@ -155,9 +192,6 @@ class RadiologyController extends Controller
 
             $patient = Patient::findOrFail($patientId);
 
-            // ------------------------------------------------------------------
-            // 2. Build order number + prepare invoice items
-            // ------------------------------------------------------------------
             $orderNumber = 'IMG-' . date('Ymd') . '-' . str_pad(rand(1, 9999), 4, '0', STR_PAD_LEFT);
             $totalAmount = (float) $request->input('total_amount');
             $firstItem = $items[0];
@@ -185,6 +219,7 @@ class RadiologyController extends Controller
                     'type'             => 'imaging',
                     'notes'            => $item['notes'] ?? null,
                     'created_at'       => now()->toDateTimeString(),
+                    ''
                 ];
 
                 $orderItemPayloads[] = [
@@ -200,22 +235,14 @@ class RadiologyController extends Controller
                 ];
             }
 
-            // Trust the server-side calculation over the client-supplied total
             $totalAmount = $calculatedTotal;
 
-            // ------------------------------------------------------------------
-            // 3. Resolve admission (optional)
-            // ------------------------------------------------------------------
             $admissionNumber = $request->input('admission_number');
             $admission = null;
             if ($admissionNumber) {
                 $admission = Admission::where('admission_number', $admissionNumber)->first();
             }
 
-            // ------------------------------------------------------------------
-            // 4. Find existing open invoice OR create a new one
-            //    (mirrors LaboratoryController logic exactly)
-            // ------------------------------------------------------------------
             $existingInvoice = Invoice::where('visit_token', $visitToken)
                 ->whereIn('status', ['draft', 'unpaid'])
                 ->where('patient_id', $patientId)
@@ -224,7 +251,6 @@ class RadiologyController extends Controller
             $isAppended = false;
 
             if ($existingInvoice) {
-                // Parse existing items (could be JSON string OR array)
                 $existingItems = $existingInvoice->items;
                 if (is_string($existingItems)) {
                     $parsedExisting = json_decode($existingItems, true) ?: [];
@@ -246,13 +272,6 @@ class RadiologyController extends Controller
 
                 $invoice = $existingInvoice->fresh();
                 $isAppended = true;
-
-                Log::info('Radiology: appended to existing invoice', [
-                    'invoice_id'   => $invoice->id,
-                    'visit_token'  => $visitToken,
-                    'items_added'  => count($invoiceItems),
-                    'amount_added' => $totalAmount,
-                ]);
             } else {
                 $invoice = Invoice::create([
                     'invoice_number'  => Invoice::generateInvoiceNumber(),
@@ -277,19 +296,8 @@ class RadiologyController extends Controller
                     'status'          => 'unpaid',
                     'invoice_type'    => 'imaging',
                 ]);
-
-                Log::info('Radiology: created new invoice', [
-                    'invoice_id'     => $invoice->id,
-                    'invoice_number' => $invoice->invoice_number,
-                    'visit_token'    => $visitToken,
-                    'items_count'    => count($invoiceItems),
-                    'total'          => $totalAmount,
-                ]);
             }
 
-            // ------------------------------------------------------------------
-            // 5. Create the ImagingOrder (header) and its items
-            // ------------------------------------------------------------------
             $imagingOrder = ImagingOrder::create([
                 'order_number'        => $orderNumber,
                 'visit_token'         => $visitToken,
@@ -304,7 +312,7 @@ class RadiologyController extends Controller
                 'status'              => 'pending',
                 'scheme'              => $paymentMethod,
                 'total_amount'        => $totalAmount,
-                'ordered_by'          => Auth::id(),
+                'ordered_by'          => $request->ordered_by,
                 'ordered_date'        => now(),
                 'is_admitted'         => $admission ? 1 : 0,
                 'notes'               => $request->input('notes'),
@@ -324,13 +332,26 @@ class RadiologyController extends Controller
                     'total'            => $payload['total'],
                     'priority'         => $payload['priority'],
                     'status'           => 'pending',
+                    
                 ]);
             }
 
             DB::commit();
 
-            $imagingOrder->load('items');
+            // ------------------------------------------------------------------
+            // Broadcast the event
+            // ------------------------------------------------------------------
+            $imagingOrder->load(['items', 'patient']);
             $invoice->refresh();
+
+            try {
+                ImagingOrderCreated::dispatch($imagingOrder);
+            } catch (\Throwable $broadcastError) {
+                Log::warning('Imaging order broadcast failed', [
+                    'order_id' => $imagingOrder->id,
+                    'error'    => $broadcastError->getMessage(),
+                ]);
+            }
 
             return response()->json([
                 'success' => true,

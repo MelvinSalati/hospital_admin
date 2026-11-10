@@ -1,31 +1,29 @@
-import { usePage, Link } from '@inertiajs/react';
+// pages/patients/prescription.tsx
+
+import { usePage } from '@inertiajs/react';
 import {
-    X,
-    Plus,
-    Trash2,
-    Edit2,
-    Search,
-    Save,
-    Eye,
-    Minus,
-    CheckCircle2,
-    ShoppingCart,
     AlertTriangle,
+    CheckCircle2,
     ChevronDown,
-    ChevronLeftIcon,
-    PillBottleIcon,
-    Pill,
     Clock,
+    Eye,
+    Pill,
+    PillBottleIcon,
+    Plus,
+    Save,
+    Search,
+    ShoppingCart,
+    Trash2,
+    X,
 } from 'lucide-react';
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
-import type { Column, Action } from '@/components/ReusableTable';
+import type { Action, Column } from '@/components/ReusableTable';
 import ReusableTable from '@/components/ReusableTable';
 import { Button } from '@/components/ui/button';
 import PatientLayout from '@/layouts/patients/PatientLayout';
 import Http from '@/utils/Http';
-import DrugAdministrationTab from './components/DrugAdministrationTab';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -36,9 +34,8 @@ export type PricingScheme =
     | 'charity'
     | 'mobile_money';
 
-const getEffectiveScheme = (scheme: PricingScheme): PricingScheme => {
-    return scheme === 'mobile_money' ? 'cash' : scheme;
-};
+const getEffectiveScheme = (scheme: PricingScheme): PricingScheme =>
+    scheme === 'mobile_money' ? 'cash' : scheme;
 
 const SCHEME_META: Record<
     PricingScheme,
@@ -99,7 +96,7 @@ interface Service {
     frequency?: string;
     stock?: number;
     presentation?: string;
-    strength?: number;
+    strength?: number | string;
     strength_unit?: string;
     default_item_per_dose?: number;
     default_frequency?: string;
@@ -136,47 +133,63 @@ const toNumber = (value: any): number | null => {
 
 const normalizeScheme = (scheme: string | undefined): PricingScheme => {
     if (!scheme) return 'cash';
-    const validSchemes: PricingScheme[] = [
+    const valid: PricingScheme[] = [
         'cash',
         'nhima',
         'insurance',
         'charity',
         'mobile_money',
     ];
-    const lowerScheme = scheme.toLowerCase();
-    if (validSchemes.includes(lowerScheme as PricingScheme)) {
-        return lowerScheme as PricingScheme;
-    }
-    console.warn(`Invalid scheme: ${scheme}, defaulting to cash`);
-    return 'cash';
+    const lower = scheme.toLowerCase();
+    return valid.includes(lower as PricingScheme)
+        ? (lower as PricingScheme)
+        : 'cash';
 };
+
+/**
+ * Maps a backend drug/stock row into the canonical `Service` shape this UI
+ * expects. Handles both the pricing-shaped rows (`service_name`, `cash_price`)
+ * and the stock-ledger-shaped rows (`drug_name`, `closing_balance`).
+ */
+const normalizeService = (raw: any): Service => ({
+    ...raw,
+    id: raw.id ?? raw.drug_id ?? raw.product_id ?? raw.service_id ?? 0,
+    service_name:
+        raw.service_name ??
+        raw.drug_name ??
+        raw.product_name ??
+        raw.name ??
+        'Unknown drug',
+    service_category:
+        raw.service_category ??
+        raw.therapeutic_class ??
+        (raw.drug_name ? 'Drugs' : undefined),
+    price:
+        raw.price ??
+        raw.cash_price ??
+        raw.selling_price ??
+        raw.unit_cost ??
+        null,
+    stock:
+        raw.stock ??
+        raw.closing_balance ??
+        raw.remaining_quantity ??
+        raw.quantity_in ??
+        undefined,
+});
 
 const getPriceForScheme = (
     service: Service,
     scheme: PricingScheme | string,
 ): number | null => {
-    try {
-        if (service.price !== undefined && service.price !== null) {
-            const price = toNumber(service.price);
-            if (price !== null) return price;
-        }
-
-        const normalizedScheme = normalizeScheme(scheme);
-        const effectiveScheme = getEffectiveScheme(normalizedScheme);
-        const schemeMeta = SCHEME_META[effectiveScheme];
-
-        if (!schemeMeta || !schemeMeta.dbField) {
-            console.error(`Invalid scheme meta for: ${effectiveScheme}`);
-            return null;
-        }
-
-        const fieldName = schemeMeta.dbField;
-        const price = service[fieldName];
-        return toNumber(price);
-    } catch (error) {
-        console.error('Error getting price for scheme:', error);
-        return null;
+    if (service.price !== undefined && service.price !== null) {
+        const price = toNumber(service.price);
+        if (price !== null) return price;
     }
+    const normalized = normalizeScheme(scheme);
+    const meta = SCHEME_META[getEffectiveScheme(normalized)];
+    if (!meta?.dbField) return null;
+    return toNumber(service[meta.dbField]);
 };
 
 const zmw = (amount: number | null | undefined): string => {
@@ -187,27 +200,18 @@ const zmw = (amount: number | null | undefined): string => {
 };
 
 const getSchemeMeta = (scheme: string | undefined) => {
-    const defaultMeta = {
+    const fallback = {
         label: 'Cash',
         color: 'text-emerald-700',
         bg: 'bg-emerald-50',
         border: 'border-emerald-200',
         dbField: 'cash_price',
     };
-
-    if (!scheme) return defaultMeta;
-
-    const normalizedScheme = normalizeScheme(scheme);
-    const schemeMeta = SCHEME_META[normalizedScheme];
-
-    if (!schemeMeta) {
-        return defaultMeta;
-    }
-
-    return schemeMeta;
+    if (!scheme) return fallback;
+    return SCHEME_META[normalizeScheme(scheme)] ?? fallback;
 };
 
-// ─── Small reusable UI ────────────────────────────────────────────────────────
+// ─── Small UI ─────────────────────────────────────────────────────────────────
 
 const StepIndicator = ({ step }: { step: 1 | 2 | 3 }) => {
     const steps = [
@@ -224,7 +228,15 @@ const StepIndicator = ({ step }: { step: 1 | 2 | 3 }) => {
                     <div key={s.num} className="flex items-center gap-1.5">
                         <div className="flex items-center gap-1.5">
                             <span
-                                className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-medium ${done ? 'bg-emerald-100 text-emerald-700' : ''} ${active ? 'bg-blue-600 text-white' : ''} ${!done && !active ? 'border border-gray-200 bg-gray-100 text-gray-400' : ''} `}
+                                className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-medium ${
+                                    done
+                                        ? 'bg-emerald-100 text-emerald-700'
+                                        : ''
+                                } ${active ? 'bg-blue-600 text-white' : ''} ${
+                                    !done && !active
+                                        ? 'border border-gray-200 bg-gray-100 text-gray-400'
+                                        : ''
+                                }`}
                             >
                                 {done ? (
                                     <CheckCircle2 className="h-3 w-3" />
@@ -233,14 +245,22 @@ const StepIndicator = ({ step }: { step: 1 | 2 | 3 }) => {
                                 )}
                             </span>
                             <span
-                                className={`text-xs ${active ? 'font-medium text-gray-700' : 'text-gray-400'}`}
+                                className={`text-xs ${
+                                    active
+                                        ? 'font-medium text-gray-700'
+                                        : 'text-gray-400'
+                                }`}
                             >
                                 {s.label}
                             </span>
                         </div>
                         {i < steps.length - 1 && (
                             <div
-                                className={`h-px w-5 ${step > s.num ? 'bg-emerald-300' : 'bg-gray-200'}`}
+                                className={`h-px w-5 ${
+                                    step > s.num
+                                        ? 'bg-emerald-300'
+                                        : 'bg-gray-200'
+                                }`}
                             />
                         )}
                     </div>
@@ -250,25 +270,27 @@ const StepIndicator = ({ step }: { step: 1 | 2 | 3 }) => {
     );
 };
 
-const CategoryBadge = ({ category }: { category?: string }) => {
-    if (!category) return <span className="text-xs text-gray-400">—</span>;
-    return (
+const CategoryBadge = ({ category }: { category?: string }) =>
+    category ? (
         <span className="inline-block rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium whitespace-nowrap text-blue-700">
             {category}
         </span>
+    ) : (
+        <span className="text-xs text-gray-400">—</span>
     );
-};
 
 const StockIndicator = ({ stock }: { stock?: number }) => {
-    if (stock === undefined)
+    if (stock === undefined) {
         return <span className="text-xs text-gray-400">N/A</span>;
-    if (stock <= 5)
+    }
+    if (stock <= 5) {
         return (
             <span className="flex items-center gap-1 text-xs font-medium text-red-600">
                 <AlertTriangle className="h-3 w-3" />
                 {stock}
             </span>
         );
+    }
     return <span className="text-xs text-gray-600">{stock}</span>;
 };
 
@@ -285,21 +307,13 @@ const PrescriptionBundleModal = ({
 }) => {
     const [expandedItem, setExpandedItem] = useState<string | null>(null);
 
-    const actualItems = React.useMemo(() => {
-        if (items.length > 0 && items[0].service_name) {
-            return items;
+    const actualItems = useMemo(() => {
+        if (items.length > 0 && items[0].service_name) return items;
+        if (prescription.items?.length) {
+            const first = prescription.items[0];
+            if (first.service_name) return prescription.items;
+            if (first.items?.length) return first.items;
         }
-
-        if (prescription.items && prescription.items.length > 0) {
-            const firstItem = prescription.items[0];
-            if (firstItem.service_name) {
-                return prescription.items;
-            }
-            if (firstItem.items && firstItem.items.length > 0) {
-                return firstItem.items;
-            }
-        }
-
         return items;
     }, [items, prescription.items]);
 
@@ -323,18 +337,15 @@ const PrescriptionBundleModal = ({
                 onClick={onClose}
             />
             <div className="relative flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl bg-white shadow-xl">
-                {/* Header — slate */}
                 <div className="flex items-center justify-between border-b border-slate-200 bg-slate-100 px-6 py-4">
                     <div className="flex items-start gap-3">
                         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 shadow-2xl">
                             <Pill className="h-5 w-5 text-white" />
                         </div>
-
                         <div>
                             <h3 className="text-lg font-semibold text-gray-900">
                                 Prescribed Medications
                             </h3>
-
                             <p className="mt-1 text-xs text-gray-500">
                                 #{prescription.prescription_number || 'N/A'} •{' '}
                                 {actualItems.length} item
@@ -350,11 +361,12 @@ const PrescriptionBundleModal = ({
                     </button>
                 </div>
 
-                {/* Body — white */}
                 <div className="flex-1 overflow-y-auto bg-white p-6">
                     <div className="mb-4">
                         <span
-                            className={`rounded-full px-3 py-1 text-xs font-medium ${getStatusColor(prescription.status)}`}
+                            className={`rounded-full px-3 py-1 text-xs font-medium ${getStatusColor(
+                                prescription.status,
+                            )}`}
                         >
                             Status:{' '}
                             {prescription.status
@@ -369,33 +381,30 @@ const PrescriptionBundleModal = ({
                             <table className="w-full text-sm">
                                 <thead className="border-b border-gray-200 bg-gray-50">
                                     <tr>
-                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
-                                            Prescribed Items
-                                        </th>
-                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
-                                            Dosage
-                                        </th>
-                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
-                                            Frequency
-                                        </th>
-                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
-                                            Route
-                                        </th>
-                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
-                                            Qty
-                                        </th>
-                                        <th className="px-4 py-3"></th>
+                                        {[
+                                            'Prescribed Items',
+                                            'Dosage',
+                                            'Frequency',
+                                            'Route',
+                                            'Qty',
+                                            '',
+                                        ].map((h, i) => (
+                                            <th
+                                                key={i}
+                                                className="px-4 py-3 text-left text-xs font-medium text-gray-500"
+                                            >
+                                                {h}
+                                            </th>
+                                        ))}
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
                                     {actualItems.map((item, idx) => {
                                         const quantity = item.quantity || 1;
-                                        const isExpanded =
-                                            expandedItem ===
-                                            (item.cartId || String(idx));
                                         const itemId =
                                             item.cartId || String(idx);
-
+                                        const isExpanded =
+                                            expandedItem === itemId;
                                         return (
                                             <React.Fragment key={itemId}>
                                                 <tr className="transition-colors hover:bg-gray-50/60">
@@ -431,7 +440,11 @@ const PrescriptionBundleModal = ({
                                                                 }
                                                             >
                                                                 <ChevronDown
-                                                                    className={`h-3 w-3 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                                                                    className={`h-3 w-3 transition-transform ${
+                                                                        isExpanded
+                                                                            ? 'rotate-180'
+                                                                            : ''
+                                                                    }`}
                                                                 />
                                                             </Button>
                                                         )}
@@ -467,7 +480,6 @@ const PrescriptionBundleModal = ({
                     )}
                 </div>
 
-                {/* Footer — slate */}
                 <div className="flex items-center justify-between border-t border-slate-200 bg-slate-100 px-6 py-4">
                     <p className="text-xs text-slate-500">
                         {actualItems.length} item
@@ -486,210 +498,179 @@ const PrescriptionBundleModal = ({
         </div>
     );
 };
+
 // ─── Add Prescription Modal ───────────────────────────────────────────────────
+
+const FREQUENCY_OPTIONS = [
+    { value: 'OD', label: 'OD (Once Daily)', timesPerDay: 1 },
+    { value: 'BD', label: 'BD (Twice Daily)', timesPerDay: 2 },
+    { value: 'TDS', label: 'TDS (Three Times Daily)', timesPerDay: 3 },
+    { value: 'QID', label: 'QID (Four Times Daily)', timesPerDay: 4 },
+    { value: 'Q4H', label: 'Q4H (Every 4 hours)', timesPerDay: 6 },
+    { value: 'Q6H', label: 'Q6H (Every 6 hours)', timesPerDay: 4 },
+    { value: 'Q8H', label: 'Q8H (Every 8 hours)', timesPerDay: 3 },
+    { value: 'Q12H', label: 'Q12H (Every 12 hours)', timesPerDay: 2 },
+    { value: 'Weekly', label: 'Weekly (Once a week)', timesPerDay: 1 / 7 },
+    {
+        value: 'Bi-Weekly',
+        label: 'Bi-Weekly (Twice a week)',
+        timesPerDay: 2 / 7,
+    },
+    { value: 'Monthly', label: 'Monthly (Once a month)', timesPerDay: 1 / 30 },
+    { value: 'PRN', label: 'PRN (As needed)', timesPerDay: 0 },
+];
+
+const DURATION_UNITS = ['days', 'weeks', 'months'];
+const PRESENTATIONS = [
+    'Tablet',
+    'Capsule',
+    'Ml',
+    'Mg',
+    'Gm',
+    'Injection',
+    'Syrup',
+    'Drops',
+    'Inhaler',
+    'Patch',
+];
+const ROUTES = [
+    'Oral',
+    'Intravenous (IV)',
+    'Intramuscular (IM)',
+    'Subcutaneous (SC)',
+    'Topical',
+    'Inhalation',
+    'Sublingual',
+    'Rectal',
+    'Ophthalmic',
+    'Otic',
+    'Nasal',
+    'Other',
+];
+
+const getTimesPerDay = (frequencyValue: string): number =>
+    FREQUENCY_OPTIONS.find((o) => o.value === frequencyValue)?.timesPerDay ?? 0;
+
+const calculateQuantity = (
+    itemPerDose: number,
+    frequency: string,
+    duration: number,
+    durationUnit: string,
+): number => {
+    const timesPerDay = getTimesPerDay(frequency);
+    if (timesPerDay === 0) return itemPerDose;
+    const multiplier =
+        durationUnit === 'weeks' ? 7 : durationUnit === 'months' ? 30 : 1;
+    return Math.ceil(itemPerDose * timesPerDay * duration * multiplier);
+};
+
+const EMPTY_FORM = {
+    presentation: '',
+    strength: '',
+    strengthUnit: 'mg',
+    itemPerDose: 1,
+    frequency: 'OD',
+    duration: 7,
+    durationUnit: 'days',
+    route: '',
+    startDate: new Date().toISOString().split('T')[0],
+    notes: '',
+    calculatedQuantity: 0,
+};
 
 const AddPrescriptionModal = ({
     isOpen,
     onClose,
     services,
     onSave,
-    patientId,
     paymentMethod,
 }: {
     isOpen: boolean;
     onClose: () => void;
     services?: Service[];
     onSave: (items: CartItem[], scheme: PricingScheme) => Promise<void>;
-    patientId: number;
     paymentMethod: PricingScheme;
 }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [cart, setCart] = useState<CartItem[]>([]);
-    const [scheme] = useState<PricingScheme>(paymentMethod);
+    const scheme = paymentMethod;
     const [expandedId, setExpandedId] = useState<number | null>(null);
     const [isSaving, setIsSaving] = useState(false);
-
-    const DURATION_UNITS = ['days', 'weeks', 'months'];
-    const PRESENTATIONS = [
-        'Tablet',
-        'Capsule',
-        'Ml',
-        'Mg',
-        'Gm',
-        'Injection',
-        'Syrup',
-        'Drops',
-        'Inhaler',
-        'Patch',
-    ];
-    const ROUTES = [
-        'Oral',
-        'Intravenous (IV)',
-        'Intramuscular (IM)',
-        'Subcutaneous (SC)',
-        'Topical',
-        'Inhalation',
-        'Sublingual',
-        'Rectal',
-        'Ophthalmic',
-        'Otic',
-        'Nasal',
-        'Other',
-    ];
-
-    const FREQUENCY_OPTIONS = [
-        { value: 'OD', label: 'OD (Once Daily)', timesPerDay: 1 },
-        { value: 'BD', label: 'BD (Twice Daily)', timesPerDay: 2 },
-        { value: 'TDS', label: 'TDS (Three Times Daily)', timesPerDay: 3 },
-        { value: 'QID', label: 'QID (Four Times Daily)', timesPerDay: 4 },
-        { value: 'Q4H', label: 'Q4H (Every 4 hours)', timesPerDay: 6 },
-        { value: 'Q6H', label: 'Q6H (Every 6 hours)', timesPerDay: 4 },
-        { value: 'Q8H', label: 'Q8H (Every 8 hours)', timesPerDay: 3 },
-        { value: 'Q12H', label: 'Q12H (Every 12 hours)', timesPerDay: 2 },
-        { value: 'Weekly', label: 'Weekly (Once a week)', timesPerDay: 1 / 7 },
-        {
-            value: 'Bi-Weekly',
-            label: 'Bi-Weekly (Twice a week)',
-            timesPerDay: 2 / 7,
-        },
-        {
-            value: 'Monthly',
-            label: 'Monthly (Once a month)',
-            timesPerDay: 1 / 30,
-        },
-        { value: 'PRN', label: 'PRN (As needed)', timesPerDay: 0 },
-    ];
-
     const [selectedDrug, setSelectedDrug] = useState<Service | null>(null);
     const [showDrugForm, setShowDrugForm] = useState(false);
-    const [drugFormData, setDrugFormData] = useState({
-        presentation: '',
-        strength: '',
-        strengthUnit: 'mg',
-        itemPerDose: 1,
-        frequency: 'OD',
-        duration: 7,
-        durationUnit: 'days',
-        route: '',
-        startDate: new Date().toISOString().split('T')[0],
-        notes: '',
-        calculatedQuantity: 0,
-    });
+    const [drugFormData, setDrugFormData] = useState(EMPTY_FORM);
 
     const schemeMeta = getSchemeMeta(scheme);
 
-    const filteredServices =
-        services?.filter(
-            (s) =>
-                s.service_name
-                    .toLowerCase()
-                    .includes(searchTerm.toLowerCase()) ||
-                s.service_category
-                    ?.toLowerCase()
-                    .includes(searchTerm.toLowerCase()),
-        ) ?? [];
-
-    const getTimesPerDay = (frequencyValue: string): number => {
-        const option = FREQUENCY_OPTIONS.find(
-            (opt) => opt.value === frequencyValue,
-        );
-        return option?.timesPerDay || 0;
-    };
-
-    const calculateQuantity = (
-        itemPerDose: number,
-        frequencyValue: string,
-        duration: number,
-        durationUnit: string,
-    ): number => {
-        const timesPerDay = getTimesPerDay(frequencyValue);
-        if (timesPerDay === 0) return itemPerDose;
-
-        let durationMultiplier = 1;
-        switch (durationUnit) {
-            case 'days':
-                durationMultiplier = 1;
-                break;
-            case 'weeks':
-                durationMultiplier = 7;
-                break;
-            case 'months':
-                durationMultiplier = 30;
-                break;
-            default:
-                durationMultiplier = 1;
-        }
-
-        const totalDays = duration * durationMultiplier;
-        const totalQuantity = Math.ceil(itemPerDose * timesPerDay * totalDays);
-        return totalQuantity;
-    };
+    const filteredServices = useMemo(() => {
+        const q = searchTerm.trim().toLowerCase();
+        if (!q) return services ?? [];
+        return (services ?? []).filter((s) => {
+            const haystack = [s.service_name, s.service_category, s.description]
+                .filter(Boolean)
+                .map((v) => String(v).toLowerCase());
+            return haystack.some((v) => v.includes(q));
+        });
+    }, [services, searchTerm]);
 
     const updateCalculatedQuantity = (
         updates: Partial<typeof drugFormData>,
     ) => {
-        const newData = { ...drugFormData, ...updates };
-        const quantity = calculateQuantity(
-            newData.itemPerDose,
-            newData.frequency,
-            newData.duration,
-            newData.durationUnit,
+        const next = { ...drugFormData, ...updates };
+        next.calculatedQuantity = calculateQuantity(
+            next.itemPerDose,
+            next.frequency,
+            next.duration,
+            next.durationUnit,
         );
-        setDrugFormData({ ...newData, calculatedQuantity: quantity });
+        setDrugFormData(next);
     };
 
     const handleSelectDrug = (service: Service) => {
         const price = getPriceForScheme(service, scheme);
-        if (!price) {
-            alert(
-                `This drug does not have a price set for ${schemeMeta.label} scheme.`,
+        if (price === null) {
+            toast.error(
+                `No ${schemeMeta.label} price set for ${service.service_name}.`,
             );
             return;
         }
-
         setSelectedDrug(service);
         setShowDrugForm(true);
 
-        const defaultItemPerDose = service.default_item_per_dose || 1;
-        const defaultFrequency = service.default_frequency || 'OD';
-        const defaultDuration = service.default_duration || 7;
-        const defaultDurationUnit = service.default_duration_unit || 'days';
-
-        const initialQuantity = calculateQuantity(
-            defaultItemPerDose,
-            defaultFrequency,
-            defaultDuration,
-            defaultDurationUnit,
-        );
+        const itemPerDose = service.default_item_per_dose || 1;
+        const frequency = service.default_frequency || 'OD';
+        const duration = service.default_duration || 7;
+        const durationUnit = service.default_duration_unit || 'days';
 
         setDrugFormData({
             presentation: service.presentation || '',
             strength: service.strength?.toString() || '',
             strengthUnit: service.strength_unit || 'mg',
-            itemPerDose: defaultItemPerDose,
-            frequency: defaultFrequency,
-            duration: defaultDuration,
-            durationUnit: defaultDurationUnit,
+            itemPerDose,
+            frequency,
+            duration,
+            durationUnit,
             route: service.route || '',
             startDate: new Date().toISOString().split('T')[0],
             notes: '',
-            calculatedQuantity: initialQuantity,
+            calculatedQuantity: calculateQuantity(
+                itemPerDose,
+                frequency,
+                duration,
+                durationUnit,
+            ),
         });
-
         setSearchTerm('');
     };
 
-    const addToCartWithDetails = () => {
+    const addToCart = () => {
         if (!selectedDrug) return;
-
         const coursePrice = getPriceForScheme(selectedDrug, scheme);
-        if (!coursePrice) return;
+        if (coursePrice === null) return;
 
         const frequencyLabel =
-            FREQUENCY_OPTIONS.find(
-                (opt) => opt.value === drugFormData.frequency,
-            )?.label || drugFormData.frequency;
-
+            FREQUENCY_OPTIONS.find((o) => o.value === drugFormData.frequency)
+                ?.label || drugFormData.frequency;
         const displayName = `${selectedDrug.service_name} ${drugFormData.strength}${drugFormData.strengthUnit} ${drugFormData.presentation}`;
 
         const cartItem: CartItem = {
@@ -697,42 +678,32 @@ const AddPrescriptionModal = ({
             service_name: displayName,
             cartId: `${selectedDrug.id}-${Date.now()}-${Math.random()}`,
             quantity: drugFormData.calculatedQuantity,
-            notes: `
-${drugFormData.notes}
-
-Prescription Details:
-• Presentation: ${drugFormData.itemPerDose} × ${drugFormData.presentation} (${drugFormData.strength}${drugFormData.strengthUnit})
-• Frequency: ${frequencyLabel}
-• Duration: ${drugFormData.duration} ${drugFormData.durationUnit}
-• Route: ${drugFormData.route}
-• Start Date: ${drugFormData.startDate}
-• Total units to dispense: ${drugFormData.calculatedQuantity}
-            `.trim(),
+            notes: [
+                drugFormData.notes,
+                '',
+                'Prescription Details:',
+                `• Presentation: ${drugFormData.itemPerDose} × ${drugFormData.presentation} (${drugFormData.strength}${drugFormData.strengthUnit})`,
+                `• Frequency: ${frequencyLabel}`,
+                `• Duration: ${drugFormData.duration} ${drugFormData.durationUnit}`,
+                `• Route: ${drugFormData.route}`,
+                `• Start Date: ${drugFormData.startDate}`,
+                `• Total units to dispense: ${drugFormData.calculatedQuantity}`,
+            ]
+                .join('\n')
+                .trim(),
             dosage: `${drugFormData.strength}${drugFormData.strengthUnit}`,
             frequency: frequencyLabel,
             route: drugFormData.route,
         };
 
-        setCart([...cart, cartItem]);
+        setCart((prev) => [...prev, cartItem]);
         setShowDrugForm(false);
         setSelectedDrug(null);
-        setDrugFormData({
-            presentation: '',
-            strength: '',
-            strengthUnit: 'mg',
-            itemPerDose: 1,
-            frequency: 'OD',
-            duration: 7,
-            durationUnit: 'days',
-            route: '',
-            startDate: new Date().toISOString().split('T')[0],
-            notes: '',
-            calculatedQuantity: 0,
-        });
+        setDrugFormData(EMPTY_FORM);
     };
 
     const removeFromCart = (cartId: string) =>
-        setCart(cart.filter((i) => i.cartId !== cartId));
+        setCart((prev) => prev.filter((i) => i.cartId !== cartId));
 
     const handleSaveClick = async () => {
         setIsSaving(true);
@@ -740,12 +711,9 @@ Prescription Details:
             await onSave(cart, scheme);
             setCart([]);
             setSearchTerm('');
-
-            console.log(cart);
             onClose();
-        } catch (error) {
-            console.error('Error saving:', error);
-            alert('Error saving prescription. Please try again.');
+        } catch {
+            toast.error('Error saving prescription. Please try again.');
         } finally {
             setIsSaving(false);
         }
@@ -765,18 +733,16 @@ Prescription Details:
                 className="fixed inset-0 bg-gray-900/40 backdrop-blur-[2px]"
                 onClick={onClose}
             />
-
             <div
                 className="relative flex w-full max-w-5xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
                 style={{ maxHeight: 'min(90vh, 680px)' }}
             >
-                {/* Header — slate */}
+                {/* Header */}
                 <div className="flex items-center justify-between border-b border-slate-200 bg-slate-100 px-6 py-4">
                     <div className="flex items-center gap-3">
                         <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-600 text-white shadow-2xl">
                             <Pill className="h-5 w-5" />
                         </div>
-
                         <div>
                             <h3 className="text-base font-semibold text-gray-900">
                                 New Prescription
@@ -797,7 +763,7 @@ Prescription Details:
                     </div>
                 </div>
 
-                {/* Search bar — white body */}
+                {/* Search */}
                 <div className="border-b border-slate-200 bg-white px-6 py-3">
                     <div className="relative">
                         <Search className="absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
@@ -811,8 +777,9 @@ Prescription Details:
                     </div>
                 </div>
 
-                {/* Body — white, split panels */}
+                {/* Body */}
                 <div className="flex min-h-0 flex-1 overflow-hidden bg-white">
+                    {/* Left panel */}
                     <div className="flex w-[58%] flex-col overflow-hidden border-r border-slate-200">
                         {!showDrugForm ? (
                             <>
@@ -844,10 +811,9 @@ Prescription Details:
                                                 const hasPrice = price != null;
                                                 const isExpanded =
                                                     expandedId === service.id;
-
                                                 return (
                                                     <div
-                                                        key={service.id}
+                                                        key={`${service.id}-${service.service_name}`}
                                                         className="p-3 transition-colors hover:bg-gray-50/70"
                                                     >
                                                         <div className="flex items-start justify-between gap-2">
@@ -873,7 +839,11 @@ Prescription Details:
                                                                 )}
                                                                 <div className="mt-1.5 flex items-center gap-3">
                                                                     <span
-                                                                        className={`text-xs font-medium tabular-nums ${hasPrice ? 'text-gray-800' : 'text-red-500'}`}
+                                                                        className={`text-xs font-medium tabular-nums ${
+                                                                            hasPrice
+                                                                                ? 'text-gray-800'
+                                                                                : 'text-red-500'
+                                                                        }`}
                                                                     >
                                                                         {hasPrice
                                                                             ? zmw(
@@ -901,7 +871,11 @@ Prescription Details:
                                                                         className="text-gray-300 hover:text-gray-500"
                                                                     >
                                                                         <ChevronDown
-                                                                            className={`h-3 w-3 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                                                                            className={`h-3 w-3 transition-transform ${
+                                                                                isExpanded
+                                                                                    ? 'rotate-180'
+                                                                                    : ''
+                                                                            }`}
                                                                         />
                                                                     </button>
                                                                 </div>
@@ -939,6 +913,10 @@ Prescription Details:
                                                                         ) as PricingScheme[]
                                                                     ).map(
                                                                         (s) => {
+                                                                            const m =
+                                                                                SCHEME_META[
+                                                                                    s
+                                                                                ];
                                                                             let priceVal;
                                                                             if (
                                                                                 s ===
@@ -949,20 +927,12 @@ Prescription Details:
                                                                                 priceVal =
                                                                                     service.price;
                                                                             } else {
-                                                                                const m =
-                                                                                    SCHEME_META[
-                                                                                        s
-                                                                                    ];
                                                                                 priceVal =
                                                                                     service[
                                                                                         m
                                                                                             .dbField
                                                                                     ];
                                                                             }
-                                                                            const m =
-                                                                                SCHEME_META[
-                                                                                    s
-                                                                                ];
                                                                             return (
                                                                                 <div
                                                                                     key={
@@ -1089,10 +1059,16 @@ Prescription Details:
                                                 }
                                                 className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
                                             >
-                                                <option value="mg">mg</option>
-                                                <option value="g">g</option>
-                                                <option value="mcg">mcg</option>
-                                                <option value="ml">ml</option>
+                                                {['mg', 'g', 'mcg', 'ml'].map(
+                                                    (u) => (
+                                                        <option
+                                                            key={u}
+                                                            value={u}
+                                                        >
+                                                            {u}
+                                                        </option>
+                                                    ),
+                                                )}
                                             </select>
                                         </div>
                                     </div>
@@ -1209,12 +1185,9 @@ Prescription Details:
                                                 }
                                                 className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
                                             >
-                                                {DURATION_UNITS.map((unit) => (
-                                                    <option
-                                                        key={unit}
-                                                        value={unit}
-                                                    >
-                                                        {unit}
+                                                {DURATION_UNITS.map((u) => (
+                                                    <option key={u} value={u}>
+                                                        {u}
                                                     </option>
                                                 ))}
                                             </select>
@@ -1298,10 +1271,9 @@ Prescription Details:
                                     </div>
                                 </div>
 
-                                {/* Footer — slate */}
                                 <div className="border-t border-slate-200 bg-slate-100 p-4">
                                     <Button
-                                        onClick={addToCartWithDetails}
+                                        onClick={addToCart}
                                         className="h-9 w-full text-sm"
                                     >
                                         <Plus className="mr-1.5 h-4 w-4" />
@@ -1319,6 +1291,7 @@ Prescription Details:
                         )}
                     </div>
 
+                    {/* Right panel — cart */}
                     <div className="flex w-[42%] flex-col overflow-hidden bg-white">
                         <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-2">
                             <span className="text-[11px] font-medium tracking-wide text-gray-400 uppercase">
@@ -1401,18 +1374,16 @@ Prescription Details:
 
                         {cart.length > 0 && (
                             <div className="space-y-3 border-t border-slate-200 bg-slate-100 p-4">
-                                <div className="flex items-end justify-between">
-                                    <div>
-                                        <p className="text-xs text-slate-500">
-                                            Total · {schemeMeta.label}
-                                        </p>
-                                        <p className="text-lg font-semibold text-gray-900 tabular-nums">
-                                            {zmw(total)}
-                                        </p>
-                                        <p className="text-[9px] text-slate-400">
-                                            Sum of course prices (not per unit)
-                                        </p>
-                                    </div>
+                                <div>
+                                    <p className="text-xs text-slate-500">
+                                        Total · {schemeMeta.label}
+                                    </p>
+                                    <p className="text-lg font-semibold text-gray-900 tabular-nums">
+                                        {zmw(total)}
+                                    </p>
+                                    <p className="text-[9px] text-slate-400">
+                                        Sum of course prices (not per unit)
+                                    </p>
                                 </div>
                                 <Button
                                     onClick={handleSaveClick}
@@ -1433,7 +1404,7 @@ Prescription Details:
     );
 };
 
-// ─── Prescribed Drugs Table (using ReusableTable) ─────────────────────────────
+// ─── Prescribed Drugs Table ───────────────────────────────────────────────────
 
 interface PrescriptionGroup {
     prescription_number: string;
@@ -1447,49 +1418,53 @@ interface PrescriptionGroup {
     drugNames: string[];
 }
 
+const getStatusBadge = (status: string) => {
+    const configs: Record<
+        string,
+        { label: string; gradient: string; icon: React.ReactNode }
+    > = {
+        active: {
+            label: 'Active',
+            gradient: 'from-emerald-400 to-emerald-500',
+            icon: <CheckCircle2 size={14} />,
+        },
+        completed: {
+            label: 'Completed',
+            gradient: 'from-gray-400 to-gray-500',
+            icon: <CheckCircle2 size={14} />,
+        },
+        cancelled: {
+            label: 'Cancelled',
+            gradient: 'from-red-400 to-red-500',
+            icon: <X size={14} />,
+        },
+    };
+    return configs[status?.toLowerCase()] || configs.active;
+};
+
 const PrescribedDrugsTable = ({
     prescriptions: propPrescriptions,
 }: {
     prescriptions: PrescribedItem[];
 }) => {
     const [selected, setSelected] = useState<PrescribedItem | null>(null);
-    const [prescriptionsList, setPrescriptionsList] = useState<
-        PrescribedItem[]
-    >([]);
     const { prescriptions: pagePrescriptions } = usePage().props as {
         prescriptions?: PrescribedItem[];
     };
 
-    useEffect(() => {
-        const allPrescriptions = [
-            ...(propPrescriptions || []),
-            ...(pagePrescriptions || []),
-        ];
-
-        if (allPrescriptions.length > 0) {
-            setPrescriptionsList((prevList) => {
-                const itemsMap = new Map();
-                prevList.forEach((item) => {
-                    itemsMap.set(item.cartId, item);
-                });
-                allPrescriptions.forEach((item) => {
-                    itemsMap.set(item.cartId, item);
-                });
-                return Array.from(itemsMap.values());
-            });
-        }
+    const prescriptionsList = useMemo(() => {
+        const map = new Map<string, PrescribedItem>();
+        (pagePrescriptions ?? []).forEach((p) => map.set(p.cartId, p));
+        (propPrescriptions ?? []).forEach((p) => map.set(p.cartId, p));
+        return Array.from(map.values());
     }, [propPrescriptions, pagePrescriptions]);
 
-    // Group prescriptions and flatten into rows for the table
-    const groupedData: PrescriptionGroup[] = React.useMemo(() => {
+    const groupedData: PrescriptionGroup[] = useMemo(() => {
         const groups = prescriptionsList.reduce(
             (acc, item) => {
-                const prescriptionNumber =
+                const key =
                     item.prescription_number || `PRES-${item.id || 'unknown'}`;
-                if (!acc[prescriptionNumber]) {
-                    acc[prescriptionNumber] = [];
-                }
-                acc[prescriptionNumber].push(item);
+                (acc[key] ??= []).push(item);
                 return acc;
             },
             {} as Record<string, PrescribedItem[]>,
@@ -1497,11 +1472,11 @@ const PrescribedDrugsTable = ({
 
         return Object.entries(groups).map(([prescriptionNumber, items]) => {
             const firstItem = items[0];
-            const totalPrice = items.reduce((sum, item) => {
-                const price = getPriceForScheme(item, item.scheme);
-                return sum + (price || 0);
-            }, 0);
-
+            const totalPrice = items.reduce(
+                (sum, item) =>
+                    sum + (getPriceForScheme(item, item.scheme) || 0),
+                0,
+            );
             return {
                 prescription_number: prescriptionNumber,
                 items,
@@ -1521,32 +1496,6 @@ const PrescribedDrugsTable = ({
         });
     }, [prescriptionsList]);
 
-    // Get status badge config
-    const getStatusBadge = (status: string) => {
-        const configs: Record<
-            string,
-            { label: string; gradient: string; icon: JSX.Element }
-        > = {
-            active: {
-                label: 'Active',
-                gradient: 'from-emerald-400 to-emerald-500',
-                icon: <CheckCircle2 size={14} />,
-            },
-            completed: {
-                label: 'Completed',
-                gradient: 'from-gray-400 to-gray-500',
-                icon: <CheckCircle2 size={14} />,
-            },
-            cancelled: {
-                label: 'Cancelled',
-                gradient: 'from-red-400 to-red-500',
-                icon: <X size={14} />,
-            },
-        };
-        return configs[status?.toLowerCase()] || configs['active'];
-    };
-
-    // Define columns for ReusableTable
     const columns: Column<PrescriptionGroup>[] = [
         {
             id: 'prescription_number',
@@ -1567,7 +1516,7 @@ const PrescribedDrugsTable = ({
             id: 'drugNames',
             label: 'Items',
             sortable: false,
-            format: (value, row) => (
+            format: (_value, row) => (
                 <div className="space-y-1">
                     {row.drugNames.slice(0, 2).map((name, idx) => (
                         <div key={idx} className="text-sm text-gray-700">
@@ -1645,7 +1594,6 @@ const PrescribedDrugsTable = ({
         },
     ];
 
-    // Define actions for ReusableTable
     const actions: Action<PrescriptionGroup>[] = [
         {
             label: 'View Bundle',
@@ -1661,7 +1609,7 @@ const PrescribedDrugsTable = ({
         },
     ];
 
-    if (!prescriptionsList?.length) {
+    if (!prescriptionsList.length) {
         return (
             <div className="mt-6">
                 <ReusableTable
@@ -1723,90 +1671,57 @@ const PrescriptionsTab = ({
     paymentMethod: PricingScheme;
 }) => {
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [prescriptions, setPrescriptions] = useState<PrescribedItem[]>([]);
-    const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-        const fetchPrescriptions = async () => {
-            try {
-                const response = await Http.get(
-                    `/patients/${patientId}/prescriptions`,
-                );
-                if (response.data.success) {
-                    const fetchedPrescriptions = response.data.data.flatMap(
-                        (prescription: any) => {
-                            let items = [];
-                            if (
-                                prescription.items &&
-                                prescription.items.length > 0
-                            ) {
-                                if (prescription.items[0].service_name) {
-                                    items = prescription.items;
-                                } else if (prescription.items[0].items) {
-                                    items = prescription.items[0].items;
-                                }
-                            }
+    const { prescriptions: pagePrescriptions } = usePage().props as {
+        prescriptions?: any[];
+    };
 
-                            if (items.length === 0) {
-                                items = [
-                                    {
-                                        ...prescription,
-                                        service_name:
-                                            prescription.drug_name ||
-                                            'Unknown Drug',
-                                        quantity: prescription.quantity || 1,
-                                        scheme: normalizeScheme(
-                                            prescription.invoice
-                                                ?.payment_scheme ||
-                                                paymentMethod,
-                                        ),
-                                        prescribedDate: new Date(
-                                            prescription.prescribed_date,
-                                        ).toLocaleDateString(),
-                                    },
-                                ];
-                            }
+    const prescriptions: PrescribedItem[] = useMemo(() => {
+        if (!pagePrescriptions) return [];
 
-                            return items.map((item: any) => ({
-                                ...item,
-                                cartId:
-                                    item.cartId ||
-                                    `${prescription.id}-${Math.random()}`,
-                                prescribedDate: new Date(
-                                    prescription.prescribed_date,
-                                ).toLocaleDateString(),
-                                status: prescription.status || 'active',
-                                scheme: normalizeScheme(
-                                    item.scheme ||
-                                        prescription.invoice?.payment_scheme ||
-                                        paymentMethod,
-                                ),
-                                patientId: patientId,
-                                prescription_number:
-                                    prescription.prescription_number,
-                                service_name:
-                                    item.service_name ||
-                                    item.drug_name ||
-                                    'Unknown Drug',
-                                quantity: item.quantity || 1,
-                            }));
-                        },
-                    );
-
-                    setPrescriptions(fetchedPrescriptions);
-                }
-            } catch (error) {
-                console.error('Error fetching prescriptions:', error);
-            } finally {
-                setLoading(false);
+        return pagePrescriptions.flatMap((prescription: any) => {
+            let items: any[] = [];
+            if (prescription.items?.length) {
+                items = prescription.items[0].service_name
+                    ? prescription.items
+                    : (prescription.items[0].items ?? []);
             }
-        };
-        fetchPrescriptions();
-    }, [patientId, paymentMethod]);
+
+            if (items.length === 0) {
+                items = [
+                    {
+                        ...prescription,
+                        service_name: prescription.drug_name || 'Unknown Drug',
+                        quantity: prescription.quantity || 1,
+                    },
+                ];
+            }
+
+            return items.map((item: any) => ({
+                ...item,
+                cartId:
+                    item.cartId ||
+                    `${prescription.id}-${item.id ?? Math.random()}`,
+                prescribedDate: new Date(
+                    prescription.prescribed_date,
+                ).toLocaleDateString(),
+                status: prescription.status || 'active',
+                scheme: normalizeScheme(
+                    item.scheme ||
+                        prescription.invoice?.payment_scheme ||
+                        paymentMethod,
+                ),
+                patientId,
+                prescription_number: prescription.prescription_number,
+                service_name:
+                    item.service_name || item.drug_name || 'Unknown Drug',
+                quantity: item.quantity || 1,
+            }));
+        });
+    }, [pagePrescriptions, patientId, paymentMethod]);
 
     const handleSave = async (items: CartItem[], scheme: PricingScheme) => {
         const endpoint = `/patients/${patientId}/prescriptions`;
-
         try {
             const response = await Http.post(endpoint, {
                 items: items.map((item) => ({
@@ -1818,86 +1733,58 @@ const PrescriptionsTab = ({
                     notes: item.notes,
                     price: item.price,
                 })),
-                scheme: scheme,
+                scheme,
                 clinical_notes: null,
             });
 
-            console.log('Prescription response:', response.data);
-
             if (response.data.success) {
-                const dated: PrescribedItem[] = items.map((item) => ({
-                    ...item,
-                    prescribedDate: new Date().toLocaleDateString(),
-                    status: 'active',
-                    scheme: normalizeScheme(scheme),
-                    patientId,
-                }));
-
-                setPrescriptions((prev) => [...prev, ...dated]);
-
                 toast.success('Prescription created successfully!');
                 setIsModalOpen(false);
-            } else {
-                toast.error(
-                    'Error saving prescription: ' +
-                        (response.data.message || 'Unknown error'),
-                );
+                return;
             }
+            toast.error(
+                `Error saving prescription: ${
+                    response.data.message || 'Unknown error'
+                }`,
+            );
         } catch (error: any) {
             if (error.response?.status === 422) {
-                const errors = error.response.data.errors;
-
-                const messages = Object.entries(errors)
-                    .map(([field, messages]) => {
-                        const message = Array.isArray(messages)
-                            ? messages.join(', ')
-                            : String(messages);
-
+                const messages = Object.entries(
+                    error.response.data.errors ?? {},
+                )
+                    .map(([field, msgs]) => {
+                        const message = Array.isArray(msgs)
+                            ? msgs.join(', ')
+                            : String(msgs);
                         return `${field}: ${message}`;
                     })
                     .join('\n');
-
                 toast.error(`Validation failed:\n\n${messages}`);
-
                 return;
             }
-
             if (error.response) {
                 toast.error(
                     error.response.data?.message ||
                         `Server error (${error.response.status})`,
                 );
-
                 return;
             }
-
             toast.error(
                 'Unable to save prescription. Please check your connection and try again.',
             );
         }
     };
 
-    if (loading) {
-        return (
-            <div className="py-12 text-center">Loading prescriptions...</div>
-        );
-    }
-
-    const { props } = usePage();
-    console.log(props);
-
     return (
         <div className="space-y-6 bg-blue-50">
             <PageHeader
                 icon={<PillBottleIcon />}
-                title={'Prescriptions'}
-                subtitle={'View and Order prescription'}
+                title="Prescriptions"
+                subtitle="View and order prescription"
                 actions={[
                     {
                         label: 'Add Prescription',
-                        onClick() {
-                            setIsModalOpen(true);
-                        },
+                        onClick: () => setIsModalOpen(true),
                     },
                 ]}
             />
@@ -1909,7 +1796,6 @@ const PrescriptionsTab = ({
                 onClose={() => setIsModalOpen(false)}
                 services={services}
                 onSave={handleSave}
-                patientId={patientId}
                 paymentMethod={paymentMethod}
             />
         </div>
@@ -1920,11 +1806,23 @@ const PrescriptionsTab = ({
 
 export default function Prescription() {
     const { services, patientId, payment_method } = usePage().props as {
-        services?: Service[];
-        patientId?: any;
+        services?: any[];
+        patientId?: number;
         payment_method?: PricingScheme;
     };
-    console.log('patient id', patientId);
+
+    console.log('Prescription page props:', {
+        services,
+        patientId,
+        payment_method,
+    });
+
+    // Normalize the backend's stock/pricing rows into the canonical Service
+    // shape once, so every child gets a stable contract.
+    const normalizedServices = useMemo(
+        () => (services ?? []).map(normalizeService),
+        [services],
+    );
 
     return (
         <PatientLayout
@@ -1934,13 +1832,11 @@ export default function Prescription() {
             ]}
         >
             <div className="h-full space-y-6 bg-blue-50 p-2">
-                <div>
-                    <PrescriptionsTab
-                        patientId={patientId}
-                        page={'Prescription'}
-                        services={services}
-                    />
-                </div>
+                <PrescriptionsTab
+                    patientId={patientId ?? 0}
+                    services={normalizedServices}
+                    paymentMethod={payment_method ?? 'cash'}
+                />
             </div>
         </PatientLayout>
     );

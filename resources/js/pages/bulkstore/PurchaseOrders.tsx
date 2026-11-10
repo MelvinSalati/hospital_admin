@@ -2,39 +2,29 @@
 
 import { usePage } from '@inertiajs/react';
 import {
-    Plus,
-    RefreshCw,
     Eye,
-    Edit,
-    Trash2,
+    Wallet,
     CheckCircle,
     XCircle,
     Clock,
-    AlertTriangle,
-    FileText,
+    Send,
+    Building,
     Package,
-    Truck,
-    CreditCard,
-    Filter,
-    Download,
-    Printer,
-    MoreVertical,
-    ChevronDown,
-    Shield,
-    User,
-    DollarSign,
     Key,
+    Loader2,
+    X,
 } from 'lucide-react';
-import React, { useState, useEffect, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { toast } from 'react-hot-toast';
 import Container from '@/components/container';
+import ViewPurchaseOrderModal from '@/components/modals/ViewPurchaseOrderModal';
 import PageHeader from '@/components/PageHeader';
-import type { Column, Action } from '@/components/ReusableTable';
-import { ReusableTable } from '@/components/ReusableTable';
+import ReusableTable from '@/components/ReusableTable';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
 import AppLayout from '@/layouts/app-layout';
 import Http from '@/utils/Http';
-import ApprovalModal from './components/modals/ApprovalModal';
 
 // ============================================
 // TYPES
@@ -48,9 +38,20 @@ interface PurchaseOrderItem {
     quantity: number;
     unit_price: number;
     total: number;
+    estimated_unit_price?: string | number;
+    estimated_total?: string | number;
     received_quantity?: number;
     remaining_quantity?: number;
-    status: 'pending' | 'received' | 'partial' | 'cancelled';
+    status?: string;
+    product?: {
+        id: number;
+        product_name: string;
+        product_code: string;
+        description?: string;
+        strength?: string;
+        form?: string;
+        unit?: string;
+    };
 }
 
 interface PurchaseOrder {
@@ -59,145 +60,277 @@ interface PurchaseOrder {
     pr_number: string;
     requisition_id: number | null;
     supplier_id: number | null;
+    supplier_name?: string;
+    supplier_code?: string;
     supplier?: {
         id: number;
         supplier_name: string;
         supplier_code: string;
-    } | null;
-    supplier_name?: string;
-    supplier_code?: string;
+        address?: string;
+        city?: string;
+        country?: string;
+        phone?: string;
+        email?: string;
+        contact_person?: string;
+        payment_terms?: string;
+        delivery_terms?: string;
+        rating?: number;
+        is_preferred?: boolean;
+    };
     department_id: number;
+    department_name?: string;
     department?: {
         id: number;
         name: string;
         code: string;
         description: string;
-    } | null;
-    department_name?: string;
+    };
     budget_code: string;
     budget_name?: string;
     order_date?: string;
-    expected_delivery_date: string;
+    request_date?: string;
+    expected_delivery_date?: string;
     required_date?: string;
     delivery_date?: string;
-    status:
-        | 'draft'
-        | 'pending'
-        | 'approved'
-        | 'sent'
-        | 'received'
-        | 'partial'
-        | 'cancelled'
-        | 'completed';
-    priority: 'low' | 'medium' | 'high' | 'urgent';
-    total_amount: number;
+    status: string;
+    priority: string;
+    total_amount?: number;
+    estimated_total?: string | number;
     paid_amount?: number;
     balance_amount?: number;
-    payment_status?: 'unpaid' | 'partial' | 'paid';
+    payment_status?: string;
     shipping_address?: string;
     special_instructions?: string;
     items: PurchaseOrderItem[];
-    created_by?: number;
+    created_by: number;
     created_by_name?: string;
-    approved_by?: number | null;
-    approved_by_name?: string | null;
-    approved_at?: string | null;
+    approved_by?: number;
+    approved_by_name?: string;
+    approved_at?: string;
     created_at: string;
     updated_at: string;
     justification?: string;
-    request_date?: string;
     items_count?: number;
-    items_sum_estimated_total?: number;
-    estimated_total?: string;
+    shipping_terms?: string;
+    shipping_method?: string;
+    discount_percentage?: number;
+    discount_amount?: number;
+    tax_percentage?: number;
+    tax_amount?: number;
+    other_cost?: number;
+    notes?: string;
+    funds_released: boolean | number;
+    funds_released_at?: string;
+    funds_released_by?: number;
     converted_to_po_id?: number | null;
-    cost_center?: string | null;
-    requester?: any;
-    pr_number_id?: number | null;
+    budget_allocation?: any;
+    approval_code?: string | null;
+    company_name?: string;
+    company_address?: string;
+    company_phone?: string;
+    company_email?: string;
+    company_website?: string;
 }
 
 // ============================================
-// STATUS CONFIG
+// CUSTOM MODAL COMPONENT - Compact
 // ============================================
 
-const STATUS_CONFIG: Record<
-    string,
-    { label: string; color: string; icon: React.ReactNode }
-> = {
-    draft: {
-        label: 'Draft',
-        color: 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300',
-        icon: <FileText className="h-3 w-3" />,
-    },
-    pending: {
-        label: 'Pending',
-        color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
-        icon: <Clock className="h-3 w-3" />,
-    },
-    approved: {
-        label: 'Approved',
-        color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
-        icon: <CheckCircle className="h-3 w-3" />,
-    },
-    sent: {
-        label: 'Sent',
-        color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',
-        icon: <Truck className="h-3 w-3" />,
-    },
-    received: {
-        label: 'Received',
-        color: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
-        icon: <Package className="h-3 w-3" />,
-    },
-    partial: {
-        label: 'Partial',
-        color: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400',
-        icon: <AlertTriangle className="h-3 w-3" />,
-    },
-    cancelled: {
-        label: 'Cancelled',
-        color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
-        icon: <XCircle className="h-3 w-3" />,
-    },
-    completed: {
-        label: 'Completed',
-        color: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
-        icon: <CheckCircle className="h-3 w-3" />,
-    },
-};
+interface CustomModalProps {
+    isOpen: boolean;
+    onClose: () => void;
+    title: string;
+    description?: string;
+    children: React.ReactNode;
+    maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl';
+    showCloseButton?: boolean;
+    className?: string;
+    footer?: React.ReactNode;
+}
 
-const PAYMENT_STATUS_CONFIG: Record<string, { label: string; color: string }> =
-    {
-        unpaid: {
-            label: 'Unpaid',
-            color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
-        },
-        partial: {
-            label: 'Partial',
-            color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
-        },
-        paid: {
-            label: 'Paid',
-            color: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
-        },
+const CustomModal: React.FC<CustomModalProps> = ({
+    isOpen,
+    onClose,
+    title,
+    description,
+    children,
+    maxWidth = 'md',
+    showCloseButton = true,
+    className = '',
+    footer,
+}) => {
+    if (!isOpen) return null;
+
+    const maxWidthClasses = {
+        sm: 'max-w-sm',
+        md: 'max-w-md',
+        lg: 'max-w-lg',
+        xl: 'max-w-xl',
+        '2xl': 'max-w-2xl',
+        '3xl': 'max-w-3xl',
     };
 
-const PRIORITY_CONFIG: Record<string, { label: string; color: string }> = {
-    low: {
-        label: 'Low',
-        color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
-    },
-    medium: {
-        label: 'Medium',
-        color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
-    },
-    high: {
-        label: 'High',
-        color: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400',
-    },
-    urgent: {
-        label: 'Urgent',
-        color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
-    },
+    return (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+            <div
+                className="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity"
+                onClick={onClose}
+            />
+            <div
+                className={`relative ${maxWidthClasses[maxWidth]} flex max-h-[85vh] w-full animate-in flex-col rounded-lg bg-white shadow-2xl duration-200 fade-in zoom-in dark:bg-slate-800 ${className}`}
+            >
+                <div className="flex flex-shrink-0 items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+                    <div className="min-w-0 flex-1">
+                        <h3 className="truncate text-base font-semibold text-slate-800 dark:text-slate-200">
+                            {title}
+                        </h3>
+                        {description && (
+                            <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+                                {description}
+                            </p>
+                        )}
+                    </div>
+                    {showCloseButton && (
+                        <button
+                            onClick={onClose}
+                            className="ml-2 flex-shrink-0 rounded-lg p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-300"
+                        >
+                            <X className="h-4 w-4" />
+                        </button>
+                    )}
+                </div>
+                <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
+                    {children}
+                </div>
+                {footer && (
+                    <div className="flex-shrink-0 border-t border-slate-200 px-4 py-2.5 dark:border-slate-700">
+                        {footer}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+// ============================================
+// TRANSFORM FUNCTION - Maps API data to modal format
+// ============================================
+
+const transformToPurchaseOrder = (requisition: any): any => {
+    // Calculate total from items
+    let calculatedTotal = 0;
+    const transformedItems = (requisition.items || []).map((item: any) => {
+        const unitPrice = parseFloat(item.estimated_unit_price || 0);
+        const quantity = parseFloat(item.quantity || 0);
+        const total = parseFloat(item.estimated_total || 0);
+        calculatedTotal += total;
+
+        return {
+            id: item.id,
+            product_id: item.product_id,
+            product_name:
+                item.product?.product_name || `Product #${item.product_id}`,
+            product_code: item.product?.product_code || 'N/A',
+            quantity: quantity,
+            unit_price: unitPrice,
+            total: total,
+            estimated_unit_price: item.estimated_unit_price,
+            estimated_total: item.estimated_total,
+            product: item.product || {
+                id: item.product_id,
+                product_name:
+                    item.product?.product_name || `Product #${item.product_id}`,
+                product_code: item.product?.product_code || 'N/A',
+                description: item.product?.description || '',
+                strength: item.product?.strength || '',
+                form: item.product?.form || '',
+                unit: item.product?.unit || '',
+            },
+        };
+    });
+
+    const totalAmount = parseFloat(
+        requisition.estimated_total || calculatedTotal || 0,
+    );
+
+    return {
+        id: requisition.id,
+        po_number: `PO-${requisition.pr_number}`,
+        pr_number: requisition.pr_number,
+        requisition_id: requisition.id,
+        supplier_id: requisition.supplier_id || 0,
+        supplier_name:
+            requisition.supplier?.name || requisition.supplier_name || 'N/A',
+        supplier_code:
+            requisition.supplier?.code || requisition.supplier_code || '',
+        supplier: requisition.supplier || {
+            id: requisition.supplier_id || 0,
+            supplier_name:
+                requisition.supplier?.name ||
+                requisition.supplier_name ||
+                'N/A',
+            supplier_code:
+                requisition.supplier?.code || requisition.supplier_code || '',
+            address: requisition.supplier?.address || '',
+            phone: requisition.supplier?.phone || '',
+            email: requisition.supplier?.email || '',
+            contact_person: requisition.supplier?.contact_person || '',
+            payment_terms: requisition.supplier?.payment_terms || 'Net 30',
+        },
+        department_id: requisition.department_id || 0,
+        department_name:
+            requisition.department?.name ||
+            requisition.department_name ||
+            'N/A',
+        department: requisition.department || {
+            id: requisition.department_id || 0,
+            name:
+                requisition.department?.name ||
+                requisition.department_name ||
+                'N/A',
+            code: requisition.department?.code || '',
+            description: requisition.department?.description || '',
+        },
+        budget_code: requisition.budget_code || 'N/A',
+        budget_name: requisition.budget_allocation?.budget_name || '',
+        order_date: requisition.request_date || requisition.created_at,
+        request_date: requisition.request_date || requisition.created_at,
+        expected_delivery_date:
+            requisition.required_date ||
+            requisition.request_date ||
+            requisition.created_at,
+        required_date: requisition.required_date,
+        status: requisition.status,
+        priority: requisition.priority,
+        total_amount: totalAmount,
+        paid_amount: 0,
+        balance_amount: totalAmount,
+        payment_status: requisition.funds_released ? 'Paid' : 'Unpaid',
+        shipping_address: requisition.shipping_address || '',
+        special_instructions: requisition.justification || '',
+        items: transformedItems,
+        created_by: requisition.requested_by || 0,
+        created_by_name: requisition.requester?.name || 'N/A',
+        approved_by: requisition.approved_by,
+        approved_by_name: requisition.approver?.name || 'N/A',
+        approved_at: requisition.approved_at,
+        created_at: requisition.created_at,
+        updated_at: requisition.updated_at,
+        justification: requisition.justification || '',
+        items_count: requisition.items?.length || 0,
+        funds_released:
+            requisition.funds_released === 1 ||
+            requisition.funds_released === true,
+        converted_to_po_id: requisition.converted_to_po_id,
+        approval_code: requisition.approval_code || null,
+        shipping_terms: requisition.shipping_terms || 'Freight on Board',
+        shipping_method: requisition.shipping_method || 'Land',
+        company_name: 'EasyBill Solutions',
+        company_address: 'Plot 123, Lusaka, Zambia',
+        company_phone: '+260 211 123 456',
+        company_email: 'info@easybill.com',
+        company_website: 'www.easybill.com',
+    };
 };
 
 // ============================================
@@ -205,52 +338,117 @@ const PRIORITY_CONFIG: Record<string, { label: string; color: string }> = {
 // ============================================
 
 export default function PurchaseOrder() {
-    const { props } = usePage();
-    const [loading, setLoading] = useState(false);
     const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
-    const [searchTerm, setSearchTerm] = useState('');
-    const [pagination, setPagination] = useState({
-        currentPage: 1,
-        pageSize: 10,
-        totalItems: 0,
-        totalPages: 1,
-    });
-
-    // Approval Modal State
-    const [showApprovalModal, setShowApprovalModal] = useState(false);
+    const [loading, setLoading] = useState(false);
     const [selectedOrder, setSelectedOrder] = useState<PurchaseOrder | null>(
         null,
     );
-    const [isApproving, setIsApproving] = useState(false);
+    const { auth } = usePage().props;
+    const [showViewModal, setShowViewModal] = useState(false);
+    const [showReleaseFundsModal, setShowReleaseFundsModal] = useState(false);
+    const [showFundsReleasedModal, setShowFundsReleasedModal] = useState(false);
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [fundReleaseCode, setFundReleaseCode] = useState('');
+    const [fundReleaseComments, setFundReleaseComments] = useState('');
 
-    const { auth } = props;
-    const userRole = auth?.user?.is_admin
-        ? 'admin'
-        : auth?.user?.is_supervisor
-          ? 'supervisor'
-          : 'staff';
+    const fetchPurchaseOrders = useCallback(async () => {
+        setLoading(true);
+        try {
+            const response = await Http.get('/admin/purchase-orders/approved');
+            if (response.data) {
+                const orders = Array.isArray(response.data)
+                    ? response.data
+                    : response.data.orders || [];
+                setPurchaseOrders(orders);
+            } else {
+                toast.error('Failed to fetch purchase orders');
+            }
+        } catch (error: any) {
+            console.error('Failed to fetch purchase orders:', error);
+            toast.error(
+                error.response?.data?.message ||
+                    'Failed to fetch purchase orders',
+            );
+        } finally {
+            setLoading(false);
+        }
+    }, []);
 
-    // Stats for dashboard
-    const [stats, setStats] = useState({
-        total: 0,
-        approved: 0,
-        received: 0,
-        completed: 0,
-        cancelled: 0,
-        totalAmount: 0,
-        paidAmount: 0,
-        balanceAmount: 0,
-    });
+    useEffect(() => {
+        fetchPurchaseOrders();
+    }, [fetchPurchaseOrders]);
 
-    // ============================================
-    // HELPER FUNCTIONS
-    // ============================================
+    const handleView = (order: PurchaseOrder) => {
+        // Transform the order data before passing to modal
+        const transformedOrder = transformToPurchaseOrder(order);
+        setSelectedOrder(transformedOrder);
+        setShowViewModal(true);
+    };
 
-    const formatCurrency = (amount: number) => {
+    const handleReleaseFunds = (order: PurchaseOrder) => {
+        // Transform first to ensure we have the right data
+        const transformedOrder = transformToPurchaseOrder(order);
+        setSelectedOrder(transformedOrder);
+        setFundReleaseCode('');
+        setFundReleaseComments('');
+        setShowReleaseFundsModal(true);
+    };
+
+    const handleConfirmReleaseFunds = async () => {
+        if (!selectedOrder) return;
+        if (!fundReleaseCode.trim()) {
+            toast.error('Please enter the approval code');
+            return;
+        }
+
+        setIsProcessing(true);
+        try {
+            const response = await Http.post(
+                `/admin/purchase-order/${selectedOrder.id}/release-funds`,
+                {
+                    approval_code: fundReleaseCode,
+                    comments: fundReleaseComments,
+                    released_by: auth.user.id,
+                },
+            );
+
+            if (response.data.success) {
+                toast.success(
+                    `Funds released for order ${selectedOrder.pr_number}`,
+                );
+                await fetchPurchaseOrders();
+                setShowReleaseFundsModal(false);
+                setShowFundsReleasedModal(true);
+                setSelectedOrder(null);
+                setFundReleaseCode('');
+                setFundReleaseComments('');
+            } else {
+                throw new Error(response.data.message || 'Fund release failed');
+            }
+        } catch (error: any) {
+            console.error('Fund release failed:', error);
+            toast.error(
+                error.response?.data?.message ||
+                    'Failed to release funds. Invalid approval code?',
+            );
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    const handleConvertToPO = (order: PurchaseOrder) => {
+        toast.success(`Converting order ${order.pr_number} to PO`);
+    };
+
+    const formatCurrency = (amount: number | string) => {
+        const num = typeof amount === 'string' ? parseFloat(amount) : amount;
+        if (isNaN(num)) return 'K 0.00';
         return new Intl.NumberFormat('en-ZM', {
             style: 'currency',
             currency: 'ZMW',
-        }).format(amount);
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        }).format(num);
     };
 
     const formatDate = (date: string) => {
@@ -262,309 +460,159 @@ export default function PurchaseOrder() {
         });
     };
 
-    // ============================================
-    // FETCH APPROVED PURCHASE ORDERS ONLY
-    // ============================================
-
-    const fetchPurchaseOrders = useCallback(async () => {
-        setLoading(true);
-        try {
-            // ✅ Only fetch approved orders
-            const params = {
-                page: pagination.currentPage,
-                page_size: pagination.pageSize,
-                search: searchTerm,
-                status: 'approved', // ✅ Filter only approved orders
-            };
-
-            const response = await Http.get('/bulk-store/purchase-orders', {
-                params,
-            });
-            const data = response.data;
-
-            // Transform the data to handle nested structures
-            const transformedData = (data.data || []).map((order: any) => ({
-                ...order,
-                po_number:
-                    order.po_number ||
-                    `PO-${new Date().getFullYear()}-${String(order.id).padStart(5, '0')}`,
-                supplier_name:
-                    order.supplier?.supplier_name ||
-                    order.supplier_name ||
-                    'N/A',
-                supplier_code:
-                    order.supplier?.supplier_code || order.supplier_code || '',
-                department_name:
-                    order.department?.name || order.department_name || 'N/A',
-                expected_delivery_date:
-                    order.expected_delivery_date || order.required_date,
-                items: order.items || [],
-                payment_status: order.payment_status || 'unpaid',
-                paid_amount: order.paid_amount || 0,
-                balance_amount: order.balance_amount || order.total_amount || 0,
-                items_count: order.items_count || order.items?.length || 0,
-            }));
-
-            setPurchaseOrders(transformedData);
-
-            // Update stats (only for approved orders)
-            const allOrders = transformedData;
-            setStats({
-                total: allOrders.length,
-                approved: allOrders.filter((o: any) => o.status === 'approved')
-                    .length,
-                received: allOrders.filter((o: any) => o.status === 'received')
-                    .length,
-                completed: allOrders.filter(
-                    (o: any) => o.status === 'completed',
-                ).length,
-                cancelled: allOrders.filter(
-                    (o: any) => o.status === 'cancelled',
-                ).length,
-                totalAmount: allOrders.reduce(
-                    (sum: number, o: any) => sum + (o.total_amount || 0),
-                    0,
-                ),
-                paidAmount: allOrders.reduce(
-                    (sum: number, o: any) => sum + (o.paid_amount || 0),
-                    0,
-                ),
-                balanceAmount: allOrders.reduce(
-                    (sum: number, o: any) =>
-                        sum + ((o.total_amount || 0) - (o.paid_amount || 0)),
-                    0,
-                ),
-            });
-
-            setPagination((prev) => ({
-                ...prev,
-                totalItems: data.total || transformedData.length,
-                totalPages: data.last_page || 1,
-            }));
-        } catch (error) {
-            console.error('Failed to fetch purchase orders:', error);
-            toast.error('Failed to load purchase orders');
-        } finally {
-            setLoading(false);
-        }
-    }, [pagination.currentPage, pagination.pageSize, searchTerm]);
-
-    useEffect(() => {
-        fetchPurchaseOrders();
-    }, [fetchPurchaseOrders]);
-
-    // ============================================
-    // HANDLERS
-    // ============================================
-
-    const handleView = (order: PurchaseOrder) => {
-        window.location.href = `/bulk-store/purchase-orders/${order.id}`;
+    const getStatusBadge = (status: string) => {
+        const statusMap: Record<
+            string,
+            { color: string; label: string; bg: string }
+        > = {
+            draft: {
+                color: 'text-gray-800',
+                label: 'Draft',
+                bg: 'bg-gray-100',
+            },
+            pending: {
+                color: 'text-yellow-800',
+                label: 'Pending',
+                bg: 'bg-yellow-100',
+            },
+            approved: {
+                color: 'text-blue-800',
+                label: 'Approved',
+                bg: 'bg-blue-100',
+            },
+            sent: {
+                color: 'text-purple-800',
+                label: 'Sent',
+                bg: 'bg-purple-100',
+            },
+            received: {
+                color: 'text-green-800',
+                label: 'Received',
+                bg: 'bg-green-100',
+            },
+            partial: {
+                color: 'text-orange-800',
+                label: 'Partial',
+                bg: 'bg-orange-100',
+            },
+            cancelled: {
+                color: 'text-red-800',
+                label: 'Cancelled',
+                bg: 'bg-red-100',
+            },
+            completed: {
+                color: 'text-emerald-800',
+                label: 'Completed',
+                bg: 'bg-emerald-100',
+            },
+        };
+        return statusMap[status] || statusMap.draft;
     };
 
-    const handleEdit = (order: PurchaseOrder) => {
-        window.location.href = `/bulk-store/purchase-orders/${order.id}/edit`;
+    const getPriorityBadge = (priority: string) => {
+        const priorityMap: Record<
+            string,
+            { color: string; label: string; bg: string }
+        > = {
+            low: { color: 'text-blue-800', label: 'Low', bg: 'bg-blue-100' },
+            medium: {
+                color: 'text-yellow-800',
+                label: 'Medium',
+                bg: 'bg-yellow-100',
+            },
+            high: {
+                color: 'text-orange-800',
+                label: 'High',
+                bg: 'bg-orange-100',
+            },
+            urgent: {
+                color: 'text-red-800',
+                label: 'Urgent',
+                bg: 'bg-red-100',
+            },
+        };
+        return priorityMap[priority] || priorityMap.medium;
     };
 
-    const handleOpenApproval = (order: PurchaseOrder) => {
-        setSelectedOrder(order);
-        setShowApprovalModal(true);
-    };
-
-    const handleConfirmApproval = async (
-        approvalCode: string,
-        releaseFunds?: boolean,
-    ) => {
-        if (!selectedOrder) throw new Error('No order selected');
-
-        setIsApproving(true);
-
-        try {
-            const endpoint =
-                userRole === 'admin'
-                    ? `/bulk-store/purchase-orders/${selectedOrder.id}/authorize`
-                    : `/bulk-store/purchase-orders/${selectedOrder.id}/approve`;
-
-            const payload = {
-                approval_code: approvalCode,
-                release_funds: releaseFunds || false,
-                approved_by: auth.user.id,
-                approved_by_name: auth.user.name,
-            };
-
-            const response = await Http.post(endpoint, payload);
-
-            if (response.data.success) {
-                toast.success(
-                    response.data.message ||
-                        'Purchase order approved successfully',
-                );
-                await fetchPurchaseOrders();
-                setShowApprovalModal(false);
-                setSelectedOrder(null);
-            } else {
-                throw new Error(response.data.message || 'Approval failed');
-            }
-        } catch (error: any) {
-            console.error('Approval failed:', error);
-            throw new Error(
-                error.response?.data?.message ||
-                    'Invalid approval code or you do not have permission',
-            );
-        } finally {
-            setIsApproving(false);
-        }
-    };
-
-    const handleCancel = async (id: number) => {
-        const reason = prompt('Enter cancellation reason:');
-        if (reason === null) return;
-        try {
-            await Http.post(`/bulk-store/purchase-orders/${id}/cancel`, {
-                reason,
-            });
-            await fetchPurchaseOrders();
-            toast.success('Purchase order cancelled');
-        } catch (error) {
-            console.error('Failed to cancel:', error);
-            toast.error('Failed to cancel purchase order');
-        }
-    };
-
-    const handleMarkAsReceived = async (id: number) => {
-        if (!confirm('Mark this purchase order as received?')) return;
-        try {
-            await Http.post(`/bulk-store/purchase-orders/${id}/receive`);
-            await fetchPurchaseOrders();
-            toast.success('Purchase order marked as received');
-        } catch (error) {
-            console.error('Failed to mark as received:', error);
-            toast.error('Failed to mark as received');
-        }
-    };
-
-    const handleDelete = async (id: number) => {
-        if (!confirm('Are you sure you want to delete this purchase order?'))
-            return;
-        try {
-            await Http.delete(`/bulk-store/purchase-orders/${id}`);
-            await fetchPurchaseOrders();
-            toast.success('Purchase order deleted');
-        } catch (error) {
-            console.error('Failed to delete:', error);
-            toast.error('Failed to delete purchase order');
-        }
-    };
-
-    const handleExport = () => {
-        toast.success('Exporting purchase orders...');
-    };
-
-    const handlePrint = () => {
-        window.print();
-    };
-
-    const handleCreatePO = () => {
-        window.location.href = '/bulk-store/purchase-orders/create';
-    };
-
-    const handleRefresh = () => {
-        fetchPurchaseOrders();
-        toast.success('Data refreshed');
-    };
-
-    // ============================================
-    // TABLE DEFINITIONS
-    // ============================================
-
-    const columns: Column<PurchaseOrder>[] = [
+    // Column definitions for the table
+    const columns = [
         {
-            id: 'po_number',
-            label: 'PO Number',
-            minWidth: 130,
-            format: (value, row) => (
-                <div>
-                    <span className="font-mono text-sm font-medium text-slate-800 dark:text-slate-200">
-                        {row.po_number || row.pr_number}
-                    </span>
-                    <div className="text-xs text-slate-500 dark:text-slate-400">
-                        PR: {row.pr_number}
-                    </div>
-                </div>
+            id: 'pr_number',
+            label: 'PR #',
+            minWidth: 120,
+            format: (value: string) => (
+                <span className="font-mono text-sm font-medium text-blue-600 dark:text-blue-400">
+                    {value || 'N/A'}
+                </span>
             ),
             sortable: true,
         },
         {
-            id: 'supplier_name',
-            label: 'Supplier',
-            minWidth: 150,
-            format: (value, row) => {
-                const supplierName =
-                    row.supplier?.supplier_name || row.supplier_name || 'N/A';
-                const supplierCode =
-                    row.supplier?.supplier_code || row.supplier_code || '';
+            id: 'department',
+            label: 'Department',
+            minWidth: 120,
+            format: (value: any) => {
+                const name = value?.name || value?.department_name || 'N/A';
                 return (
-                    <div>
-                        <div className="text-sm text-slate-800 dark:text-slate-200">
-                            {supplierName}
-                        </div>
-                        {supplierCode && (
-                            <div className="text-xs text-slate-500 dark:text-slate-400">
-                                {supplierCode}
-                            </div>
-                        )}
+                    <div className="flex items-center gap-1.5">
+                        <Building className="h-3.5 w-3.5 text-slate-400" />
+                        <span className="text-sm text-slate-700 dark:text-slate-300">
+                            {name}
+                        </span>
                     </div>
+                );
+            },
+        },
+        {
+            id: 'supplier',
+            label: 'Supplier',
+            minWidth: 130,
+            format: (value: any) => {
+                const name = value?.name || value?.supplier_name || 'N/A';
+                return (
+                    <span className="text-sm text-slate-700 dark:text-slate-300">
+                        {name}
+                    </span>
+                );
+            },
+        },
+        {
+            id: 'priority',
+            label: 'Priority',
+            minWidth: 100,
+            format: (value: string) => {
+                const config = getPriorityBadge(value);
+                return (
+                    <span
+                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${config.bg} ${config.color}`}
+                    >
+                        {config.label}
+                    </span>
                 );
             },
             sortable: true,
         },
         {
-            id: 'department_name',
-            label: 'Department',
+            id: 'estimated_total',
+            label: 'Total',
             minWidth: 120,
-            format: (value, row) => {
-                const deptName =
-                    row.department?.name ||
-                    row.department_name ||
-                    value ||
-                    'N/A';
-                const deptCode = row.department?.code || '';
-                return (
-                    <div>
-                        <div className="text-sm text-slate-800 dark:text-slate-200">
-                            {deptName}
-                        </div>
-                        {deptCode && (
-                            <div className="text-xs text-slate-500 dark:text-slate-400">
-                                {deptCode}
-                            </div>
-                        )}
-                    </div>
-                );
-            },
+            format: (value: string | number) => (
+                <div className="font-semibold text-slate-800 dark:text-slate-200">
+                    {formatCurrency(value)}
+                </div>
+            ),
             sortable: true,
         },
         {
             id: 'status',
             label: 'Status',
             minWidth: 110,
-            filterType: 'status',
-            statusColors: {
-                draft: 'default',
-                pending: 'warning',
-                approved: 'info',
-                sent: 'secondary',
-                received: 'success',
-                partial: 'warning',
-                cancelled: 'error',
-                completed: 'success',
-            },
-            format: (value) => {
-                const config = STATUS_CONFIG[value] || STATUS_CONFIG.draft;
+            format: (value: string) => {
+                const config = getStatusBadge(value);
                 return (
                     <span
-                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${config.color}`}
+                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${config.bg} ${config.color}`}
                     >
-                        {config.icon}
                         {config.label}
                     </span>
                 );
@@ -572,318 +620,345 @@ export default function PurchaseOrder() {
             sortable: true,
         },
         {
-            id: 'payment_status',
-            label: 'Payment',
-            minWidth: 90,
-            format: (value) => {
-                const config =
-                    PAYMENT_STATUS_CONFIG[value || 'unpaid'] ||
-                    PAYMENT_STATUS_CONFIG.unpaid;
+            id: 'funds_released',
+            label: 'Funds',
+            minWidth: 100,
+            format: (value: boolean | number) => {
+                const isReleased = value === true || value === 1;
                 return (
                     <span
-                        className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${config.color}`}
+                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
+                            isReleased
+                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400'
+                                : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
+                        }`}
                     >
-                        {config.label}
+                        {isReleased ? (
+                            <CheckCircle className="h-3 w-3" />
+                        ) : (
+                            <Clock className="h-3 w-3" />
+                        )}
+                        {isReleased ? 'Released' : 'Pending'}
                     </span>
                 );
             },
+            sortable: true,
         },
         {
-            id: 'total_amount',
-            label: 'Total',
+            id: 'request_date',
+            label: 'Request Date',
             minWidth: 110,
-            align: 'right',
-            format: (value, row) => (
-                <div className="text-right">
-                    <div className="font-semibold text-slate-800 dark:text-slate-200">
-                        {formatCurrency(value || 0)}
-                    </div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400">
-                        Items: {row.items_count || 0}
-                    </div>
+            format: (value: string) => (
+                <div className="text-sm text-slate-600 dark:text-slate-400">
+                    {formatDate(value)}
                 </div>
             ),
             sortable: true,
         },
         {
-            id: 'expected_delivery_date',
-            label: 'Delivery',
-            minWidth: 100,
-            format: (value, row) => {
-                const deliveryDate =
-                    row.expected_delivery_date || row.required_date || value;
+            id: 'items',
+            label: 'Items',
+            minWidth: 80,
+            format: (value: any[]) => {
+                const count = value?.length || 0;
                 return (
-                    <div>
-                        <div className="text-sm text-slate-800 dark:text-slate-200">
-                            {deliveryDate ? formatDate(deliveryDate) : 'N/A'}
-                        </div>
-                        <div className="text-xs text-slate-500 dark:text-slate-400">
-                            Expected
-                        </div>
-                    </div>
+                    <span className="inline-flex items-center gap-1 text-sm">
+                        <Package className="h-3.5 w-3.5 text-slate-400" />
+                        {count}
+                    </span>
                 );
             },
-            sortable: true,
+        },
+    ];
+
+    // Actions for the table
+    const actions = [
+        {
+            label: 'View',
+            icon: <Eye className="h-4 w-4" />,
+            color: 'primary',
+            onClick: handleView,
         },
         {
-            id: 'created_at',
-            label: 'Created',
-            minWidth: 100,
-            format: (value) => formatDate(value),
-            sortable: true,
-        },
-        {
-            id: 'approved_at',
-            label: 'Approved',
-            minWidth: 100,
-            format: (value, row) => {
-                const approvedDate = row.approved_at || row.updated_at;
-                return approvedDate ? formatDate(approvedDate) : 'N/A';
+            label: 'Release Funds',
+            icon: <Wallet className="h-4 w-4" />,
+            color: 'success',
+            onClick: (row: PurchaseOrder) => handleReleaseFunds(row),
+            show: (row: PurchaseOrder) => {
+                const isReleased =
+                    row.funds_released === true || row.funds_released === 1;
+                return row.status === 'approved' && !isReleased;
             },
-            sortable: true,
+        },
+        {
+            label: 'Convert to PO',
+            icon: <Send className="h-4 w-4" />,
+            color: 'warning',
+            onClick: (row: PurchaseOrder) => handleConvertToPO(row),
+            show: (row: PurchaseOrder) =>
+                row.status === 'approved' && !row.converted_to_po_id,
         },
     ];
-
-    const actions: Action<PurchaseOrder>[] = [
-        // {
-        //     label: 'View',
-        //     icon: <Eye className="h-4 w-4" />,
-        //     color: 'primary',
-        //     onClick: handleView,
-        // },
-        // {
-        //     label: 'Edit',
-        //     icon: <Edit className="h-4 w-4" />,
-        //     color: 'warning',
-        //     onClick: handleEdit,
-        //     show: (row) => row.status === 'draft' || row.status === 'pending',
-        // },
-        // {
-        //     label: 'Receive',
-        //     icon: <Package className="h-4 w-4" />,
-        //     color: 'info',
-        //     onClick: (row) => handleMarkAsReceived(row.id),
-        //     show: (row) => row.status === 'approved' || row.status === 'sent',
-        // },
-        // {
-        //     label: 'Cancel',
-        //     icon: <XCircle className="h-4 w-4" />,
-        //     color: 'error',
-        //     onClick: (row) => handleCancel(row.id),
-        //     show: (row) =>
-        //         row.status !== 'cancelled' && row.status !== 'completed',
-        // },
-        // {
-        //     label: 'Delete',
-        //     icon: <Trash2 className="h-4 w-4" />,
-        //     color: 'error',
-        //     onClick: (row) => handleDelete(row.id),
-        //     show: (row) => row.status === 'draft' || row.status === 'cancelled',
-        // },
-    ];
-
-    // Status options for filtering (only relevant ones for approved orders)
-    const statusOptions = [
-        { value: '', label: 'All Status' },
-        { value: 'approved', label: 'Approved' },
-        { value: 'sent', label: 'Sent' },
-        { value: 'received', label: 'Received' },
-        { value: 'partial', label: 'Partial' },
-        { value: 'completed', label: 'Completed' },
-        { value: 'cancelled', label: 'Cancelled' },
-    ];
-
-    // ============================================
-    // RENDER
-    // ============================================
 
     return (
         <AppLayout
             breadcrumbs={[
                 {
-                    title: 'Bulk Store',
-                    href: '/',
+                    title: 'Admin',
+                    href: '',
                 },
                 {
-                    title: 'Approved Purchase Orders',
+                    title: 'Purchase Orders',
                     href: '',
                 },
             ]}
         >
-            <div className="min-h-screen bg-slate-100 px-4 py-6 dark:bg-slate-900">
-                <Container>
-                    {/* Header */}
-                    <PageHeader
-                        title="Approved Purchase Orders"
-                        subtitle="View all approved purchase orders ready for processing"
+            <div className="bg-blue-50 p-2 h-full">
+                <PageHeader
+                    title={'Purchase Orders'}
+                    subtitle="Manage all approved purchase orders for the release of funds"
+                />
+
+                <ReusableTable
+                    title={'Purchase Orders'}
+                    data={purchaseOrders}
+                    columns={columns}
+                    actions={actions}
+                    loading={loading}
+                    filterPlaceholder="Search by PR #, supplier, department..."
+                    emptyMessage="No purchase orders found"
+                    statusFilterKey="status"
+                    statusOptions={[
+                        { value: 'approved', label: 'Approved' },
+                        { value: 'pending', label: 'Pending' },
+                        { value: 'draft', label: 'Draft' },
+                        { value: 'rejected', label: 'Rejected' },
+                        { value: 'completed', label: 'Completed' },
+                    ]}
+                    rowsPerPageOptions={[10, 25, 50, 100]}
+                    defaultRowsPerPage={10}
+                    defaultOrderBy="created_at"
+                    defaultOrder="desc"
+                />
+
+                {/* View Purchase Order Modal */}
+                {selectedOrder && (
+                    <ViewPurchaseOrderModal
+                        isOpen={showViewModal}
+                        onClose={() => {
+                            setShowViewModal(false);
+                            setSelectedOrder(null);
+                        }}
+                        purchaseOrder={selectedOrder}
+                        onConvertToPO={
+                            selectedOrder.status === 'approved' &&
+                            !selectedOrder.converted_to_po_id
+                                ? () => handleConvertToPO(selectedOrder)
+                                : undefined
+                        }
+                        onReleaseFunds={
+                            selectedOrder.status === 'approved' &&
+                            (selectedOrder.funds_released === false ||
+                                selectedOrder.funds_released === 0 ||
+                                selectedOrder.funds_released === null)
+                                ? () => {
+                                      handleReleaseFunds(selectedOrder);
+                                      setShowViewModal(false);
+                                  }
+                                : undefined
+                        }
+                        isProcessing={isProcessing}
+                        userRole={'admin'}
                     />
+                )}
 
-                    {/* Stats Cards - Approved Orders Only */}
-                    {/* <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-                        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-sm text-slate-500 dark:text-slate-400">
-                                        Total Approved
-                                    </p>
-                                    <p className="text-2xl font-bold text-slate-800 dark:text-slate-200">
-                                        {stats.total}
-                                    </p>
-                                </div>
-                                <div className="rounded-full bg-blue-100 p-2 dark:bg-blue-900/30">
-                                    <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                {/* Release Funds Modal */}
+                <CustomModal
+                    isOpen={showReleaseFundsModal}
+                    onClose={() => {
+                        setShowReleaseFundsModal(false);
+                        setFundReleaseCode('');
+                    }}
+                    title="Release Funds"
+                    description="Enter approval code to release funds"
+                    maxWidth="md"
+                    footer={
+                        <div className="flex items-center justify-end gap-2">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                    setShowReleaseFundsModal(false);
+                                    setFundReleaseCode('');
+                                }}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                size="sm"
+                                onClick={handleConfirmReleaseFunds}
+                                disabled={
+                                    isProcessing || !fundReleaseCode.trim()
+                                }
+                                className="bg-emerald-600 hover:bg-emerald-700"
+                            >
+                                {isProcessing ? (
+                                    <>
+                                        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                                        Processing...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Wallet className="mr-1.5 h-3.5 w-3.5" />
+                                        Release Funds
+                                    </>
+                                )}
+                            </Button>
+                        </div>
+                    }
+                >
+                    {selectedOrder && (
+                        <>
+                            {/* Order Summary */}
+                            <div className="rounded-lg bg-emerald-50 p-3 dark:bg-emerald-900/20">
+                                <div className="grid grid-cols-2 gap-2 text-xs">
+                                    <div>
+                                        <Label className="text-[10px] text-emerald-600">
+                                            Order #
+                                        </Label>
+                                        <p className="font-medium text-emerald-800 dark:text-emerald-300">
+                                            {selectedOrder.pr_number}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <Label className="text-[10px] text-emerald-600">
+                                            Department
+                                        </Label>
+                                        <p className="font-medium text-emerald-800 dark:text-emerald-300">
+                                            {selectedOrder.department?.name ||
+                                                selectedOrder.department_name ||
+                                                'N/A'}
+                                        </p>
+                                    </div>
+                                    <div className="col-span-2">
+                                        <Label className="text-[10px] text-emerald-600">
+                                            Amount to Release
+                                        </Label>
+                                        <p className="text-base font-bold text-emerald-700 dark:text-emerald-300">
+                                            {formatCurrency(
+                                                selectedOrder.estimated_total ||
+                                                    selectedOrder.total_amount ||
+                                                    0,
+                                            )}
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-sm text-slate-500 dark:text-slate-400">
-                                        Received
-                                    </p>
-                                    <p className="text-2xl font-bold text-slate-800 dark:text-slate-200">
-                                        {stats.received}
-                                    </p>
-                                </div>
-                                <div className="rounded-full bg-green-100 p-2 dark:bg-green-900/30">
-                                    <Package className="h-5 w-5 text-green-600 dark:text-green-400" />
-                                </div>
-                            </div>
-                        </div>
-                        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-sm text-slate-500 dark:text-slate-400">
-                                        Completed
-                                    </p>
-                                    <p className="text-2xl font-bold text-slate-800 dark:text-slate-200">
-                                        {stats.completed}
-                                    </p>
-                                </div>
-                                <div className="rounded-full bg-emerald-100 p-2 dark:bg-emerald-900/30">
-                                    <CheckCircle className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-                                </div>
-                            </div>
-                        </div>
-                        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-sm text-slate-500 dark:text-slate-400">
-                                        Total Amount
-                                    </p>
-                                    <p className="text-2xl font-bold text-slate-800 dark:text-slate-200">
-                                        {formatCurrency(stats.totalAmount)}
-                                    </p>
-                                </div>
-                                <div className="rounded-full bg-yellow-100 p-2 dark:bg-yellow-900/30">
-                                    <DollarSign className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
-                                </div>
-                            </div>
-                        </div>
-                        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-sm text-slate-500 dark:text-slate-400">
-                                        Balance
-                                    </p>
-                                    <p className="text-2xl font-bold text-slate-800 dark:text-slate-200">
-                                        {formatCurrency(stats.balanceAmount)}
-                                    </p>
-                                </div>
-                                <div className="rounded-full bg-red-100 p-2 dark:bg-red-900/30">
-                                    <CreditCard className="h-5 w-5 text-red-600 dark:text-red-400" />
-                                </div>
-                            </div>
-                        </div>
-                    </div> */}
 
-                    {/* Table */}
-                    <div className="mt-6">
-                        <ReusableTable
-                            columns={columns}
-                            data={purchaseOrders}
-                            actions={actions}
-                            loading={loading}
-                            title="Approved Purchase Orders"
-                            rowsPerPageOptions={[10, 25, 50, 100]}
-                            defaultRowsPerPage={10}
-                            defaultOrderBy="created_at"
-                            defaultOrder="desc"
-                            filterPlaceholder="Search by PO number, supplier, department..."
-                            statusFilterKey="status"
-                            statusOptions={statusOptions}
-                            emptyMessage="No approved purchase orders found"
-                            onSearchChange={(value) => {
-                                setSearchTerm(value);
-                                setPagination((prev) => ({
-                                    ...prev,
-                                    currentPage: 1,
-                                }));
-                            }}
-                            onPageChange={(page) => {
-                                setPagination((prev) => ({
-                                    ...prev,
-                                    currentPage: page,
-                                }));
-                            }}
-                            onPageSizeChange={(size) => {
-                                setPagination((prev) => ({
-                                    ...prev,
-                                    pageSize: size,
-                                    currentPage: 1,
-                                }));
-                            }}
-                            pagination={{
-                                currentPage: pagination.currentPage,
-                                pageSize: pagination.pageSize,
-                                totalItems: pagination.totalItems,
-                                totalPages: pagination.totalPages,
-                            }}
-                        />
+                            {/* Approval Code Input */}
+                            <div className="space-y-1.5">
+                                <Label
+                                    htmlFor="fundReleaseCode"
+                                    className="text-xs font-medium"
+                                >
+                                    Approval Code{' '}
+                                    <span className="text-red-500">*</span>
+                                </Label>
+                                <div className="relative">
+                                    <div className="absolute inset-y-0 left-0 flex items-center pl-3">
+                                        <Key className="h-4 w-4 text-slate-400" />
+                                    </div>
+                                    <input
+                                        id="fundReleaseCode"
+                                        type="password"
+                                        className="w-full rounded-lg border border-slate-300 py-2 pr-4 pl-10 text-sm uppercase focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200"
+                                        placeholder="Enter approval code"
+                                        value={fundReleaseCode}
+                                        onChange={(e) =>
+                                            setFundReleaseCode(
+                                                e.target.value.toUpperCase(),
+                                            )
+                                        }
+                                        autoComplete="off"
+                                    />
+                                </div>
+                                {selectedOrder.approval_code && (
+                                    <p className="text-[10px] text-slate-400">
+                                        Expected code:{' '}
+                                        <span className="font-mono font-medium text-emerald-600 dark:text-emerald-400">
+                                            {selectedOrder.approval_code}
+                                        </span>
+                                    </p>
+                                )}
+                            </div>
+
+                            {/* Comments */}
+                            <div className="space-y-1">
+                                <Label
+                                    htmlFor="fundReleaseComments"
+                                    className="text-xs font-medium"
+                                >
+                                    Comments (Optional)
+                                </Label>
+                                <textarea
+                                    id="fundReleaseComments"
+                                    className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 focus:outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200"
+                                    placeholder="Add comments..."
+                                    value={fundReleaseComments}
+                                    onChange={(e) =>
+                                        setFundReleaseComments(e.target.value)
+                                    }
+                                    rows={2}
+                                />
+                            </div>
+
+                            {/* Alert */}
+                            <Alert className="border-emerald-200 bg-emerald-50 py-1.5 dark:border-emerald-800 dark:bg-emerald-900/20">
+                                <Wallet className="h-3.5 w-3.5 text-emerald-600" />
+                                <AlertTitle className="text-[10px] font-medium text-emerald-800 dark:text-emerald-300">
+                                    Fund Release Confirmation
+                                </AlertTitle>
+                                <AlertDescription className="text-[10px] text-emerald-700 dark:text-emerald-400">
+                                    Budget will be committed upon release.
+                                </AlertDescription>
+                            </Alert>
+                        </>
+                    )}
+                </CustomModal>
+
+                {/* Funds Released Success Modal */}
+                <CustomModal
+                    isOpen={showFundsReleasedModal}
+                    onClose={() => setShowFundsReleasedModal(false)}
+                    title=""
+                    maxWidth="sm"
+                    showCloseButton={false}
+                    footer={
+                        <Button
+                            className="w-full bg-emerald-600 hover:bg-emerald-700"
+                            size="sm"
+                            onClick={() => setShowFundsReleasedModal(false)}
+                        >
+                            Done
+                        </Button>
+                    }
+                >
+                    <div className="py-2 text-center">
+                        <div className="flex justify-center">
+                            <div className="rounded-full bg-emerald-100 p-3 dark:bg-emerald-900/30">
+                                <CheckCircle className="h-8 w-8 text-emerald-600 dark:text-emerald-400" />
+                            </div>
+                        </div>
+                        <h4 className="mt-3 text-base font-bold text-slate-800 dark:text-slate-200">
+                            Funds Released!
+                        </h4>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            Funds have been successfully released. Budget
+                            committed.
+                        </p>
                     </div>
-                </Container>
+                </CustomModal>
             </div>
-
-            {/* Approval Modal */}
-            <ApprovalModal
-                isOpen={showApprovalModal}
-                onClose={() => {
-                    setShowApprovalModal(false);
-                    setSelectedOrder(null);
-                }}
-                onConfirm={handleConfirmApproval}
-                purchaseOrder={
-                    selectedOrder
-                        ? {
-                              id: selectedOrder.id,
-                              po_number:
-                                  selectedOrder.po_number ||
-                                  selectedOrder.pr_number,
-                              pr_number: selectedOrder.pr_number,
-                              supplier_name:
-                                  selectedOrder.supplier_name || 'N/A',
-                              total_amount: selectedOrder.total_amount,
-                              department_name:
-                                  selectedOrder.department_name || 'N/A',
-                              status: selectedOrder.status,
-                              priority: selectedOrder.priority,
-                              created_at: selectedOrder.created_at,
-                          }
-                        : {
-                              id: 0,
-                              po_number: '',
-                              pr_number: '',
-                              supplier_name: '',
-                              total_amount: 0,
-                              department_name: '',
-                              status: '',
-                              priority: '',
-                              created_at: '',
-                          }
-                }
-                userRole={userRole}
-                isLoading={isApproving}
-            />
         </AppLayout>
     );
 }

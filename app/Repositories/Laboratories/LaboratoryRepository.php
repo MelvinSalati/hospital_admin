@@ -6,7 +6,7 @@ use App\Helpers\NumberGenerator;
 use App\Models\Laboratories\Laboratory;
 use App\Models\Patients\LabOrder;
 use App\Models\Patients\LabOrderItem;
-use Illuminate\Support\Facades\DB; 
+use Illuminate\Support\Facades\DB;
 
 
 class LaboratoryRepository
@@ -20,9 +20,10 @@ class LaboratoryRepository
         $this->laboratory    = $laboratory;
     }
 
-    public function getAllLaboratoryServices(){
+    public function getAllLaboratoryServices()
+    {
         return $this->laboratory->all();
-    } 
+    }
 
     /**
      *  Create order laboratory
@@ -45,7 +46,7 @@ class LaboratoryRepository
              * Check if a laboratory order batch already exists
              * for this patient and visit.
              */
-            
+
             $orderBatch = LabOrder::where('visit_token', $visitToken)
                 ->where('patient_id', $patientId)
                 ->first();
@@ -79,18 +80,26 @@ class LaboratoryRepository
                     'created_by'    => $item['created_by'] ?? 1,
                 ]);
             }
-            
+
             return $createdItems;
         });
     }
 
 
-    public function createLaboratroryOrderBatch(string $visitToken, int $patientId){
-        return  LabOrder::create([ 'visit_token'=> $visitToken, 'patient_id'=> $patientId ]);
+    public function createLaboratroryOrderBatch(string $visitToken, int $patientId)
+    {
+        return  LabOrder::create(['visit_token' => $visitToken, 'patient_id' => $patientId]);
     }
 
-    public function createDashboard(){
+    /**
+     *  Displays the patients queued to lab department.
+     * 
+     */
 
+    public function getlaboratoryQueue()
+    {
+        $queuedToLaboratory =  Laboratory::with(['patient', 'order', 'orderedBy', 'visitToken'])->get();
+
+        return $queuedToLaboratory->map(function ($queuedToLaboratory) {});
     }
-   
 }

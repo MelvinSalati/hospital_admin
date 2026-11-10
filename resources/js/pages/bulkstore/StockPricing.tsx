@@ -193,7 +193,7 @@ const PricePreview = ({ cashPrice, insurancePrice }: any) => {
 export default function StockPricing() {
     const { props } = usePage();
     const { products } = props as any;
-
+    console.log(products);
     const [loading, setLoading] = useState(false);
     const [productList, setProductList] = useState<Product[]>([]);
     const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);

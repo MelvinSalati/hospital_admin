@@ -13,6 +13,10 @@ return [
     | a conventional file to locate the various service credentials.
     |
     */
+    'paddle_ocr' => [
+        'base_url' => env('PADDLE_OCR_BASE_URL', 'http://csczgh5jendzx9pelwhlaynm.169.58.93.194.sslip.io'),
+        'timeout'  => env('PADDLE_OCR_TIMEOUT', 120),
+    ],
 
     'postmark' => [
         'key' => env('POSTMARK_API_KEY'),

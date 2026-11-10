@@ -3,103 +3,90 @@
 namespace App\Http\Controllers\Laboratories;
 
 use App\Http\Controllers\Controller;
-use App\Services\ProductService;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Validator;
+use App\Models\BulkStores\StockLedger;
+use App\Models\Services\Service;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 
 class LaboratoryBulkStoreController extends Controller
 {
-    protected ProductService $productService;
+    public function index(int $departmentId)
+    {
+        return Inertia::render('laboratories/bulkstore', [
+            'services' => Service::all(),
+            'orderedItems' => \App\Models\BulkStores\DepartmentRequisition::with([
+                'department:id,name',
+                'requestedBy:id,name',
+                'items.product:id,product_name,product_code',
+            ])->where('department_id', $departmentId)
+                ->latest()
+                ->get()
+                ->map(function ($req) {
+                    return [
+                        'id'                 => $req->id,
+                        'requisition_uuid'   => $req->requisition_uuid,
+                        'requisition_number' => $req->requisition_number,
+                        'status'             => $req->status,
+                        'priority'           => $req->priority,
+                        'requested_at'       => $req->requested_at?->toIso8601String(),
+                        'required_by_date'   => $req->required_by_date?->format('Y-m-d'),
+                        'estimated_total'    => (float) ($req->estimated_total ?? 0),
+                        'items_count'        => $req->items->count(),
+                        'department'         => $req->department?->name,
+                        'requested_by'       => $req->requestedBy?->name,
+                        'justification'      => $req->justification,
 
-    public function __construct(ProductService $productService)
-    {
-        $this->productService  = $productService;
-    }
-    /**
-     * Display a listing of the resource.
-     */
-    public function index()
-    {
-        return Inertia::render('laboratories/bulkstore',[
-            'products' => $this->productService->getProducts(4)
+                        // ─── line items for the details modal ───
+                        'items' => $req->items->map(function ($item) {
+                            return [
+                                'id'                    => $item->id,
+                                'product_id'            => $item->product_id,
+                                'product_name'          => $item->product?->product_name ?? 'Unknown',
+                                'product_code'          => $item->product?->product_code,
+                                'quantity_requested'    => $item->quantity_requested,
+                                'quantity_approved'     => $item->quantity_approved,
+                                'quantity_fulfilled'    => $item->quantity_fulfilled,
+                                'unit'                  => $item->unit,
+                                'estimated_unit_price'  => (float) ($item->estimated_unit_price ?? 0),
+                                'estimated_total'       => (float) ($item->estimated_total ?? 0),
+                                'batch_number'          => $item->batch_number,
+                                'expiry_date'           => $item->expiry_date?->format('Y-m-d'),
+                                'status'                => $item->status,
+                                'notes'                 => $item->notes,
+                            ];
+                        })->values(),
+                    ];
+                }),
         ]);
     }
 
-    public function addProduct(Request $request){
-        try{
-            $data = $request->input('productDetails');
-            $validateInputs     = Validator::make($data, [
-                'product_name'  => 'required|string',
-                'quantity'      => 'required|numeric',
-                'category_id'   => 'required|integer',
-                'expiry_date'        => 'required|date',
-                'product_code'  => 'required|numeric',
-                'unit'          => 'required'
-            ]);
-
-            if ($validateInputs->fails()) {
-                return response()->json([
-                    'message'   => $validateInputs->errors()
-                ], 500);
-            }
-
-            if($this->productService->addProduct($data)){
-                return response()->json([
-                    'message'   => "Product added successfully!"
-                ], 201);
-            }
-
-        }catch(\Exception $e){
-            return $e->getMessage();
+    public function getProducts()
+    {
+        try {
+            $products  =  StockLedger::with(['product'])->get()->map(function ($item) {
+                return [
+                    'id' => $item->id,
+                    'product_id' => $item->product_id,
+                    'product_name' => $item->product?->product_name ?? 'Unknown',
+                    'unit' => $item->unit,
+                    'quantity' => $item->closing_balance ?? 0,
+                    'unit_price' => $item->unit_price,
+                    'total_value' => $item->total_value,
+                    'batch_number' => $item->batch_number,
+                    'expiry_date' => $item->expiry_date ? $item->expiry_date->format('Y-m-d') : null,
+                ];
+            });
+        } catch (\Exception $e) {
+            Log::info('Error fetching products: ' . $e->getMessage());
+            return response()->json([
+                'status' => false,
+                'message' => 'Failed to fetch products',
+                'error' => $e->getMessage()
+            ], 500);
         }
-    }
 
-    /**
-     * Show the form for creating a new resource.
-     */
-    public function create()
-    {
-        //
-    }
-
-    /**
-     * Store a newly created resource in storage.
-     */
-    public function store(Request $request)
-    {
-        //
-    }
-
-    /**
-     * Display the specified resource.
-     */
-    public function show(string $id)
-    {
-        //
-    }
-
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(string $id)
-    {
-        //
-    }
-
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, string $id)
-    {
-        //
-    }
-
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(string $id)
-    {
-        //
+        return response()->json([
+            'data' => $products
+        ]);
     }
 }

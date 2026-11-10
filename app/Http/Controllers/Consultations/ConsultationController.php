@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Consultations;
 
 use App\Http\Controllers\Controller;
 use App\Models\Appointments\Appointment;
+use App\Models\Departments\Department;
 use App\Models\PatientVisit;
 use App\Services\AppointmentService;
 use Illuminate\Http\Request;
@@ -19,6 +20,75 @@ class ConsultationController extends Controller
     public function __construct(AppointmentService $appointmentService)
     {
         $this->appointmentService = $appointmentService;
+    }
+
+    public function dashboard()
+    {
+        $trendRangeDays = 7;
+        $departmentId   = 2;
+
+        $department = Department::findOrFail($departmentId);
+
+        // ── Today's snapshot for department 6 ───────────────────
+        $base = PatientVisit::query()
+            ->where('patient_visits.department_id', $departmentId)
+            ->whereDate('patient_visits.created_at', today());
+
+        $seenQuery = (clone $base)->where('patient_visits.status', 0);
+
+        $males = (clone $seenQuery)
+            ->join('patients', 'patients.id', '=', 'patient_visits.patient_id')
+            ->where('patients.gender', 'Male')
+            ->count();
+
+        $females = (clone $seenQuery)
+            ->join('patients', 'patients.id', '=', 'patient_visits.patient_id')
+            ->where('patients.gender', 'Female')
+            ->count();
+
+        $departmentStats = collect([[
+            'department_name'      => $department->name,
+            'seen_today'           => (clone $seenQuery)->count(),
+            'males'                => $males,
+            'females'              => $females,
+            'in_queue'             => (clone $base)->where('patient_visits.status', 1)->count(),
+            'average_wait_minutes' => null,
+            'completed_today'      => (clone $base)->where('patient_visits.status', 1)->count(),
+        ]]);
+
+        // ── Last N days for department 6 ────────────────────────
+        $departmentTrend = collect(range($trendRangeDays - 1, 0))
+            ->map(function (int $offset) use ($departmentId, $department) {
+                $date = now()->subDays($offset);
+
+                return [
+                    'date'            => $date->format('D'),
+                    $department->name => PatientVisit::where('patient_visits.department_id', $departmentId)
+                        ->whereDate('patient_visits.created_at', $date)
+                        ->count(),
+                ];
+            })
+            ->values();
+
+        // ── Totals ──────────────────────────────────────────────
+        $totals = [
+            'seen_today' => $departmentStats->sum('seen_today'),
+            'males'      => $departmentStats->sum('males'),
+            'females'    => $departmentStats->sum('females'),
+            'in_queue'   => $departmentStats->sum('in_queue'),
+        ];
+
+        return Inertia::render('nurses/dashboard', [
+            'departmentStats' => $departmentStats,
+            'departmentTrend' => $departmentTrend,
+            'totals'          => $totals,
+            'trendRangeDays'  => $trendRangeDays,
+            'currentUser'     => [
+                'name'        => $department->name,
+                'role'        => null,
+                'departments' => [$department->name],
+            ],
+        ]);
     }
 
     public function queue()
@@ -127,16 +197,7 @@ class ConsultationController extends Controller
     /**
      * Display a listing of the resource.
      */
-    public function dashboard()
-    {
-        return Inertia::render('consultations/dashboard', [
-            'metrics'  => [
-                'overview' => [],
-                'appoointments' => [],
-                'patients' => []
-            ]
-        ]);
-    }
+
 
 //     public function queue()
 //     {
@@ -175,25 +236,7 @@ class ConsultationController extends Controller
 // ]);
 //     }
 
-    public function appointments()
-    {
-        $userId = Auth::id();
 
-        if (!$userId) {
-            Log::warning('No authenticated user found in appointments method');
-            return Inertia::render('consultations/appointment', [
-                'appointments' => [],
-                'error' => 'User not authenticated'
-            ]);
-        }
-
-        $appointments = $this->appointmentService->getDoctorAppointments($userId);
-
-        return Inertia::render('consultations/appointment', [
-            'appointments' => $appointments,
-            'user_id' => $userId
-        ]);
-    }
 
     /**
      * Show the form for creating a new resource.

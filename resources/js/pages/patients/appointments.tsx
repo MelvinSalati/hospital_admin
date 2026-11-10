@@ -15,6 +15,7 @@ import {
     Building2,
     Trash2,
     Edit2,
+    User2,
 } from 'lucide-react';
 import { useState } from 'react';
 import Notiflix from 'notiflix';
@@ -136,8 +137,9 @@ const getStatusBadge = (status: string) => {
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function PatientsAppointments() {
-    const { appointments = [], patientId } = usePage().props as PageProps;
+    const { appointments = [], patientId, auth } = usePage().props as PageProps;
     const [isBookingOpen, setIsBookingOpen] = useState(false);
+    console.log(appointments);
     const [selectedAppointment, setSelectedAppointment] =
         useState<Appointment | null>(null);
     const [viewModalOpen, setViewModalOpen] = useState(false);
@@ -172,6 +174,7 @@ export default function PatientsAppointments() {
     };
 
     const handleCancelAppointment = (row: Appointment) => {
+        creatorBook;
         Notiflix.Confirm.show(
             'Cancel Appointment',
             `Are you sure you want to cancel appointment ${row.appointment_number || `#${row.id}`}?`,
@@ -193,39 +196,15 @@ export default function PatientsAppointments() {
 
     const columns: Column<Appointment>[] = [
         {
-            id: 'appointment_number',
-            label: 'Appointment #',
-            sortable: true,
-            format: (value, row) => (
-                <div className="flex items-center gap-2">
-                    <div className="rounded-lg bg-blue-100 p-1.5 text-blue-600">
-                        <CalendarIcon size={14} />
-                    </div>
-                    <span className="font-mono text-sm font-semibold text-blue-600">
-                        {value || `APT-${row.id}`}
-                    </span>
-                </div>
-            ),
-        },
-
-        {
-            id: 'doctor_name',
+            id: 'created_by',
             label: 'Doctor',
             sortable: true,
             format: (value, row) => (
                 <div className="flex items-center gap-2">
-                    <Stethoscope size={14} className="text-gray-400" />
-                    <div>
-                        <span className="text-sm text-gray-700">
-                            {value || 'Not assigned'}
-                        </span>
-                        {row.department && (
-                            <div className="flex items-center gap-1 text-xs text-gray-400">
-                                <Building2 size={10} />
-                                {row.department}
-                            </div>
-                        )}
-                    </div>
+                    <User2 size={14} className="text-gray-400" />
+                    <span className="text-sm text-gray-700">
+                        {value || row.created_by || 'system user'}
+                    </span>
                 </div>
             ),
         },
@@ -254,7 +233,7 @@ export default function PatientsAppointments() {
             },
         },
         {
-            id: 'reason',
+            id: 'notes',
             label: 'notes',
             sortable: true,
             format: (value, row) => (
@@ -291,6 +270,19 @@ export default function PatientsAppointments() {
                     </span>
                 );
             },
+        },
+        {
+            id: 'created_by',
+            label: 'Created By',
+            sortable: true,
+            format: (value, row) => (
+                <div className="flex items-center gap-2">
+                    <User2 size={14} className="text-gray-400" />
+                    <span className="text-sm text-gray-700">
+                        {value || row.created_by || 'system user'}
+                    </span>
+                </div>
+            ),
         },
     ];
 
@@ -399,7 +391,16 @@ export default function PatientsAppointments() {
                             </div>
 
                             <div className="">
-                                <BookAppointment />
+                                <BookAppointment
+                                    auth={auth}
+                                    onClose={handleCloseModal}
+                                    onSuccess={() => {
+                                        // refresh the appointments list from the server
+                                        router.reload({
+                                            only: ['appointments'],
+                                        });
+                                    }}
+                                />
                             </div>
                         </div>
                     </div>

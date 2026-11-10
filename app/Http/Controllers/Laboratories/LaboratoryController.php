@@ -2,56 +2,186 @@
 
 namespace App\Http\Controllers\Laboratories;
 
+use App\Jobs\ProcessLabResultOcrJob;
 use App\Http\Controllers\Controller;
-use App\Services\Laboratories\LaboratoryService;
-use App\Services\QueueService;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
+use App\Models\Patients\LabOrder;
 use App\Models\Laboratory\TestConfig;
 use App\Models\Laboratory\TestCategory;
+use App\Models\Laboratories\LabResultFile;
+use App\Models\Patients\Patient;
+use App\Models\User;
+use App\Notifications\LabResultsReadyNotification;
+use App\Services\Laboratories\LaboratoryService;
+use App\Services\Laboratories\LabResultPdfService;
+use Smalot\PdfParser\Parser;
+use App\Services\QueueService;
+use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
+use Carbon\Carbon;
+use Throwable;
 
 class LaboratoryController extends Controller
 {
     protected $labsService;
     protected $queueService;
-    public function __construct(LaboratoryService $labsService, QueueService $queueService)
-    {
-        $this->labsService  = $labsService;
+    protected LabResultPdfService $labResultPdfService;
+
+    public function __construct(
+        LaboratoryService $labsService,
+        QueueService $queueService,
+        LabResultPdfService $labResultPdfService
+    ) {
+        $this->labsService = $labsService;
         $this->queueService = $queueService;
+        $this->labResultPdfService = $labResultPdfService;
     }
 
-    public function dashboard(){
-        return Inertia::render('laboratories/dashboard',[
+    public function dashboard()
+    {
+        return Inertia::render('laboratories/dashboard', []);
+    }
 
+    public function reports()
+    {
+        return Inertia::render('laboratories/logistics');
+    }
+
+    public function processed()
+    {
+        $queue = LabOrder::query()
+            ->where('status', 'completed')
+            ->whereExists(function ($query) {
+                $query->selectRaw('1')
+                    ->from('lab_result_files as lrf')
+                    ->join(
+                        'lab_result_items as lri',
+                        'lri.lab_result_id',
+                        '=',
+                        'lrf.id'
+                    )
+                    ->whereColumn('lrf.lab_order_id', 'lab_orders.id')
+                    ->whereColumn('lri.lab_result_id', 'lrf.id');
+            })
+            ->with([
+                'patient:id,first_name,last_name,gender,patient_number',
+                'orderedBy:id,name',
+                'processor:id,name',
+            ])
+            ->get()
+            ->map(function ($order) {
+                $items = \Illuminate\Support\Facades\DB::table('lab_result_files as lrf')
+                    ->join(
+                        'lab_result_items as lri',
+                        'lri.lab_result_id',
+                        '=',
+                        'lrf.id'
+                    )
+                    ->where('lrf.lab_order_id', $order->id)
+                    ->select([
+                        'lri.id',
+                        'lri.lab_result_id',
+                        'lri.test_name',
+                        'lri.value',
+                        'lri.value_numeric',
+                        'lri.unit',
+                        'lri.flag',
+                        'lri.ref_low',
+                        'lri.ref_high',
+                        'lri.verified_by',
+                        'lri.verified_at',
+                        'lrf.id as result_file_id',
+                        'lrf.original_name',
+                        'lrf.path',
+                        'lrf.mime_type',
+                        'lrf.report_no',
+                        'lrf.created_at as file_uploaded_at',
+                    ])
+                    ->get();
+
+                return [
+                    'id' => $order->patient?->id,
+                    'lab_order_id' => $order->id,
+                    'token' => $order->token ?? $order->visit_token ?? null,
+                    'first_name' => $order->patient?->first_name,
+                    'last_name' => $order->patient?->last_name,
+                    'gender' => $order->patient?->gender,
+                    'patient_number' => $order->patient?->patient_number,
+                    'status' => $order->status,
+                    'created_at' => $order->created_at?->toIso8601String(),
+                    'ordered_by' => $order->orderedBy?->name,
+                    'total_amount' => $order->total_amount,
+
+                    'tests' => $items->map(fn($item) => [
+                        'id' => $item->id,
+                        'test_name' => $item->test_name,
+                        'result_value' => $item->value,
+                        'value_numeric' => $item->value_numeric,
+                        'unit' => $item->unit,
+                        'flag' => $item->flag,
+                        'reference_range' => $item->ref_low !== null
+                            || $item->ref_high !== null
+                            ? trim(
+                                ($item->ref_low ?? '') . ' - ' .
+                                    ($item->ref_high ?? ''),
+                                ' -'
+                            )
+                            : null,
+                        'verified_by' => $item->verified_by,
+                        'verified_at' => $item->verified_at,
+                        'result_file' => [
+                            'id' => $item->result_file_id,
+                            'original_name' => $item->original_name,
+                            'path' => $item->path,
+                            'mime_type' => $item->mime_type,
+                            'report_no' => $item->report_no,
+                            'uploaded_at' => $item->file_uploaded_at,
+                        ],
+                    ])->values()->toArray(),
+
+                    'processed_by' => $order->processed_by
+                        ? [
+                            'id' => $order->processed_by,
+                            'name' => $order->processor?->name,
+                            'role' => $order->processor?->role,
+                            'processed_at' => $order->processing_date
+                                ? \Illuminate\Support\Carbon::parse(
+                                    $order->processing_date
+                                )->toIso8601String()
+                                : null,
+                            'files_uploaded' => $items
+                                ->pluck('result_file_id')
+                                ->unique()
+                                ->count(),
+                        ]
+                        : null,
+                ];
+            })
+            ->values();
+
+        return Inertia::render('laboratories/processed', [
+            'queue' => $queue,
         ]);
     }
 
-    public function  reports(){
-        return Inertia::render('laboratories/logistics');
-    }
-
-    public function  processed()
-    {
-        return Inertia::render('laboratories/processed');
-    }
-
-    public function  logistics()
+    public function logistics()
     {
         return Inertia::render('laboratories/logistics');
     }
 
-    public function  orders()
+    public function orders()
     {
         return Inertia::render('laboratories/orders');
     }
+
     public function settings()
     {
-        // Get all test configurations with their parameters
         $tests = TestConfig::with('parameters')->get();
 
-        // Get all categories
         $categories = TestCategory::all();
 
         return Inertia::render('laboratories/settings', [
@@ -60,18 +190,75 @@ class LaboratoryController extends Controller
         ]);
     }
 
-    public function index(){
-       return  Inertia::render('laboratories/laboratory',[
-            "queue"  => $this->queueService->getQueue(3),
+    public function index()
+    {
+        $laboratoryItems = LabOrder::join(
+            'lab_order_items',
+            'lab_orders.id',
+            '=',
+            'lab_order_items.lab_order_id'
+        )
+            ->join(
+                'patients',
+                'patients.id',
+                '=',
+                'lab_orders.patient_id'
+            )
+            ->leftJoin(
+                'lab_result_files',
+                'lab_orders.id',
+                '=',
+                'lab_result_files.lab_order_id'
+            )
+            ->whereNull('lab_result_files.lab_order_id')
+            ->select(
+                'lab_orders.*',
+                'lab_order_items.*',
+                'patients.*'
+            )
+            ->limit(4)
+            ->get();
+
+        return Inertia::render('laboratories/laboratory', [
+            'queue' => $laboratoryItems->map(function ($items) use ($laboratoryItems) {
+                $gender = ucfirst($items->gender);
+
+                $tests = $laboratoryItems
+                    ->where('lab_order_id', $items->lab_order_id)
+                    ->map(fn($item) => [
+                        'test_name'   => $item->test_name,
+                        'unit_price'  => $item->unit_price,
+                        'quantity'    => $item->quantity,
+                        'total_price' => $item->total_price,
+                        'status'      => $item->status,
+                        'amount'      => (float) $item->total_price,
+                    ])
+                    ->values();
+
+                return [
+                    'id'           => $items->patient_id,
+                    'first_name'   => $items->first_name,
+                    'last_name'    => $items->last_name,
+                    'gender'       => $gender[0] . '/' . Carbon::parse($items->date_of_birth)->age,
+                    'tests'        => $tests,
+                    'token'        => $items->visit_token,
+                    'lab_order_id' => $items->lab_order_id,
+                    'total_amount' => $tests->sum('amount'),
+                    'ordered_by'   => 'system',
+                ];
+            }),
         ]);
     }
-    public function getlaboratoryTests(){
-       return $this->labsService->getAllLaboratoryTests();
+
+    public function getlaboratoryTests()
+    {
+        return $this->labsService->getAllLaboratoryTests();
     }
+
     public function enterResults(Request $request, $orderId)
     {
         try {
-            $results = $request->input('results'); // This should be an array of results
+            $results   = $request->input('results');
             $patientId = $request->input('patient_id');
 
             if (!$results || !is_array($results)) {
@@ -85,54 +272,53 @@ class LaboratoryController extends Controller
 
             foreach ($results as $result) {
                 $inserted = DB::table('lab_results')->insert([
-                    'order_id' => $orderId,
-                    'test_id' => $result['test_id'],
-                    'patient_id' => $patientId,
-                    'result_value' => $result['result_value'],
-                    'unit' => $result['unit'] ?? null,
-                    'abnormal_flag' => $result['abnormal_flag'] ?? 'normal',
+                    'order_id'       => $orderId,
+                    'test_id'        => $result['test_id'],
+                    'patient_id'     => $patientId,
+                    'result_value'   => $result['result_value'],
+                    'unit'           => $result['unit'] ?? null,
+                    'abnormal_flag'  => $result['abnormal_flag'] ?? 'normal',
                     'interpretation' => $result['interpretation'] ?? null,
-                    'notes' => $result['notes'] ?? null,
-                    'performed_by' => auth()->id(),
+                    'notes'          => $result['notes'] ?? null,
+                    'performed_by'   => auth()->id(),
                     'performed_date' => now(),
-                    'status' => 'completed',
-                    'created_at' => now(),
-                    'updated_at' => now(),
+                    'status'         => 'completed',
+                    'created_at'     => now(),
+                    'updated_at'     => now(),
                 ]);
 
                 if ($inserted) {
                     $insertedResults[] = $result['test_id'];
+
                     DB::table('lab_order_items')
                         ->where('lab_order_id', $orderId)
                         ->where('test_id', $result['test_id'])
                         ->update([
-                            'status' => 'completed',
+                            'status'              => 'completed',
                             'result_entered_date' => now(),
-                            'updated_at' => now()
+                            'updated_at'          => now()
                         ]);
                 }
             }
 
-            // Check if all tests in the order are completed
+            // Check if all tests in the order are completed.
             $pendingTests = DB::table('lab_order_items')
                 ->where('lab_order_id', $orderId)
                 ->where('status', '!=', 'completed')
                 ->count();
 
             if ($pendingTests === 0) {
-                // Update main order status to completed
                 DB::table('lab_orders')
                     ->where('id', $orderId)
                     ->update([
-                        'status' => 'completed',
+                        'status'     => 'completed',
                         'updated_at' => now()
                     ]);
             } else {
-                // Update main order status to processing
                 DB::table('lab_orders')
                     ->where('id', $orderId)
                     ->update([
-                        'status' => 'processing',
+                        'status'     => 'processing',
                         'updated_at' => now()
                     ]);
             }
@@ -140,7 +326,7 @@ class LaboratoryController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Results saved successfully',
-                'data' => $insertedResults
+                'data'    => $insertedResults
             ], 200);
         } catch (\Exception $e) {
             Log::error('Error saving lab results: ' . $e->getMessage());
@@ -149,6 +335,280 @@ class LaboratoryController extends Controller
                 'success' => false,
                 'message' => 'Failed to save results: ' . $e->getMessage()
             ], 500);
+        }
+    }
+
+    /**
+     * Process uploaded PDF reports using the existing LabResultPdfService.
+     *
+     * $userId is the patient ID used by the existing route.
+     * $lab_order_id is the laboratory order ID.
+     */
+    public function uploadResults(
+        Request $request,
+        int $userId,
+        int $patientId,
+        int $lab_order_id
+    ) {
+        $validated = $request->validate([
+            'pdfs'         => ['required', 'array', 'min:1'],
+            'pdfs.*'       => ['required', 'file', 'mimes:pdf', 'max:10240'],
+            'test_names'   => ['required', 'array', 'min:1'],
+            'test_names.*' => ['required', 'string', 'max:255'],
+        ]);
+
+        try {
+            $order = LabOrder::find($lab_order_id);
+            if (!$order) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Laboratory order not found.',
+                ], 404);
+            }
+
+            $patient = Patient::find($patientId);
+            if (!$patient) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Patient not found.',
+                ], 404);
+            }
+
+            $files         = $request->file('pdfs', []);
+            $selectedTests = $validated['test_names'];
+
+            $created = [];
+
+            foreach ($files as $pdf) {
+                if (!$pdf instanceof UploadedFile) {
+                    continue;
+                }
+
+                // ── 1. Store the PDF (fast) ─────────────────────────────
+                $filename = Str::uuid() . '.pdf';
+                $path     = 'lab-results/' . $filename;
+
+                if (!Storage::disk('public')->putFileAs('lab-results', $pdf, $filename)) {
+                    Log::error('Could not store uploaded lab PDF', [
+                        'original' => $pdf->getClientOriginalName(),
+                    ]);
+                    continue;
+                }
+
+                // ── 2. Create the LabResultFile row (pending) ───────────
+                $file = LabResultFile::create([
+                    'lab_order_id'      => $lab_order_id,
+                    'patient_id'        => $patientId,
+                    'uploaded_by'       => $userId,
+                    'original_name'     => $pdf->getClientOriginalName(),
+                    'path'              => $path,
+                    'mime_type'         => $pdf->getClientMimeType() ?: 'application/pdf',
+                    'size'              => $pdf->getSize(),
+                    'report_no'         => null,
+                    'ocr_text'          => null,
+                    'processing_status' => 'pending',
+                ]);
+
+                // ══════════════════════════════════════════════════════════
+                // ▶▶▶  JOB DISPATCHED HERE  ◀◀◀
+                // ══════════════════════════════════════════════════════════
+                ProcessLabResultOcrJob::dispatch(
+                    $file->id,
+                    $selectedTests,
+                );
+
+                $created[] = [
+                    'file_id'       => $file->id,
+                    'original_name' => $pdf->getClientOriginalName(),
+                    'status'        => 'pending',
+                ];
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Files received. OCR and parsing are running in the background.',
+                'files'   => $created,
+            ], 202);
+        } catch (Throwable $e) {
+            Log::error('Lab result upload failed', [
+                'user_id'      => $userId,
+                'patient_id'   => $patientId,
+                'lab_order_id' => $lab_order_id,
+                'error'        => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to accept upload: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Match a parsed result name to an ordered test.
+     */
+    private function matchOrderItem(string $name, $orderItems)
+    {
+        $normalize = fn($value) => preg_replace(
+            '/[^a-z0-9]/',
+            '',
+            strtolower(trim((string) $value))
+        );
+
+        $needle = $normalize($name);
+
+        if ($needle === '') {
+            return null;
+        }
+
+        $best = null;
+        $bestScore = 0;
+
+        foreach ($orderItems as $item) {
+            $haystack = $normalize($item->test_name);
+
+            if ($needle === $haystack) {
+                return $item;
+            }
+
+            similar_text($needle, $haystack, $percentage);
+
+            if ($percentage > $bestScore) {
+                $bestScore = $percentage;
+                $best = $item;
+            }
+        }
+
+        return $bestScore >= 85 ? $best : null;
+    }
+
+    /**
+     * Check whether the selected patient's first and last names are present
+     * in the extracted report text.
+     *
+     * This uses the text returned by the existing PDF service. It does not
+     * assume that the service exposes a separate header() method.
+     */
+    private function checkPatientMatch($patient, string $ocrText): array
+    {
+        if (!$patient) {
+            return [
+                'matched' => false,
+                'reason' => 'Selected patient was not found',
+            ];
+        }
+
+        $normalize = fn($value) => preg_replace(
+            '/[^a-z]/',
+            '',
+            strtolower(trim((string) $value))
+        );
+
+        $firstName = $normalize($patient->first_name ?? '');
+        $lastName = $normalize($patient->last_name ?? '');
+        $reportText = $normalize($ocrText);
+
+        if ($firstName === '' || $lastName === '' || $reportText === '') {
+            return [
+                'matched' => null,
+                'reason' => 'Patient identity could not be confirmed from the report text',
+            ];
+        }
+
+        $nameOk = str_contains($reportText, $firstName)
+            && str_contains($reportText, $lastName);
+
+        return [
+            'matched' => $nameOk,
+            'reason' => $nameOk
+                ? null
+                : 'The selected patient name could not be confirmed in the report text',
+        ];
+    }
+
+    /**
+     * NEW — Resolve the user who should be notified about results for
+     * this order.
+     *
+     * Prefers lab_orders.ordered_by. Falls back to
+     * lab_order_items.created_by. Returns null if neither is available.
+     */
+    private function resolveNotifiableUser(int $labOrderId): ?User
+    {
+        $orderedBy = DB::table('lab_orders')
+            ->where('id', $labOrderId)
+            ->value('ordered_by');
+
+        if ($orderedBy) {
+            $user = User::find($orderedBy);
+
+            if ($user) {
+                return $user;
+            }
+        }
+
+        $createdBy = DB::table('lab_order_items')
+            ->where('lab_order_id', $labOrderId)
+            ->whereNotNull('created_by')
+            ->value('created_by');
+
+        return $createdBy ? User::find($createdBy) : null;
+    }
+
+    /**
+     * NEW — Send a "results are ready" notification to the ordering
+     * doctor (or fallback creator) for each processed file.
+     *
+     * - Skips files already notified (results_notified_at guard).
+     * - Isolated in try/catch so a notification failure does not fail
+     *   the upload response.
+     */
+    private function notifyOrdererOfResults(int $labOrderId, array $files): void
+    {
+        if (empty($files)) {
+            return;
+        }
+
+        try {
+            $notifiable = $this->resolveNotifiableUser($labOrderId);
+
+            if (!$notifiable) {
+                Log::warning('Lab results ready, but no notifiable user resolved', [
+                    'lab_order_id' => $labOrderId,
+                ]);
+
+                return;
+            }
+
+            // Load order + patient once so the notification can render
+            // the patient name without extra queries per file.
+            $order = LabOrder::with('patient')->find($labOrderId);
+
+            if (!$order) {
+                return;
+            }
+
+            foreach ($files as $file) {
+                /** @var LabResultFile $file */
+                if (!empty($file->results_notified_at)) {
+                    continue;
+                }
+
+                $notifiable->notify(
+                    new LabResultsReadyNotification(
+                        order: $order,
+                        file: $file,
+                        itemCount: $file->resultItems->count(),
+                    )
+                );
+
+                $file->forceFill(['results_notified_at' => now()])->save();
+            }
+        } catch (Throwable $e) {
+            Log::error('Failed to notify orderer of lab results', [
+                'lab_order_id' => $labOrderId,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 }

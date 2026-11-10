@@ -6,8 +6,10 @@ use App\Http\Controllers\BulkStores\PurchaseRequisitionController;
 use App\Http\Controllers\BulkStores\GoodsReceivedNoteController;
 use App\Http\Controllers\BulkStores\BulkStoreController;
 use App\Http\Controllers\BulkStores\SupplierController;
+use App\Http\Controllers\Dashboards\BulkstoreDashboardController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
+use Illuminate\Support\Facades\Log;
 
 /*
 |--------------------------------------------------------------------------
@@ -40,11 +42,11 @@ Route::middleware(['auth', 'verified'])
         | Inventory
         |--------------------------------------------------------------------------
         */
-        Route::get('/products',[ProductController::class,'showProducts']);
+        Route::get('/products', [ProductController::class, 'showProducts']);
         Route::inertia('/stock', 'bulkstore/Stock')->name('stock');
         Route::inertia('/batches', 'bulkstore/Batches')->name('batches');
-        Route::get('/expiry', [ProductController::class,'getExpiry']);
-        Route::get('/stock-pricing', [ProductController::class,'getStockPricing']);
+        Route::get('/expiry', [ProductController::class, 'getExpiry']);
+        Route::get('/stock-pricing', [ProductController::class, 'getStockPricing']);
 
         /*
         |--------------------------------------------------------------------------
@@ -63,9 +65,9 @@ Route::middleware(['auth', 'verified'])
         */
         Route::inertia('/receive', 'bulkstore/Receive')->name('receive');
         Route::get('/receive/product/{uuid}', [ProductController::class, 'receiveProduct'])->name('receive.product');
-        Route::inertia('/issue', 'bulkstore/Issue')->name('issue');
+        Route::get('/issue', [BulkStoreController::class, 'departmentalRequests'])->name('issue');
         Route::inertia('/transfer', 'bulkstore/Transfer')->name('transfer');
-        Route::get('/adjustments', [ProductController::class,'adjustedProducts']);
+        Route::get('/adjustments', [ProductController::class, 'adjustedProducts']);
         Route::inertia('/returns', 'bulkstore/Returns')->name('returns');
 
         /*
@@ -93,7 +95,7 @@ Route::middleware(['auth', 'verified'])
         | Suppliers
         |--------------------------------------------------------------------------
         */
-        Route::get('/suppliers', [SupplierController::class,'index'])->name('suppliers');
+        Route::get('/suppliers', [SupplierController::class, 'index'])->name('suppliers');
 
         /*
         |--------------------------------------------------------------------------
@@ -134,6 +136,21 @@ Route::middleware(['auth', 'verified'])
         */
         Route::inertia('/module-settings', 'bulkstore/Settings')->name('settings');
     });
+
+
+/**
+ *  Bulkstore routes
+ *
+ *
+ */
+
+Route::prefix('bulkstore')->group(function () {
+    Route::get('/dashboard', [BulkStoreController::class, 'index']);
+    Route::get('/products', [BulkStoreController::class, 'products']);
+    Route::get('/orders', [BulkStoreController::class, 'orders']);
+    Route::get('/issues', [BulkStoreController::class, 'departmentalRequests']);
+    Route::get('/suppliers', [BulkStoreController::class, 'suppliers']);
+});
 
 // ------------------------------------------------------------------
 // API Routes for Bulk Store (AJAX / JSON endpoints)
@@ -215,3 +232,13 @@ Route::middleware(['auth:sanctum', 'verified'])
             Route::get('/expiry', [\App\Http\Controllers\BulkStores\ReportController::class, 'expiry'])->name('expiry');
         });
     });
+
+Route::middleware(['auth', 'verified'])->prefix('bulkstore')->name('bulkstore.')->group(function () {
+    // Inertia page (sends `stats` as a prop)
+    Route::get('/dashboard', [BulkstoreDashboardController::class, 'index'])
+        ->name('dashboard');
+
+    // Optional JSON endpoint with the same payload (polling / fetch)
+    Route::get('/dashboard/data', [BulkstoreDashboardController::class, 'data'])
+        ->name('dashboard.data');
+});

@@ -13,6 +13,7 @@ import {
     ChevronRight,
     User,
     CreditCard,
+    Stethoscope,
 } from 'lucide-react';
 import Notiflix from 'notiflix';
 import { useState, useMemo } from 'react';
@@ -71,17 +72,36 @@ interface Props {
 
 const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
     const config: Record<string, { label: string; color: string }> = {
-        pending: { label: 'Pending', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
-        active: { label: 'Active', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
-        in_progress: { label: 'In Prog', color: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400' },
-        completed: { label: 'Done', color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
-        cancelled: { label: 'Cancelled', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
+        pending: {
+            label: 'Pending',
+            color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+        },
+        active: {
+            label: 'Active',
+            color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+        },
+        in_progress: {
+            label: 'In Prog',
+            color: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
+        },
+        completed: {
+            label: 'Done',
+            color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+        },
+        cancelled: {
+            label: 'Cancelled',
+            color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+        },
     };
     const cfg = config[status] || config.pending;
 
     return (
-        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${cfg.color}`}>
-            <span className={`h-1.5 w-1.5 rounded-full ${cfg.color.split(' ')[0].replace('bg-', 'bg-')}`} />
+        <span
+            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${cfg.color}`}
+        >
+            <span
+                className={`h-1.5 w-1.5 rounded-full ${cfg.color.split(' ')[0].replace('bg-', 'bg-')}`}
+            />
             {cfg.label}
         </span>
     );
@@ -89,15 +109,29 @@ const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
 
 const PriorityBadge: React.FC<{ priority: string }> = ({ priority }) => {
     const config: Record<string, { label: string; color: string }> = {
-        routine: { label: 'Routine', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
-        urgent: { label: 'Urgent', color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' },
-        emergency: { label: 'Emergency', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
-        stat: { label: 'STAT', color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' },
+        routine: {
+            label: 'Routine',
+            color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+        },
+        urgent: {
+            label: 'Urgent',
+            color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+        },
+        emergency: {
+            label: 'Emergency',
+            color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+        },
+        stat: {
+            label: 'STAT',
+            color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+        },
     };
     const cfg = config[priority] || config.routine;
 
     return (
-        <span className={`inline-flex items-center rounded px-2 py-0.5 text-[10px] font-medium ${cfg.color}`}>
+        <span
+            className={`inline-flex items-center rounded px-2 py-0.5 text-[10px] font-medium ${cfg.color}`}
+        >
             {cfg.label}
         </span>
     );
@@ -109,13 +143,34 @@ const PaymentBadge: React.FC<{ method: string }> = ({ method }) => {
     }
 
     const config: Record<string, { label: string; color: string }> = {
-        cash: { label: 'Cash', color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
-        nhima: { label: 'NHIMA', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
-        insurance: { label: 'Insurance', color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' },
-        charity: { label: 'Charity', color: 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400' },
-        mobile_money: { label: 'Mobile', color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' },
-        card: { label: 'Card', color: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400' },
-        altaf: { label: 'Altaf', color: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400' },
+        cash: {
+            label: 'Cash',
+            color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+        },
+        nhima: {
+            label: 'NHIMA',
+            color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+        },
+        insurance: {
+            label: 'Insurance',
+            color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+        },
+        charity: {
+            label: 'Charity',
+            color: 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400',
+        },
+        mobile_money: {
+            label: 'Mobile',
+            color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+        },
+        card: {
+            label: 'Card',
+            color: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400',
+        },
+        altaf: {
+            label: 'Altaf',
+            color: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
+        },
     };
     const cfg = config[method.toLowerCase()] || {
         label: method,
@@ -123,7 +178,9 @@ const PaymentBadge: React.FC<{ method: string }> = ({ method }) => {
     };
 
     return (
-        <span className={`inline-flex items-center rounded px-2 py-0.5 text-[10px] font-medium ${cfg.color}`}>
+        <span
+            className={`inline-flex items-center rounded px-2 py-0.5 text-[10px] font-medium ${cfg.color}`}
+        >
             {cfg.label}
         </span>
     );
@@ -150,12 +207,16 @@ const StatCard: React.FC<{ icon: any; label: string; value: number }> = ({
 }) => {
     const colors: Record<string, string> = {
         Queue: 'bg-blue-50 text-blue-600 dark:bg-blue-950/30 dark:text-blue-400',
-        Pending: 'bg-amber-50 text-amber-600 dark:bg-amber-950/30 dark:text-amber-400',
-        Assigned: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400',
+        Pending:
+            'bg-amber-50 text-amber-600 dark:bg-amber-950/30 dark:text-amber-400',
+        Assigned:
+            'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400',
     };
 
     return (
-        <div className={`rounded-lg px-4 py-2 text-center ${colors[label as keyof typeof colors] || colors.Queue}`}>
+        <div
+            className={`rounded-lg px-4 py-2 text-center ${colors[label as keyof typeof colors] || colors.Queue}`}
+        >
             <div className="flex items-center justify-center gap-1 text-xs font-medium uppercase">
                 <Icon className="h-3.5 w-3.5" />
                 {label}
@@ -169,9 +230,21 @@ const StatCard: React.FC<{ icon: any; label: string; value: number }> = ({
 // Stethoscope Icon
 // ============================================================================
 
-const StethoscopeIcon: React.FC<{ className?: string }> = ({ className = 'h-5 w-5' }) => (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+const StethoscopeIcon: React.FC<{ className?: string }> = ({
+    className = 'h-5 w-5',
+}) => (
+    <svg
+        className={className}
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+    >
+        <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
+        />
     </svg>
 );
 
@@ -182,9 +255,11 @@ const StethoscopeIcon: React.FC<{ className?: string }> = ({ className = 'h-5 w-
 export default function Nurses() {
     const { props } = usePage<{ props: Props }>();
     const queues: QueuePatient[] = props.queue || [];
-    console.log(queues)
+    console.log(queues);
 
-    const [selectedPatient, setSelectedPatient] = useState<QueuePatient | null>(null);
+    const [selectedPatient, setSelectedPatient] = useState<QueuePatient | null>(
+        null,
+    );
     const [showDetailsModal, setShowDetailsModal] = useState(false);
     const [loading, setLoading] = useState(false);
 
@@ -209,10 +284,15 @@ export default function Nurses() {
         return queues.map((patient) => ({
             ...patient,
             token: patient.token || `T-${String(patient.id).padStart(4, '0')}`,
-            payment_method: patient.payment_method || patient.original_payment_method || 'Not specified',
+            payment_method:
+                patient.payment_method ||
+                patient.original_payment_method ||
+                'Not specified',
             contact: patient.contact || 'N/A',
             gender: patient.gender || 'N/A',
-            visit_status: normalizeStatus(patient.visit_status || patient.status),
+            visit_status: normalizeStatus(
+                patient.visit_status || patient.status,
+            ),
             priority: patient.priority || 'routine',
         }));
     }, [queues]);
@@ -236,18 +316,25 @@ export default function Nurses() {
         Notiflix.Loading.pulse('Updating...');
 
         try {
-            const response = await Http.post(`/nurses/queue/${patientId}/status`, { status: newStatus });
+            const response = await Http.post(
+                `/nurses/queue/${patientId}/status`,
+                { status: newStatus },
+            );
             if (response.data.success) {
                 Notiflix.Loading.remove();
                 Notiflix.Notify.success(`Status updated to ${newStatus}`);
                 router.reload();
             } else {
                 Notiflix.Loading.remove();
-                Notiflix.Notify.failure(response.data.message || 'Failed to update status');
+                Notiflix.Notify.failure(
+                    response.data.message || 'Failed to update status',
+                );
             }
         } catch (error: any) {
             Notiflix.Loading.remove();
-            Notiflix.Notify.failure(error.response?.data?.message || 'Failed to update status');
+            Notiflix.Notify.failure(
+                error.response?.data?.message || 'Failed to update status',
+            );
         } finally {
             setLoading(false);
         }
@@ -256,7 +343,7 @@ export default function Nurses() {
     // ============================================
     // COLUMNS DEFINITION
     // ============================================
-    
+
     const columns: Column<QueuePatient>[] = [
         {
             id: 'token',
@@ -327,7 +414,9 @@ export default function Nurses() {
             id: 'payment_method',
             label: 'Payment',
             sortable: true,
-            format: (value, row) => <PaymentBadge method={row.payment_method} />,
+            format: (value, row) => (
+                <PaymentBadge method={row.payment_method} />
+            ),
         },
     ];
 
@@ -356,7 +445,7 @@ export default function Nurses() {
             color: 'success',
             show: (row) => row.visit_status === 'pending',
             onClick: (row) => handleStatusUpdate(row.id, 'active'),
-        }
+        },
     ];
 
     // ============================================
@@ -379,18 +468,16 @@ export default function Nurses() {
         <AppLayout
             breadcrumbs={[
                 { href: '', title: 'Department' },
-                { href: '', title: 'Nurses Bay' },
+                { href: '', title: 'Nurses' },
             ]}
         >
-            <div className="flex h-full bg-blue-50  min-h-screen flex-1 flex-col gap-4 p-4 dark:bg-slate-900">
+            <div className="flex h-full min-h-screen flex-1 flex-col gap-4 bg-blue-100 p-2 dark:bg-slate-900">
                 {/* Header */}
                 <PageHeader
-                    icon={<StethoscopeIcon />}
+                    icon={<Stethoscope />}
                     title="Patients Queued"
                     subtitle="View and manage patients currently in the queue"
                 />
-
-               
 
                 {/* Reusable Table */}
                 <ReusableTable
@@ -410,47 +497,92 @@ export default function Nurses() {
                 />
 
                 {/* Details Modal */}
-                <Dialog open={showDetailsModal} onOpenChange={setShowDetailsModal}>
+                <Dialog
+                    open={showDetailsModal}
+                    onOpenChange={setShowDetailsModal}
+                >
                     <DialogContent className="max-w-sm">
                         <DialogHeader>
-                            <DialogTitle className="text-sm">Patient Details</DialogTitle>
+                            <DialogTitle className="text-sm">
+                                Patient Details
+                            </DialogTitle>
                         </DialogHeader>
                         {selectedPatient && (
                             <div className="space-y-3">
                                 <div className="flex items-center gap-3">
-                                    <PatientAvatar name={selectedPatient.patient_name} />
+                                    <PatientAvatar
+                                        name={selectedPatient.patient_name}
+                                    />
                                     <div>
-                                        <p className="text-sm font-medium">{selectedPatient.patient_name}</p>
-                                        <p className="text-xs text-slate-500">Token: {selectedPatient.token}</p>
+                                        <p className="text-sm font-medium">
+                                            {selectedPatient.patient_name}
+                                        </p>
+                                        <p className="text-xs text-slate-500">
+                                            Token: {selectedPatient.token}
+                                        </p>
                                     </div>
                                 </div>
                                 <div className="grid grid-cols-2 gap-2 text-sm">
                                     <div>
-                                        <Label className="text-xs text-slate-500">Contact</Label>
+                                        <Label className="text-xs text-slate-500">
+                                            Contact
+                                        </Label>
                                         <p>{selectedPatient.contact}</p>
                                     </div>
                                     <div>
-                                        <Label className="text-xs text-slate-500">Gender</Label>
+                                        <Label className="text-xs text-slate-500">
+                                            Gender
+                                        </Label>
                                         <p>{selectedPatient.gender}</p>
                                     </div>
                                     <div>
-                                        <Label className="text-xs text-slate-500">Priority</Label>
-                                        <p><PriorityBadge priority={selectedPatient.priority} /></p>
+                                        <Label className="text-xs text-slate-500">
+                                            Priority
+                                        </Label>
+                                        <p>
+                                            <PriorityBadge
+                                                priority={
+                                                    selectedPatient.priority
+                                                }
+                                            />
+                                        </p>
                                     </div>
                                     <div>
-                                        <Label className="text-xs text-slate-500">Status</Label>
-                                        <p><StatusBadge status={selectedPatient.visit_status} /></p>
+                                        <Label className="text-xs text-slate-500">
+                                            Status
+                                        </Label>
+                                        <p>
+                                            <StatusBadge
+                                                status={
+                                                    selectedPatient.visit_status
+                                                }
+                                            />
+                                        </p>
                                     </div>
                                     <div>
-                                        <Label className="text-xs text-slate-500">Payment</Label>
-                                        <p><PaymentBadge method={selectedPatient.payment_method} /></p>
+                                        <Label className="text-xs text-slate-500">
+                                            Payment
+                                        </Label>
+                                        <p>
+                                            <PaymentBadge
+                                                method={
+                                                    selectedPatient.payment_method
+                                                }
+                                            />
+                                        </p>
                                     </div>
                                     <div>
-                                        <Label className="text-xs text-slate-500">Registered</Label>
-                                        <p className="text-xs">{formatTime(selectedPatient.registered_at)}</p>
+                                        <Label className="text-xs text-slate-500">
+                                            Registered
+                                        </Label>
+                                        <p className="text-xs">
+                                            {formatTime(
+                                                selectedPatient.registered_at,
+                                            )}
+                                        </p>
                                     </div>
                                 </div>
-                                <div className="flex items-center justify-between gap-2 pt-2 border-t">
+                                <div className="flex items-center justify-between gap-2 border-t pt-2">
                                     <Link
                                         href={`/patients/dashboard/${selectedPatient.patient_id}`}
                                         className="inline-flex items-center gap-1 rounded bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-600 transition-colors hover:bg-blue-100 dark:bg-blue-950/30 dark:text-blue-400"

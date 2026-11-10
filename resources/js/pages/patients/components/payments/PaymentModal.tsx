@@ -244,6 +244,41 @@ const PAYMENT_METHODS: PaymentMethod[] = [
 ];
 
 // ============================================================================
+// Helpers
+// ============================================================================
+
+/**
+ * Single source of truth for how much of the tender is actually applied
+ * to the invoice. Never returns more than what is owed.
+ */
+const computeAppliedAmount = (
+    method: string,
+    formData: Record<string, any>,
+    dueAmount: number,
+): number => {
+    const tendered =
+        method === 'cash'
+            ? Number(formData.amount_tendered) || 0
+            : Number(formData.amount) || 0;
+    return Math.max(Math.min(tendered, dueAmount), 0);
+};
+
+/**
+ * Change is only meaningful for cash (or any overpayment method).
+ * For non-cash methods we always return 0.
+ */
+const computeChange = (
+    method: string,
+    formData: Record<string, any>,
+    dueAmount: number,
+    appliedAmount: number,
+): number => {
+    if (method !== 'cash') return 0;
+    const tendered = Number(formData.amount_tendered) || 0;
+    return Math.max(tendered - appliedAmount, 0);
+};
+
+// ============================================================================
 // Main Component
 // ============================================================================
 
@@ -264,10 +299,32 @@ export default function CheckoutModal({
     const staffName = currentUser?.name || currentUser?.first_name || 'Staff';
     const currentMethod = PAYMENT_METHODS.find((m) => m.id === selectedMethod);
     const dueAmount = invoice?.due_amount || invoice?.total || 0;
-    const amountTendered = formData.amount_tendered || 0;
-    const change = amountTendered > dueAmount ? amountTendered - dueAmount : 0;
-    const isShort = amountTendered > 0 && amountTendered < dueAmount;
+    const amountTendered = Number(formData.amount_tendered) || 0;
 
+    // ------------------------------------------------------------------
+    // Derived values — computed on every render from formData.
+    // Because `amount` in formData is kept in sync below, these always
+    // agree with what will be submitted.
+    // ------------------------------------------------------------------
+    const appliedAmount = computeAppliedAmount(
+        selectedMethod,
+        formData,
+        dueAmount,
+    );
+    const change = computeChange(
+        selectedMethod,
+        formData,
+        dueAmount,
+        appliedAmount,
+    );
+    const isShort =
+        selectedMethod === 'cash' &&
+        amountTendered > 0 &&
+        amountTendered < dueAmount;
+
+    // ------------------------------------------------------------------
+    // Reset on open / invoice change
+    // ------------------------------------------------------------------
     useEffect(() => {
         if (isOpen) {
             setFormData({
@@ -283,7 +340,10 @@ export default function CheckoutModal({
     if (!isOpen) return null;
 
     const formatCurrency = (amount: number) => {
-        return `ZMW ${amount.toLocaleString('en-ZM', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        return `ZMW ${amount.toLocaleString('en-ZM', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        })}`;
     };
 
     const handleFieldChange = (fieldId: string, value: any) => {
@@ -291,27 +351,38 @@ export default function CheckoutModal({
         if (errors[fieldId]) setErrors((prev) => ({ ...prev, [fieldId]: '' }));
     };
 
+    // ------------------------------------------------------------------
+    // Validation — branches by method so cash can legitimately overpay.
+    // ------------------------------------------------------------------
     const validateForm = () => {
         const newErrors: Record<string, string> = {};
 
-        if (!formData.amount || formData.amount <= 0) {
-            newErrors.amount = 'Amount is required';
-        } else if (formData.amount > dueAmount) {
-            newErrors.amount = `Cannot exceed ${formatCurrency(dueAmount)}`;
-        }
-
         if (selectedMethod === 'cash') {
-            const tendered = formData.amount_tendered || 0;
+            const tendered = Number(formData.amount_tendered) || 0;
             if (tendered <= 0) {
                 newErrors.amount_tendered = 'Amount tendered is required';
             } else if (tendered < dueAmount) {
-                newErrors.amount_tendered = `Insufficient: ${formatCurrency(tendered)} < ${formatCurrency(dueAmount)}`;
+                newErrors.amount_tendered = `Insufficient: ${formatCurrency(
+                    tendered,
+                )} < ${formatCurrency(dueAmount)}`;
+            }
+            // Overpay is allowed — it simply produces change.
+        } else {
+            const amount = Number(formData.amount) || 0;
+            if (amount <= 0) {
+                newErrors.amount = 'Amount is required';
+            } else if (amount > dueAmount) {
+                newErrors.amount = `Cannot exceed ${formatCurrency(dueAmount)}`;
             }
         }
 
         if (currentMethod?.fields) {
             currentMethod.fields.forEach((field) => {
-                if (field.id === 'cash_received_by') return;
+                if (
+                    field.id === 'cash_received_by' ||
+                    field.id === 'amount_tendered'
+                )
+                    return;
                 const value = formData[field.id];
                 if (field.required && !value) {
                     newErrors[field.id] = `${field.label} is required`;
@@ -323,6 +394,11 @@ export default function CheckoutModal({
         return Object.keys(newErrors).length === 0;
     };
 
+    // ------------------------------------------------------------------
+    // Submit — amount and change are computed here from the same
+    // single formula used for display. No `...formData` spread that
+    // could silently clobber the explicit fields.
+    // ------------------------------------------------------------------
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
@@ -330,16 +406,50 @@ export default function CheckoutModal({
 
         setIsSubmitting(true);
 
+        // Recompute from current formData — never trust a stale value.
+        const finalApplied = computeAppliedAmount(
+            selectedMethod,
+            formData,
+            dueAmount,
+        );
+        const finalChange = computeChange(
+            selectedMethod,
+            formData,
+            dueAmount,
+            finalApplied,
+        );
+
         const payload = {
             invoice_id: invoice?.id,
             patient_id: patient?.id,
-            amount: formData.amount,
+            amount: finalApplied,
             payment_method: selectedMethod,
             payment_date: formData.payment_date,
-            amount_tendered: formData.amount_tendered,
-            change: change,
+            amount_tendered:
+                selectedMethod === 'cash'
+                    ? Number(formData.amount_tendered) || finalApplied
+                    : finalApplied,
+            change: finalChange,
             received_by: formData.cash_received_by || staffName,
-            ...formData,
+
+            // Method-specific fields (card_*, phone_number, policy_number,
+            // bank_name, etc.) are forwarded explicitly. Add new keys here
+            // as new fields are introduced — do NOT spread the whole
+            // formData object, or it will overwrite `amount`/`change`.
+            card_number: formData.card_number,
+            card_holder: formData.card_holder,
+            expiry_date: formData.expiry_date,
+            cvv: formData.cvv,
+            phone_number: formData.phone_number,
+            provider: formData.provider,
+            reference: formData.reference,
+            insurance_provider: formData.insurance_provider,
+            policy_number: formData.policy_number,
+            authorization_code: formData.authorization_code,
+            claim_notes: formData.claim_notes,
+            bank_name: formData.bank_name,
+            reference_number: formData.reference_number,
+            account_name: formData.account_name,
         };
 
         try {
@@ -541,7 +651,7 @@ export default function CheckoutModal({
                                     <Lock className="h-3 w-3 opacity-75" />
                                 </div>
 
-                                {/* Tender Amount Section - Compact & Professional */}
+                                {/* Tender Amount Section */}
                                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                                     {/* Amount to Pay */}
                                     <div>
@@ -608,17 +718,40 @@ export default function CheckoutModal({
                                                             parseFloat(
                                                                 e.target.value,
                                                             ) || 0;
-                                                        handleFieldChange(
-                                                            'amount_tendered',
-                                                            val,
-                                                        );
-                                                        if (
-                                                            val > 0 &&
-                                                            val <= dueAmount
-                                                        )
-                                                            handleFieldChange(
-                                                                'amount',
+                                                        // FIX #1: always derive
+                                                        // `amount` from tendered,
+                                                        // capped at dueAmount.
+                                                        // Previously the update
+                                                        // was conditional, which
+                                                        // froze `amount` at a
+                                                        // stale partial value
+                                                        // once tendered exceeded
+                                                        // dueAmount.
+                                                        setFormData((prev) => ({
+                                                            ...prev,
+                                                            amount_tendered:
                                                                 val,
+                                                            amount: Math.min(
+                                                                val,
+                                                                dueAmount,
+                                                            ),
+                                                        }));
+                                                        if (
+                                                            errors.amount_tendered
+                                                        )
+                                                            setErrors(
+                                                                (prev) => ({
+                                                                    ...prev,
+                                                                    amount_tendered:
+                                                                        '',
+                                                                }),
+                                                            );
+                                                        if (errors.amount)
+                                                            setErrors(
+                                                                (prev) => ({
+                                                                    ...prev,
+                                                                    amount: '',
+                                                                }),
                                                             );
                                                     }}
                                                     className={`h-8 w-full rounded-lg border pr-2 pl-12 text-xs focus:ring-1 focus:outline-none ${
@@ -832,7 +965,7 @@ export default function CheckoutModal({
                                         type="submit"
                                         disabled={
                                             isSubmitting ||
-                                            formData.amount <= 0 ||
+                                            appliedAmount <= 0 ||
                                             (selectedMethod === 'cash' &&
                                                 amountTendered < dueAmount)
                                         }
@@ -850,8 +983,8 @@ export default function CheckoutModal({
                                                 <DollarSign className="mr-1 h-3.5 w-3.5" />
                                                 {selectedMethod === 'cash' &&
                                                 amountTendered > dueAmount
-                                                    ? `Pay ${formatCurrency(formData.amount)} • Change ${formatCurrency(change)}`
-                                                    : `Pay ${formatCurrency(formData.amount || 0)}`}
+                                                    ? `Pay ${formatCurrency(appliedAmount)} • Change ${formatCurrency(change)}`
+                                                    : `Pay ${formatCurrency(appliedAmount || 0)}`}
                                             </>
                                         )}
                                     </Button>

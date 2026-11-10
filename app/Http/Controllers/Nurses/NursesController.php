@@ -3,18 +3,87 @@
 namespace App\Http\Controllers\Nurses;
 
 use App\Http\Controllers\Controller;
+use App\Models\Departments\Department;
 use App\Models\Patients\VisitToken;
 use App\Models\PatientVisit;
 use Inertia\Inertia;
 use App\Models\User;
 use App\Models\UserProfile;
 use Illuminate\Support\Facades\Log;
+use App\Models\Nurses\Admission;
+// use App\Models\Patients\PatientVisit;
 
 class NursesController extends Controller
 {
-    public function dashboard(){
-        return Inertia::render('nurses/dashboard');
+    public function dashboard()
+    {
+        $trendRangeDays = 7;
+        $departmentId   = 6;
+
+        $department = Department::findOrFail($departmentId);
+
+        // ── Today's snapshot for department 6 ───────────────────
+        $base = PatientVisit::query()
+            ->where('patient_visits.department_id', $departmentId)
+            ->whereDate('patient_visits.created_at', today());
+
+        $seenQuery = (clone $base)->where('patient_visits.status', 0);
+
+        $males = (clone $seenQuery)
+            ->join('patients', 'patients.id', '=', 'patient_visits.patient_id')
+            ->where('patients.gender', 'Male')
+            ->count();
+
+        $females = (clone $seenQuery)
+            ->join('patients', 'patients.id', '=', 'patient_visits.patient_id')
+            ->where('patients.gender', 'Female')
+            ->count();
+
+        $departmentStats = collect([[
+            'department_name'      => $department->name,
+            'seen_today'           => (clone $seenQuery)->count(),
+            'males'                => $males,
+            'females'              => $females,
+            'in_queue'             => (clone $base)->where('patient_visits.status', 1)->count(),
+            'average_wait_minutes' => null,
+            'completed_today'      => (clone $base)->where('patient_visits.status', 1)->count(),
+        ]]);
+
+        // ── Last N days for department 6 ────────────────────────
+        $departmentTrend = collect(range($trendRangeDays - 1, 0))
+            ->map(function (int $offset) use ($departmentId, $department) {
+                $date = now()->subDays($offset);
+
+                return [
+                    'date'            => $date->format('D'),
+                    $department->name => PatientVisit::where('patient_visits.department_id', $departmentId)
+                        ->whereDate('patient_visits.created_at', $date)
+                        ->count(),
+                ];
+            })
+            ->values();
+
+        // ── Totals ──────────────────────────────────────────────
+        $totals = [
+            'seen_today' => $departmentStats->sum('seen_today'),
+            'males'      => $departmentStats->sum('males'),
+            'females'    => $departmentStats->sum('females'),
+            'in_queue'   => $departmentStats->sum('in_queue'),
+        ];
+
+        return Inertia::render('nurses/dashboard', [
+            'departmentStats' => $departmentStats,
+            'departmentTrend' => $departmentTrend,
+            'totals'          => $totals,
+            'trendRangeDays'  => $trendRangeDays,
+            'currentUser'     => [
+                'name'        => $department->name,
+                'role'        => null,
+                'departments' => [$department->name],
+            ],
+        ]);
     }
+
     /**
      * Display the nurses dashboard with queue
      */
@@ -154,6 +223,16 @@ class NursesController extends Controller
     }
 
     /**
+     *  view staff in the departments
+     */
+
+    public function viewStaff(){
+        return Inertia::render('nurses/nurse-department',
+        ['viewStaffs' => User::all()]
+         );
+    }
+
+    /**
      * Get patient details for view modal
      */
     public function getPatientDetails($tokenId)
@@ -219,17 +298,72 @@ class NursesController extends Controller
         return  Inertia::render('nurses/visits',[
             'queues' => $visit
         ]);
-    } 
+    }
 
-    public function inPatients(){
-        return Inertia::render('nurses/in-patient' ,[
-            'admitted'  => []
+    public function inPatients()
+    {
+        return Inertia::render('nurses/in-patient', [
+            'admitted' => [],
+            'procedureItems' => [],
+            'listOfAdmittedPatients' => Admission::with(['patient', 'admittedBy', 'dischargedBy'])
+                ->where('status', 'active')
+                ->get()
+                ->map(fn($a) => [
+                    'id'             => $a->patient_id,
+                    'admission_number' => $a->admission_number,
+                    'patient_name'   => trim(($a->patient->first_name ?? '') . ' ' . ($a->patient->last_name ?? '')),
+                    'admission_date' => $a->date_of_admission,
+                    'department'   => $a->admitted_to_ward ?? '—', // adjust if the column has a different name
+                    'bed_number'     => $a->admitted_to_ward ?? '—',   // adjust if the column has a different name
+                    'ward'           => $a->admitted_to_ward ?? '—',
+                    'status'         => $a->status,
+                    'priority'       => $a->priority,
+                ]),
         ]);
-    } 
+    }
+    /**
+     *  get atients assigned to treatmebt room
+     */
     public function  treatmentRoom(){
+
+        $procedures          =   PatientVisit::with(['patient'])->where('department_id',11)->where('status',1)->get();
+        $patientsInTreatment = $this->mapFields($procedures);
+
         return Inertia::render('nurses/treatment-room' ,[
-            'procedures'  => []
+            'procedures'  =>  $patientsInTreatment
         ]);
+    }
+
+    public function mapFields(object $patientsInTreatment)
+    {
+        return $patientsInTreatment->map(function ($items) {
+            $patient = $items->patient;
+
+            // Calculate age from date_of_birth
+            $age = null;
+            if (!empty($patient->date_of_birth)) {
+                try {
+                    $age = \Carbon\Carbon::parse($patient->date_of_birth)->age;
+                } catch (\Exception $e) {
+                    $age = null;
+                }
+            }
+
+            // First letter of gender, uppercase
+            $genderInitial = $patient->gender
+                ? strtoupper(substr(trim($patient->gender), 0, 1))
+                : '—';
+
+            return [
+                'id'         => $items->id,
+                'patient_id' => $patient->id,
+                'name'       => ucfirst($patient->first_name) . ' ' . ucfirst($patient->last_name),
+                'age_sex'    => ($age !== null ? $age : '—') . ' / ' . $genderInitial,
+                'token'     => $items->token,
+                'created_at' => optional($items->created_at)->toDateTimeString(),
+                'status'     => $this->mapVisitStatus($items->status),
+            ];
+        });
     }
 
     public function  userDepartment()

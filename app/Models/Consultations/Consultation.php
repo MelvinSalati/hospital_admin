@@ -30,5 +30,9 @@ class Consultation extends Model
         return $this->belongsTo(\App\Models\Patients\Patient::class, 'patient_id');
     }
 
-   
+    public function assignedDepartment(){
+        return $this->belongsTo(\App\Models\Departments\Department::class,'department_id');
+    }
+
+
 }

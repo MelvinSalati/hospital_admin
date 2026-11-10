@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Patients;
 
+use App\Helpers\VisitTokenHelper;
 use App\Http\Controllers\Controller;
 use App\Services\AppointmentService;
 use App\Models\Departments\Department;
@@ -43,6 +44,14 @@ class AppointmentsController extends Controller
      */
     public function store(Request $request)
     {
+        $getToken  = VisitTokenHelper::getActiveTokenString($request->patient_id);
+
+        if (!$getToken) {
+            return response()->json([
+                'message' => 'Visit token expired,please start visit through reception!'
+            ], 500);
+        }
+
         $validated = $request->validate([
 
             'patient_id' => 'required|exists:patients,id',
@@ -61,10 +70,10 @@ class AppointmentsController extends Controller
 
         ]);
 
-       try {
+        try {
 
-         if(!empty($request->input('appointment_id'))){
-               $data = [
+            if (!empty($request->input('appointment_id'))) {
+                $data = [
 
                     'patient_id' => $validated['patient_id'],
 
@@ -80,73 +89,72 @@ class AppointmentsController extends Controller
 
                     'notes' => $validated['notes'] ?? null,
 
-                    'created_by' => auth()->id(),
+                    'created_by' => $request->created_by,
+                    'visit_token' => $getToken->activeToken,
 
-                   'priority' => 'normal',
+                    'priority' => 'normal',
 
                 ];
-            $isAppointmentUpdate = $this->updateAppointment($request->input('appointment_id'), $data);
-            if($isAppointmentUpdate){
-                return response()->json([
-                    'message' => 'Appointment updated successfully!'
-                ],201);
-            } else {
+                $isAppointmentUpdate = $this->updateAppointment($request->input('appointment_id'), $data);
+                if ($isAppointmentUpdate) {
+                    return response()->json([
+                        'message' => 'Appointment updated successfully!'
+                    ], 201);
+                } else {
                     return response()->json([
                         'message' => 'Sorry appointment could not e updated!'
                     ], 500);
+                }
             }
-         }
 
 
-        /*
+            /*
         |--------------------------------------------------------------------------
         | Create Appointment
         |--------------------------------------------------------------------------
         */
 
-        $appointment = Appointment::create([
+            $appointment = Appointment::create([
 
-            'patient_id' => $validated['patient_id'],
+                'patient_id' => $validated['patient_id'],
 
-            'doctor_id' => $validated['doctor_id'],
+                'doctor_id' => $validated['doctor_id'],
 
-            'department_id' => $validated['department_id'],
+                'department_id' => $validated['department_id'],
 
-            'reason' => $validated['reason'],
+                'reason' => $validated['reason'],
 
-            'appointment_date' => $validated['appointment_date'],
+                'appointment_date' => $validated['appointment_date'],
 
-            'appointment_time' => $validated['appointment_time'],
+                'appointment_time' => $validated['appointment_time'],
 
-            'notes' => $validated['notes'] ?? null,
+                'notes' => $validated['notes'] ?? null,
 
-            'created_by' => auth()->id(),
+                'created_by' => $request->created_by,
 
-            'status' => 'pending',
+                'status' => 'pending',
 
-            'priority' => 'normal',
+                'priority' => 'normal',
 
-        ]);
+            ]);
 
-        if($appointment){
+            if ($appointment) {
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Appointment booked successfully',
+
+                ], 201);
+            }
+        } catch (\Exception $e) {
             return response()->json([
-                'status' => true,
-                'message' => 'Appointment booked successfully',
-
-            ], 201);
-        }
-
-       } catch(\Exception $e) {
-         return response()->json([
                 'status' => false,
-                'message' => 'Failed to book appointment '.$e->getMessage()
+                'message' => 'Failed to book appointment ' . $e->getMessage()
             ], 500);
-       }
+        }
     }
 
-    public function updateAppointment(int $appointmentId, array $data){
-        return Appointment::where('id',$appointmentId)->update($data);
+    public function updateAppointment(int $appointmentId, array $data)
+    {
+        return Appointment::where('id', $appointmentId)->update($data);
     }
-
-    
 }

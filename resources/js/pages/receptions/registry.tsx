@@ -267,7 +267,7 @@ const getTableColumns = (formatDate: (date: string) => string) => [
         render: (patient: Patient) => (
             <div className="flex items-center justify-end gap-3">
                 <Link
-                    href={`/patients/${patient.id}`}
+                    href={`/patients/dashboard/${patient.id}`}
                     className="font-medium text-blue-600 transition-colors hover:text-blue-800"
                 >
                     View
@@ -324,7 +324,7 @@ export default function Registry() {
                 setHasSearched(true);
 
                 if (response.data.data.length === 0) {
-                    toast.info('No patients found matching your criteria');
+                    toast.error('No patients found matching your criteria');
                 }
             } else {
                 toast.error(
@@ -664,7 +664,9 @@ export default function Registry() {
                             columns={columns}
                             searchable={false}
                             onRowClick={(patient) => {
-                                router.visit(`/patients/${patient.id}`);
+                                router.visit(
+                                    `/patients/dashboard/${patient.id}`,
+                                );
                             }}
                             emptyMessage="No patients found"
                             className="rounded-xl border border-gray-200 bg-white shadow-sm"

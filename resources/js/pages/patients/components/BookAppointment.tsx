@@ -16,7 +16,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import Http from '@/utils/Http';
 
-export default function BookAppointment({ appointmentId }) {
+export default function BookAppointment({
+    appointmentId,
+    auth,
+    onSuccess,
+    onClose,
+}) {
     const { doctors, patientId, departments } = usePage().props as any;
     const [doctorId, setDoctorId] = useState<number | null>(null);
     const [departmentId, setDepartmentId] = useState<number | null>(null);
@@ -54,6 +59,64 @@ export default function BookAppointment({ appointmentId }) {
         'in_progress',
     ];
 
+    // const handleBookAppointment = async () => {
+    //     if (
+    //         !doctorId ||
+    //         !departmentId ||
+    //         !appointmentDate ||
+    //         !appointmentTime ||
+    //         !reason
+    //     ) {
+    //         Notiflix.Notify.failure('Please fill in all required fields.');
+    //         return;
+    //     }
+
+    //     setLoading(true);
+
+    //     try {
+    //         const payload = {
+    //             patient_id: patientId,
+    //             doctor_id: doctorId,
+    //             department_id: departmentId,
+    //             appointment_date: appointmentDate,
+    //             appointment_time: appointmentTime,
+    //             appointment_id: appointmentId,
+    //             created_by: auth.user.id,
+    //             reason,
+    //             notes,
+    //         };
+
+    //         const response = await Http.post('appointments/create', payload);
+
+    //         if (response.status === 201) {
+    //             Notiflix.Notify.success(
+    //                 response.data.message || 'Appointment booked successfully!',
+    //             );
+
+    //             // reset form
+    //             setDoctorId(null);
+    //             setDepartmentId(null);
+    //             setAppointmentDate('');
+    //             setAppointmentTime('');
+    //             setReason('');
+    //             setNotes('');
+
+    //             // ✅ close the modal
+    //             onSuccess?.(response.data);
+    //             onClose?.();
+    //         } else {
+    //             Notiflix.Notify.failure(
+    //                 response.data.message || 'Something went wrong.',
+    //             );
+    //         }
+    //     } catch (error: any) {
+    //         Notiflix.Notify.failure(
+    //             error.response?.data?.message || 'Something went wrong.',
+    //         );
+    //     } finally {
+    //         setLoading(false);
+    //     }
+    // };
     const handleBookAppointment = async () => {
         if (
             !doctorId ||
@@ -76,6 +139,7 @@ export default function BookAppointment({ appointmentId }) {
                 appointment_date: appointmentDate,
                 appointment_time: appointmentTime,
                 appointment_id: appointmentId,
+                created_by: auth.user.id,
                 reason,
                 notes,
             };
@@ -99,7 +163,7 @@ export default function BookAppointment({ appointmentId }) {
                 );
             }
         } catch (error) {
-            Notiflix.Notify.failure('Server error. Please try again later.');
+            Notiflix.Notify.failure(error.response.data.message);
         } finally {
             setLoading(false);
         }

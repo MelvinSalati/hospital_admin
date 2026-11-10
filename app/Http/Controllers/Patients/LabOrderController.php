@@ -90,7 +90,7 @@ class LabOrderController extends Controller
      */
     public function store(Request $request)
     {
-        Log::info('order details',[$request->all()]);
+
         $validator = Validator::make($request->all(), [
             'patient_id' => 'required|exists:patients,id',
             'services' => 'required|array|min:1',
@@ -247,6 +247,7 @@ class LabOrderController extends Controller
                     'visit_token' => $token,
                     'items_count' => count($invoiceItems),
                     'total' => $totalAmount,
+                    'created' => $request->created_by
                 ]);
             }
 
@@ -276,7 +277,7 @@ class LabOrderController extends Controller
                 'clinical_notes' => null,
                 'status' => 'pending',
                 'priority' => $orderPriority,
-                'ordered_by' => Auth::id(),
+                'ordered_by' => $request->created_by,
                 'ordered_date' => now(),
                 'collected_date' => null,
                 'collected_by' => null,
@@ -323,6 +324,7 @@ class LabOrderController extends Controller
                     'quantity' => $quantity,
                     'unit_price' => $unitPrice,
                     'total_price' => $totalPrice,
+                    'created_by' => $request->created_by,
                     'priority' => $priority,
                     'notes' => $service['notes'] ?? null,
                     'status' => 'pending',
@@ -402,11 +404,11 @@ class LabOrderController extends Controller
         return sprintf(
             'LAB-%s-%04d',
             $date,
-            $lastOrder,
+            rand(00000, 99999),
         );
     }
 
-  
+
 
     /**
      * Helper: Get overall order priority based on items

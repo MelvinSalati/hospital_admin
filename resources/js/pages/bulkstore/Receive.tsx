@@ -572,7 +572,8 @@ export default function Receive() {
             requisition.items?.map((item) => ({
                 id: item.id,
                 product_id: item.product_id,
-                commodity: item.product?.product_name || `Product #${item.product_id}`,
+                commodity:
+                    item.product?.product_name || `Product #${item.product_id}`,
                 product_code: item.product?.product_code || '',
                 batch_number: '',
                 expiry_date: '',
@@ -924,14 +925,10 @@ export default function Receive() {
                 { title: 'Home', href: '/' },
                 { title: 'Bulk Store', href: '' },
                 { title: 'Receive Stock', href: '' },
-                {
-                    title: 'Previously Received Items',
-                    href: 'bulkstore/received-stock',
-                },
             ]}
         >
-            <div className="min-h-screen bg-slate-100 px-4 py-6 dark:bg-slate-900">
-                <Container>
+            <div className="min-h-screen bg-blue-50 p-2">
+                <div>
                     {/* Header */}
                     <PageHeader
                         icon={<BoxesIcon className="h-6 w-6" />}
@@ -949,7 +946,7 @@ export default function Receive() {
                     />
 
                     {/* Table */}
-                    <div className="mt-6">
+                    <div className="">
                         <ReusableTable
                             columns={columns}
                             data={requisitions}
@@ -1008,7 +1005,7 @@ export default function Receive() {
                             }}
                         />
                     </div>
-                </Container>
+                </div>
             </div>
 
             {/* ========================================== */}
@@ -1207,7 +1204,9 @@ export default function Receive() {
                                                                     item.receive_quantity ||
                                                                     ''
                                                                 }
-                                                                onChange={(e) => {
+                                                                onChange={(
+                                                                    e,
+                                                                ) => {
                                                                     const value =
                                                                         parseFloat(
                                                                             e
@@ -1255,7 +1254,9 @@ export default function Receive() {
                                                                     item.batch_number ||
                                                                     ''
                                                                 }
-                                                                onChange={(e) => {
+                                                                onChange={(
+                                                                    e,
+                                                                ) => {
                                                                     const updated =
                                                                         [
                                                                             ...receiveItems,
@@ -1276,7 +1277,9 @@ export default function Receive() {
                                                                     item.expiry_date ||
                                                                     ''
                                                                 }
-                                                                onChange={(e) => {
+                                                                onChange={(
+                                                                    e,
+                                                                ) => {
                                                                     const selectedDate =
                                                                         new Date(
                                                                             e
@@ -1866,7 +1869,8 @@ export default function Receive() {
                                                     </p>
                                                     {item.product_code && (
                                                         <p className="text-xs text-slate-500">
-                                                            Code: {item.product_code}
+                                                            Code:{' '}
+                                                            {item.product_code}
                                                         </p>
                                                     )}
                                                     <p className="text-xs text-slate-500">

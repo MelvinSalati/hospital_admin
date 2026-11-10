@@ -78,6 +78,7 @@ export default function OrderModal({
     onClose,
     onSuccess,
     authenticated,
+    departmentId,
 }: OrderModalProps) {
     // ─── State ──────────────────────────────────────────
     const [items, setItems] = useState<StockItem[]>([]);
@@ -88,7 +89,7 @@ export default function OrderModal({
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
-
+    console.log(departmentId);
     const searchRef = useRef<HTMLInputElement>(null);
     const barcodeRef = useRef<HTMLInputElement>(null);
 
@@ -155,7 +156,7 @@ export default function OrderModal({
         try {
             const payload = {
                 requestedBy: authenticated.user.id ?? 0,
-                department: authenticated.user.departmentId ?? 0,
+                department: authenticated.user.departmentId ?? departmentId,
                 items: cart.map((i) => ({
                     product_id: i.product_id,
                     quantity: i.quantity,
@@ -164,7 +165,7 @@ export default function OrderModal({
                     expiry_date: i.expiry_date,
                 })),
             };
-            console.log(payload);
+            console.log(authenticated);
 
             const res = await Http.post('/bulk-store/order/items', payload);
 

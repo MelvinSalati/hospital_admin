@@ -4,7 +4,7 @@ namespace App\Http\Controllers\Nurses;
 
 use App\Http\Controllers\Controller;
 use App\Models\BulkStores\StockLedger;
-use App\Models\Nurses\DepartmentRequisitionItem;
+use App\Models\BulkStores\DepartmentRequisitionItem;
 use App\Models\Services\Service;
 use Illuminate\Support\Str;
 use Illuminate\Http\Request;
@@ -15,8 +15,52 @@ class BulkStoreController extends Controller
 {
     public function index()
     {
-        return Inertia::render('nurses/bulkstore',[
+        return Inertia::render('nurses/bulkstore', [
             'services' => Service::all(),
+
+            'orderedItems' => \App\Models\BulkStores\DepartmentRequisition::with([
+                'department:id,name',
+                'requestedBy:id,name',
+                'items.product:id,product_name,product_code',
+            ])
+                ->latest()
+                ->get()
+                ->map(function ($req) {
+                    return [
+                        'id'                 => $req->id,
+                        'requisition_uuid'   => $req->requisition_uuid,
+                        'requisition_number' => $req->requisition_number,
+                        'status'             => $req->status,
+                        'priority'           => $req->priority,
+                        'requested_at'       => $req->requested_at?->toIso8601String(),
+                        'required_by_date'   => $req->required_by_date?->format('Y-m-d'),
+                        'estimated_total'    => (float) ($req->estimated_total ?? 0),
+                        'items_count'        => $req->items->count(),
+                        'department'         => $req->department?->name,
+                        'requested_by'       => $req->requestedBy?->name,
+                        'justification'      => $req->justification,
+
+                        // ─── line items for the details modal ───
+                        'items' => $req->items->map(function ($item) {
+                            return [
+                                'id'                    => $item->id,
+                                'product_id'            => $item->product_id,
+                                'product_name'          => $item->product?->product_name ?? 'Unknown',
+                                'product_code'          => $item->product?->product_code,
+                                'quantity_requested'    => $item->quantity_requested,
+                                'quantity_approved'     => $item->quantity_approved,
+                                'quantity_fulfilled'    => $item->quantity_fulfilled,
+                                'unit'                  => $item->unit,
+                                'estimated_unit_price'  => (float) ($item->estimated_unit_price ?? 0),
+                                'estimated_total'       => (float) ($item->estimated_total ?? 0),
+                                'batch_number'          => $item->batch_number,
+                                'expiry_date'           => $item->expiry_date?->format('Y-m-d'),
+                                'status'                => $item->status,
+                                'notes'                 => $item->notes,
+                            ];
+                        })->values(),
+                    ];
+                }),
         ]);
     }
 
@@ -51,23 +95,5 @@ class BulkStoreController extends Controller
         ]);
     }
 
-    public function orderStock(Request $request) {
-    $orderDetails  =  [
-        'uuid'         => Str::uuid(),
-        'department_id'=> $request->input('department',6),
-        'product_id' => $request->productId,
-        'quantity_requested' => $request->quantity,
-        'unit' => $request->unit,
-        'estimated_unit_price' => $request->estimatedUnitPrice,
-        'estimated_total' => $request->estimatedTotal,
-        'actual_unit_price' => $request->actualUnitPrice,
-        'actual_total' => $request->actualTotal,
-        'batch_number' => $request->bacthNumber,
-        'expiry_date' => $request->expiryDate,
-        'notes' =>   $request->notes
-    ];
 
-    $order =  DepartmentRequisitionItem::create($orderDetails);
-
-    }
 }

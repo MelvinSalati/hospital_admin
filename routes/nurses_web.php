@@ -13,12 +13,12 @@ use App\Http\Controllers\Nurses\NursesController;
 
 
 Route::prefix('nurses')->group(function(){
-    Route::get('/dashboard',[ReceptionController::class, 'index']);
+    Route::get('/dashboard', [NursesController::class,'dashboard']);
     Route::get('/registry',[ReceptionController::class,'search']);
     Route::get('/create',[PatientController::class,'create']);
     Route::get('/appointments',[AppointmentController::class,'index']);
     Route::get('/bills',[BillController::class, 'index']);
-    Route::inertia('/reports', 'receptions/report');
+    Route::inertia('/reports', 'nurses/reports');
     Route::get('/bulk-store',[BulkStoreController::class, 'index']);
     Route::get('/insurance',[BillController::class, 'insurance']);
     Route::get('/visits', [NursesController::class,'visit']);

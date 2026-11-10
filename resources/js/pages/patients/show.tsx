@@ -79,6 +79,9 @@ import PatientLayout from '@/layouts/patients/PatientLayout';
 import Http from '@/utils/Http';
 import PatientVisitSchemeModal from './components/PatientSchemeModal';
 
+// ✅ ROLE-GATE: shared role helper
+import { getUserRole, isReceptionist } from '@/lib/roles';
+
 interface Department {
     id: number;
     department_name?: string;
@@ -108,7 +111,6 @@ interface VisitStatus {
     token_details?: any;
 }
 
-// Real data interfaces
 interface Interaction {
     id: number;
     interaction_uuid: string;
@@ -302,8 +304,14 @@ export default function Patient() {
         visit_status,
         insuranceProviders,
     } = props;
-    console.log(props);
-    console.log(insuranceProviders);
+
+    // ✅ ROLE-GATE: read role once on mount
+    const [userRole, setUserRole] = useState<string | null>(null);
+    useEffect(() => {
+        setUserRole(getUserRole());
+    }, []);
+    const canStartVisit = isReceptionist(userRole);
+
     // Extract patient from props - handle both array and single object
     const patientFromProps = props.patient;
     const patient = Array.isArray(patientFromProps)
@@ -401,7 +409,6 @@ export default function Patient() {
         }
     }
 
-    // Format date
     function formatDate(date: string) {
         if (!date) return '—';
         try {
@@ -415,7 +422,6 @@ export default function Patient() {
         }
     }
 
-    // Format time
     function formatTime(date: string) {
         if (!date) return '—';
         try {
@@ -455,7 +461,6 @@ export default function Patient() {
             `https://ui-avatars.com/api/?name=${patient?.first_name || 'User'}&background=3b82f6&color=fff&size=128`,
     };
 
-    // Transform real data for display
     // Medical Summary from allergies and chronic conditions
     const medicalSummary = useMemo(() => {
         const items = [];
@@ -530,7 +535,6 @@ export default function Patient() {
               ];
     }, [patient]);
 
-    // Treatment Plan from prescriptions
     const treatmentPlan = useMemo(() => {
         if (!patient?.prescription || patient.prescription.length === 0) {
             return [
@@ -565,7 +569,6 @@ export default function Patient() {
         }));
     }, [patient?.prescription]);
 
-    // Lab Reports from laboratory data
     const labReports = useMemo(() => {
         if (!patient?.laboratory || patient.laboratory.length === 0) {
             return [
@@ -600,7 +603,6 @@ export default function Patient() {
         }));
     }, [patient?.laboratory]);
 
-    // Medical History from interactions
     const medicalHistory = useMemo(() => {
         if (!patient?.interaction || patient.interaction.length === 0) {
             return [
@@ -632,7 +634,6 @@ export default function Patient() {
         }));
     }, [patient?.interaction]);
 
-    // Appointments from interactions with type 'appointment' or 'consultation'
     const appointments = useMemo(() => {
         const apptInteractions =
             patient?.interaction?.filter(
@@ -676,7 +677,6 @@ export default function Patient() {
         }));
     }, [patient?.interaction]);
 
-    // Vital Signs
     const vitalSigns = useMemo(() => {
         if (!patient?.vital_sign || patient.vital_sign.length === 0) {
             return null;
@@ -696,7 +696,6 @@ export default function Patient() {
         };
     }, [patient?.vital_sign]);
 
-    // Get unique values for filters
     const medicalTypes = [...new Set(medicalSummary.map((item) => item.type))];
     const medicalSeverities = [
         ...new Set(medicalSummary.map((item) => item.severity)),
@@ -714,7 +713,6 @@ export default function Patient() {
         ...new Set(appointments.map((item) => item.status)),
     ];
 
-    // Filter functions
     const filteredMedical = useMemo(() => {
         return medicalSummary.filter((item) => {
             const searchMatch = item.condition
@@ -814,9 +812,6 @@ export default function Patient() {
         setError('');
     };
 
-    // In your Patient.tsx
-
-    // Update the handleStartVisit function
     const handleStartVisit = async (data: {
         scheme: string;
         provider_id?: number | string | null;
@@ -876,10 +871,9 @@ export default function Patient() {
                     `Visit started successfully! Token: ${response.data.token}`,
                 );
 
-                // Close modal and reload after success
                 setTimeout(() => {
                     setShowStartVisitModal(false);
-                    setLoading(false); // Reset loading state
+                    setLoading(false);
                     setError('');
                     router.reload();
                 }, 1500);
@@ -887,7 +881,7 @@ export default function Patient() {
                 Notiflix.Notify.failure(
                     response.data.message || 'Failed to start visit',
                 );
-                setLoading(false); // Reset loading state on failure
+                setLoading(false);
             }
         } catch (error: any) {
             console.error('Start visit error:', error);
@@ -903,21 +897,9 @@ export default function Patient() {
             }
             setError(errorMessage);
             Notiflix.Notify.failure(errorMessage);
-            setLoading(false); // Reset loading state on error
+            setLoading(false);
         }
     };
-
-    // Modal usage in JSX done
-    <PatientVisitSchemeModal
-        open={showStartVisitModal}
-        onOpenChange={setShowStartVisitModal}
-        onSubmit={handleStartVisit}
-        patient={patient}
-        schemes={insuranceProviders}
-        loading={loading}
-        title="Start Patient Visit"
-        subtitle="Create encounter and resolve visit pricing"
-    />;
 
     const handleAssign = async () => {
         if (!selectedDepartment) {
@@ -1064,7 +1046,6 @@ export default function Patient() {
         return filtered;
     }, [users, staffSearch]);
 
-    // Helper functions for styling
     const getStatusColor = (status: string) => {
         const colors: Record<string, string> = {
             Active: 'bg-emerald-100 text-emerald-700',
@@ -1093,7 +1074,6 @@ export default function Patient() {
         return colors[severity] || 'bg-gray-100 text-gray-700';
     };
 
-    // Render filter bar component
     const renderFilterBar = (
         search: string,
         setSearch: (value: string) => void,
@@ -1164,50 +1144,55 @@ export default function Patient() {
                 { title: 'Patient', href: '' },
                 { title: patientData.name, href: '' },
             ]}
-            onAssignClick={() => {
-                // your existing assign handler
-                resetSelections();
-                setShowVisitModal(true);
-            }}
-            onStartVisitClick={() => {
-                // your existing start-visit handler
-                setShowStartVisitModal(true);
-            }}
+            // ✅ ROLE-GATE: only pass handlers for receptionists
+            onAssignClick={
+                canStartVisit
+                    ? () => {
+                          resetSelections();
+                          setShowVisitModal(true);
+                      }
+                    : undefined
+            }
+            onStartVisitClick={
+                canStartVisit ? () => setShowStartVisitModal(true) : undefined
+            }
         >
             <div className="min-h-screen bg-blue-50">
-                {/* Top Bar with Quick Actions */}
-                <div className="border-b bg-white p-4">
-                    <div className="flex items-center gap-2">
-                        {hasStartedVisit ? (
-                            <>
+                {/* ✅ ROLE-GATE: entire top bar visible only to receptionists */}
+                {canStartVisit && (
+                    <div className="border-b bg-white p-4">
+                        <div className="flex items-center gap-2">
+                            {hasStartedVisit ? (
+                                <>
+                                    <Button
+                                        size="sm"
+                                        className="bg-blue-700"
+                                        onClick={() => {
+                                            resetSelections();
+                                            setShowVisitModal(true);
+                                        }}
+                                    >
+                                        <Building2 className="mr-2 h-4 w-4" />
+                                        Assign to Department
+                                    </Button>
+                                    {visitToken && (
+                                        <Badge className="bg-green-200 text-green-700">
+                                            Token: {visitToken}
+                                        </Badge>
+                                    )}
+                                </>
+                            ) : (
                                 <Button
                                     size="sm"
-                                    className="bg-blue-700"
-                                    onClick={() => {
-                                        resetSelections();
-                                        setShowVisitModal(true);
-                                    }}
+                                    onClick={() => setShowStartVisitModal(true)}
                                 >
-                                    <Building2 className="mr-2 h-4 w-4" />
-                                    Assign to Department
+                                    <Clock className="mr-2 h-4 w-4" />
+                                    Start Visit
                                 </Button>
-                                {visitToken && (
-                                    <Badge className="bg-green-200 text-green-700">
-                                        Token: {visitToken}
-                                    </Badge>
-                                )}
-                            </>
-                        ) : (
-                            <Button
-                                size="sm"
-                                onClick={() => setShowStartVisitModal(true)}
-                            >
-                                <Clock className="mr-2 h-4 w-4" />
-                                Start Visit
-                            </Button>
-                        )}
+                            )}
+                        </div>
                     </div>
-                </div>
+                )}
 
                 {/* Main Content - 70/30 Layout */}
                 <div className="p-6">
@@ -1889,7 +1874,7 @@ export default function Patient() {
                                         </CardContent>
                                     </Card>
 
-                                    {/* Billing Summary - Placeholder for now */}
+                                    {/* Billing Summary */}
                                     <Card className="border-0 shadow-sm">
                                         <CardHeader className="pb-3">
                                             <div className="flex items-center justify-between">
@@ -1952,415 +1937,436 @@ export default function Patient() {
                     )}
                 </div>
 
-                {/* Start Visit Modal */}
-                <PatientVisitSchemeModal
-                    open={showStartVisitModal}
-                    onOpenChange={setShowStartVisitModal}
-                    onSubmit={handleStartVisit}
-                    patient={patient}
-                    schemes={insuranceProviders} // Make sure this is passed from your controller
-                    loading={loading}
-                    title="Start Patient Visit"
-                    subtitle="Create encounter and resolve visit pricing"
-                />
+                {/* ✅ ROLE-GATE: Start Visit Modal only for receptionists */}
+                {canStartVisit && (
+                    <PatientVisitSchemeModal
+                        open={showStartVisitModal}
+                        onOpenChange={setShowStartVisitModal}
+                        onSubmit={handleStartVisit}
+                        patient={patient}
+                        schemes={insuranceProviders}
+                        loading={loading}
+                        title="Start Patient Visit"
+                        subtitle="Create encounter and resolve visit pricing"
+                    />
+                )}
 
-                {/* Assign to Department Modal */}
-                <Dialog open={showVisitModal} onOpenChange={setShowVisitModal}>
-                    <DialogContent className="w-fit max-w-6xl min-w-[1000px] overflow-hidden bg-gray-50 p-0">
-                        <DialogHeader className="p-6 pb-2">
-                            <DialogTitle className="text-xl">
-                                Assign to Department
-                            </DialogTitle>
-                            {visitToken && (
-                                <p className="mt-1 text-sm text-purple-600">
-                                    Visit Token: {visitToken}
-                                </p>
+                {/* ✅ ROLE-GATE: Assign to Department Modal only for receptionists */}
+                {canStartVisit && (
+                    <Dialog
+                        open={showVisitModal}
+                        onOpenChange={setShowVisitModal}
+                    >
+                        <DialogContent className="w-fit max-w-6xl min-w-[1000px] overflow-hidden bg-gray-50 p-0">
+                            <DialogHeader className="p-6 pb-2">
+                                <DialogTitle className="text-xl">
+                                    Assign to Department
+                                </DialogTitle>
+                                {visitToken && (
+                                    <p className="mt-1 text-sm text-purple-600">
+                                        Visit Token: {visitToken}
+                                    </p>
+                                )}
+                            </DialogHeader>
+                            {error && (
+                                <div className="mx-6 mb-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                                    {error}
+                                </div>
                             )}
-                        </DialogHeader>
-                        {error && (
-                            <div className="mx-6 mb-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                                {error}
-                            </div>
-                        )}
-                        <div className="grid max-h-[70vh] grid-cols-3 gap-4 overflow-hidden px-6 py-4">
-                            {/* Departments Column */}
-                            <div className="flex h-full flex-col overflow-hidden border-r">
-                                <CardContent className="flex h-full flex-col p-4">
-                                    <div className="flex-shrink-0">
-                                        <div className="mb-3 flex items-center justify-between">
-                                            <h3 className="font-medium">
-                                                Departments
-                                            </h3>
-                                            <Badge variant="outline">
-                                                {filteredDepartments.length} of{' '}
-                                                {departments.length}
-                                            </Badge>
-                                        </div>
-                                        <div className="relative mb-2">
-                                            <Search className="absolute top-2.5 left-2 h-4 w-4 text-gray-400" />
-                                            <Input
-                                                placeholder="Search departments..."
-                                                className="h-9 bg-white pl-8 text-sm"
-                                                value={departmentSearch}
-                                                onChange={(e) =>
-                                                    setDepartmentSearch(
-                                                        e.target.value,
-                                                    )
-                                                }
-                                            />
-                                            {departmentSearch && (
-                                                <XCircle
-                                                    className="absolute top-2.5 right-2 h-4 w-4 cursor-pointer text-gray-400 hover:text-gray-600"
-                                                    onClick={() =>
-                                                        setDepartmentSearch('')
+                            <div className="grid max-h-[70vh] grid-cols-3 gap-4 overflow-hidden px-6 py-4">
+                                {/* Departments Column */}
+                                <div className="flex h-full flex-col overflow-hidden border-r">
+                                    <CardContent className="flex h-full flex-col p-4">
+                                        <div className="flex-shrink-0">
+                                            <div className="mb-3 flex items-center justify-between">
+                                                <h3 className="font-medium">
+                                                    Departments
+                                                </h3>
+                                                <Badge variant="outline">
+                                                    {filteredDepartments.length}{' '}
+                                                    of {departments.length}
+                                                </Badge>
+                                            </div>
+                                            <div className="relative mb-2">
+                                                <Search className="absolute top-2.5 left-2 h-4 w-4 text-gray-400" />
+                                                <Input
+                                                    placeholder="Search departments..."
+                                                    className="h-9 bg-white pl-8 text-sm"
+                                                    value={departmentSearch}
+                                                    onChange={(e) =>
+                                                        setDepartmentSearch(
+                                                            e.target.value,
+                                                        )
                                                     }
                                                 />
+                                                {departmentSearch && (
+                                                    <XCircle
+                                                        className="absolute top-2.5 right-2 h-4 w-4 cursor-pointer text-gray-400 hover:text-gray-600"
+                                                        onClick={() =>
+                                                            setDepartmentSearch(
+                                                                '',
+                                                            )
+                                                        }
+                                                    />
+                                                )}
+                                            </div>
+                                            <div className="mb-3 flex items-center gap-2">
+                                                <Filter className="h-4 w-4 text-gray-400" />
+                                                <Select
+                                                    value={departmentFilter}
+                                                    onValueChange={
+                                                        setDepartmentFilter
+                                                    }
+                                                >
+                                                    <SelectTrigger className="h-8 text-xs">
+                                                        <SelectValue placeholder="Filter by status" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="all">
+                                                            All Departments
+                                                        </SelectItem>
+                                                        <SelectItem value="active">
+                                                            Active Only
+                                                        </SelectItem>
+                                                        <SelectItem value="inactive">
+                                                            Inactive Only
+                                                        </SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+                                        </div>
+                                        <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                                            {filteredDepartments.length ===
+                                            0 ? (
+                                                <div className="py-8 text-center text-gray-500">
+                                                    No departments found
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-2">
+                                                    {filteredDepartments.map(
+                                                        (dept) => {
+                                                            const isActive =
+                                                                dept.is_active !==
+                                                                    false &&
+                                                                dept.status !==
+                                                                    'inactive';
+                                                            const deptName =
+                                                                dept.department_name ||
+                                                                dept.name ||
+                                                                'Unnamed';
+                                                            return (
+                                                                <div
+                                                                    key={
+                                                                        dept.id
+                                                                    }
+                                                                    className={`flex cursor-pointer items-start gap-2 rounded p-3 transition-colors ${
+                                                                        selectedDepartment ===
+                                                                        dept.id
+                                                                            ? 'border border-blue-200 bg-blue-50'
+                                                                            : isActive
+                                                                              ? 'border border-transparent hover:bg-gray-50'
+                                                                              : 'cursor-not-allowed opacity-50'
+                                                                    }`}
+                                                                    onClick={() => {
+                                                                        if (
+                                                                            isActive
+                                                                        ) {
+                                                                            setSelectedDepartment(
+                                                                                dept.id,
+                                                                            );
+                                                                            setError(
+                                                                                '',
+                                                                            );
+                                                                        }
+                                                                    }}
+                                                                >
+                                                                    <div
+                                                                        className={`mt-0.5 h-4 w-4 rounded-full border ${
+                                                                            selectedDepartment ===
+                                                                            dept.id
+                                                                                ? 'border-4 border-blue-600'
+                                                                                : 'border-2 border-gray-300'
+                                                                        }`}
+                                                                    />
+                                                                    <div className="flex-1">
+                                                                        <div className="flex items-center justify-between">
+                                                                            <p className="text-sm font-medium">
+                                                                                {
+                                                                                    deptName
+                                                                                }
+                                                                            </p>
+                                                                            {!isActive && (
+                                                                                <Badge
+                                                                                    variant="outline"
+                                                                                    className="bg-gray-50 text-xs text-gray-700"
+                                                                                >
+                                                                                    Inactive
+                                                                                </Badge>
+                                                                            )}
+                                                                        </div>
+                                                                        <p className="text-xs text-gray-500">
+                                                                            Head:{' '}
+                                                                            {dept.head_of_department ||
+                                                                                'Not assigned'}
+                                                                        </p>
+                                                                        <p className="text-xs text-gray-400">
+                                                                            {dept.location ||
+                                                                                'Location not set'}
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        },
+                                                    )}
+                                                </div>
                                             )}
                                         </div>
-                                        <div className="mb-3 flex items-center gap-2">
-                                            <Filter className="h-4 w-4 text-gray-400" />
-                                            <Select
-                                                value={departmentFilter}
-                                                onValueChange={
-                                                    setDepartmentFilter
-                                                }
-                                            >
-                                                <SelectTrigger className="h-8 text-xs">
-                                                    <SelectValue placeholder="Filter by status" />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="all">
-                                                        All Departments
-                                                    </SelectItem>
-                                                    <SelectItem value="active">
-                                                        Active Only
-                                                    </SelectItem>
-                                                    <SelectItem value="inactive">
-                                                        Inactive Only
-                                                    </SelectItem>
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
-                                    </div>
-                                    <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-                                        {filteredDepartments.length === 0 ? (
-                                            <div className="py-8 text-center text-gray-500">
-                                                No departments found
+                                    </CardContent>
+                                </div>
+
+                                {/* Staff Column */}
+                                <div className="flex h-full flex-col overflow-hidden border-r">
+                                    <CardContent className="flex h-full flex-col p-4">
+                                        <div className="flex-shrink-0">
+                                            <div className="mb-3 flex items-center justify-between">
+                                                <h3 className="font-medium">
+                                                    Assign to Staff
+                                                </h3>
+                                                <Badge variant="outline">
+                                                    {selectedStaff
+                                                        ? '1 selected'
+                                                        : '0 selected'}
+                                                </Badge>
                                             </div>
-                                        ) : (
-                                            <div className="space-y-2">
-                                                {filteredDepartments.map(
-                                                    (dept) => {
-                                                        const isActive =
-                                                            dept.is_active !==
-                                                                false &&
-                                                            dept.status !==
-                                                                'inactive';
-                                                        const deptName =
-                                                            dept.department_name ||
-                                                            dept.name ||
-                                                            'Unnamed';
-                                                        return (
+                                            <div className="relative mb-2">
+                                                <Search className="absolute top-2.5 left-2 h-4 w-4 bg-white text-gray-400" />
+                                                <Input
+                                                    placeholder="Search staff..."
+                                                    className="h-9 pl-8 text-sm"
+                                                    value={staffSearch}
+                                                    onChange={(e) =>
+                                                        setStaffSearch(
+                                                            e.target.value,
+                                                        )
+                                                    }
+                                                />
+                                                {staffSearch && (
+                                                    <XCircle
+                                                        className="absolute top-2.5 right-2 h-4 w-4 cursor-pointer text-gray-400 hover:text-gray-600"
+                                                        onClick={() =>
+                                                            setStaffSearch('')
+                                                        }
+                                                    />
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                                            {filteredStaff.length === 0 ? (
+                                                <div className="py-8 text-center text-gray-500">
+                                                    No staff found
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-2">
+                                                    {filteredStaff.map(
+                                                        (person) => (
                                                             <div
-                                                                key={dept.id}
+                                                                key={person.id}
                                                                 className={`flex cursor-pointer items-start gap-2 rounded p-3 transition-colors ${
-                                                                    selectedDepartment ===
-                                                                    dept.id
-                                                                        ? 'border border-blue-200 bg-blue-50'
-                                                                        : isActive
-                                                                          ? 'border border-transparent hover:bg-gray-50'
-                                                                          : 'cursor-not-allowed opacity-50'
+                                                                    selectedStaff ===
+                                                                    person.id
+                                                                        ? 'border border-purple-200 bg-purple-50'
+                                                                        : 'border border-transparent hover:bg-gray-50'
                                                                 }`}
-                                                                onClick={() => {
-                                                                    if (
-                                                                        isActive
-                                                                    ) {
-                                                                        setSelectedDepartment(
-                                                                            dept.id,
-                                                                        );
-                                                                        setError(
-                                                                            '',
-                                                                        );
-                                                                    }
-                                                                }}
+                                                                onClick={() =>
+                                                                    handleStaffSelect(
+                                                                        person.id,
+                                                                    )
+                                                                }
                                                             >
                                                                 <div
                                                                     className={`mt-0.5 h-4 w-4 rounded-full border ${
-                                                                        selectedDepartment ===
-                                                                        dept.id
-                                                                            ? 'border-4 border-blue-600'
+                                                                        selectedStaff ===
+                                                                        person.id
+                                                                            ? 'border-4 border-purple-600'
                                                                             : 'border-2 border-gray-300'
                                                                     }`}
                                                                 />
+                                                                <Avatar className="h-8 w-8">
+                                                                    <AvatarFallback className="bg-blue-100 text-xs text-blue-700">
+                                                                        {person.initials ||
+                                                                            person.name
+                                                                                ?.split(
+                                                                                    ' ',
+                                                                                )
+                                                                                .map(
+                                                                                    (
+                                                                                        n,
+                                                                                    ) =>
+                                                                                        n[0],
+                                                                                )
+                                                                                .join(
+                                                                                    '',
+                                                                                )
+                                                                                .slice(
+                                                                                    0,
+                                                                                    2,
+                                                                                )}
+                                                                    </AvatarFallback>
+                                                                </Avatar>
                                                                 <div className="flex-1">
                                                                     <div className="flex items-center justify-between">
                                                                         <p className="text-sm font-medium">
                                                                             {
-                                                                                deptName
+                                                                                person.name
                                                                             }
                                                                         </p>
-                                                                        {!isActive && (
+                                                                        {person.available ? (
                                                                             <Badge
                                                                                 variant="outline"
-                                                                                className="bg-gray-50 text-xs text-gray-700"
+                                                                                className="bg-green-50 text-xs text-green-700"
                                                                             >
-                                                                                Inactive
+                                                                                Available
+                                                                            </Badge>
+                                                                        ) : (
+                                                                            <Badge
+                                                                                variant="outline"
+                                                                                className="bg-red-50 text-xs text-red-700"
+                                                                            >
+                                                                                Busy
                                                                             </Badge>
                                                                         )}
                                                                     </div>
                                                                     <p className="text-xs text-gray-500">
-                                                                        Head:{' '}
-                                                                        {dept.head_of_department ||
-                                                                            'Not assigned'}
+                                                                        {person.role ||
+                                                                            'Staff'}
                                                                     </p>
                                                                     <p className="text-xs text-gray-400">
-                                                                        {dept.location ||
-                                                                            'Location not set'}
+                                                                        {person.department ||
+                                                                            'General'}{' '}
+                                                                        •{' '}
+                                                                        {person.patients ||
+                                                                            0}{' '}
+                                                                        patients
                                                                     </p>
                                                                 </div>
                                                             </div>
-                                                        );
-                                                    },
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                </CardContent>
-                            </div>
-
-                            {/* Staff Column */}
-                            <div className="flex h-full flex-col overflow-hidden border-r">
-                                <CardContent className="flex h-full flex-col p-4">
-                                    <div className="flex-shrink-0">
-                                        <div className="mb-3 flex items-center justify-between">
-                                            <h3 className="font-medium">
-                                                Assign to Staff
-                                            </h3>
-                                            <Badge variant="outline">
-                                                {selectedStaff
-                                                    ? '1 selected'
-                                                    : '0 selected'}
-                                            </Badge>
-                                        </div>
-                                        <div className="relative mb-2">
-                                            <Search className="absolute top-2.5 left-2 h-4 w-4 bg-white text-gray-400" />
-                                            <Input
-                                                placeholder="Search staff..."
-                                                className="h-9 pl-8 text-sm"
-                                                value={staffSearch}
-                                                onChange={(e) =>
-                                                    setStaffSearch(
-                                                        e.target.value,
-                                                    )
-                                                }
-                                            />
-                                            {staffSearch && (
-                                                <XCircle
-                                                    className="absolute top-2.5 right-2 h-4 w-4 cursor-pointer text-gray-400 hover:text-gray-600"
-                                                    onClick={() =>
-                                                        setStaffSearch('')
-                                                    }
-                                                />
+                                                        ),
+                                                    )}
+                                                </div>
                                             )}
                                         </div>
-                                    </div>
-                                    <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-                                        {filteredStaff.length === 0 ? (
-                                            <div className="py-8 text-center text-gray-500">
-                                                No staff found
-                                            </div>
-                                        ) : (
-                                            <div className="space-y-2">
-                                                {filteredStaff.map((person) => (
-                                                    <div
-                                                        key={person.id}
-                                                        className={`flex cursor-pointer items-start gap-2 rounded p-3 transition-colors ${
-                                                            selectedStaff ===
-                                                            person.id
-                                                                ? 'border border-purple-200 bg-purple-50'
-                                                                : 'border border-transparent hover:bg-gray-50'
-                                                        }`}
-                                                        onClick={() =>
-                                                            handleStaffSelect(
-                                                                person.id,
-                                                            )
-                                                        }
-                                                    >
-                                                        <div
-                                                            className={`mt-0.5 h-4 w-4 rounded-full border ${
-                                                                selectedStaff ===
-                                                                person.id
-                                                                    ? 'border-4 border-purple-600'
-                                                                    : 'border-2 border-gray-300'
-                                                            }`}
-                                                        />
-                                                        <Avatar className="h-8 w-8">
-                                                            <AvatarFallback className="bg-blue-100 text-xs text-blue-700">
-                                                                {person.initials ||
-                                                                    person.name
-                                                                        ?.split(
-                                                                            ' ',
-                                                                        )
-                                                                        .map(
-                                                                            (
-                                                                                n,
-                                                                            ) =>
-                                                                                n[0],
-                                                                        )
-                                                                        .join(
-                                                                            '',
-                                                                        )
-                                                                        .slice(
-                                                                            0,
-                                                                            2,
-                                                                        )}
-                                                            </AvatarFallback>
-                                                        </Avatar>
-                                                        <div className="flex-1">
-                                                            <div className="flex items-center justify-between">
-                                                                <p className="text-sm font-medium">
-                                                                    {
-                                                                        person.name
-                                                                    }
-                                                                </p>
-                                                                {person.available ? (
-                                                                    <Badge
-                                                                        variant="outline"
-                                                                        className="bg-green-50 text-xs text-green-700"
-                                                                    >
-                                                                        Available
-                                                                    </Badge>
-                                                                ) : (
-                                                                    <Badge
-                                                                        variant="outline"
-                                                                        className="bg-red-50 text-xs text-red-700"
-                                                                    >
-                                                                        Busy
-                                                                    </Badge>
-                                                                )}
-                                                            </div>
-                                                            <p className="text-xs text-gray-500">
-                                                                {person.role ||
-                                                                    'Staff'}
-                                                            </p>
-                                                            <p className="text-xs text-gray-400">
-                                                                {person.department ||
-                                                                    'General'}{' '}
-                                                                •{' '}
-                                                                {person.patients ||
-                                                                    0}{' '}
-                                                                patients
-                                                            </p>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-                                </CardContent>
-                            </div>
+                                    </CardContent>
+                                </div>
 
-                            {/* Additional Details Column */}
-                            <div className="flex h-full flex-col overflow-hidden">
-                                <CardContent className="flex h-full flex-col p-4">
-                                    <div className="flex-shrink-0">
-                                        <div className="mb-3 flex items-center justify-between">
-                                            <h3 className="font-medium">
-                                                Additional Details
-                                            </h3>
+                                {/* Additional Details Column */}
+                                <div className="flex h-full flex-col overflow-hidden">
+                                    <CardContent className="flex h-full flex-col p-4">
+                                        <div className="flex-shrink-0">
+                                            <div className="mb-3 flex items-center justify-between">
+                                                <h3 className="font-medium">
+                                                    Additional Details
+                                                </h3>
+                                            </div>
                                         </div>
-                                    </div>
-                                    <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
-                                        <div>
-                                            <label className="mb-2 block text-sm text-gray-600">
-                                                Service Type
-                                            </label>
-                                            <div className="flex flex-wrap gap-2">
-                                                {serviceOptions.map((item) => (
+                                        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+                                            <div>
+                                                <label className="mb-2 block text-sm text-gray-600">
+                                                    Service Type
+                                                </label>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {serviceOptions.map(
+                                                        (item) => (
+                                                            <Badge
+                                                                key={item.id}
+                                                                className={`${item.color} cursor-pointer text-white hover:opacity-80 ${
+                                                                    selectedServices.includes(
+                                                                        item.id,
+                                                                    )
+                                                                        ? 'ring-2 ring-blue-500 ring-offset-2'
+                                                                        : ''
+                                                                }`}
+                                                                onClick={() =>
+                                                                    toggleService(
+                                                                        item.id,
+                                                                    )
+                                                                }
+                                                            >
+                                                                {item.name}
+                                                            </Badge>
+                                                        ),
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className="mb-2 block text-sm text-gray-600">
+                                                    Type of visit
+                                                </label>
+                                                <div className="flex gap-4">
                                                     <Badge
-                                                        key={item.id}
-                                                        className={`${item.color} cursor-pointer text-white hover:opacity-80 ${
-                                                            selectedServices.includes(
-                                                                item.id,
-                                                            )
+                                                        onClick={() =>
+                                                            handleVisitType(1)
+                                                        }
+                                                        className={`cursor-pointer ${
+                                                            visitType === 1
                                                                 ? 'ring-2 ring-blue-500 ring-offset-2'
                                                                 : ''
-                                                        }`}
-                                                        onClick={() =>
-                                                            toggleService(
-                                                                item.id,
-                                                            )
-                                                        }
+                                                        } bg-green-600 text-white`}
                                                     >
-                                                        {item.name}
+                                                        New Visit
                                                     </Badge>
-                                                ))}
+                                                    <Badge
+                                                        onClick={() =>
+                                                            handleVisitType(2)
+                                                        }
+                                                        className={`cursor-pointer ${
+                                                            visitType === 2
+                                                                ? 'ring-2 ring-blue-500 ring-offset-2'
+                                                                : ''
+                                                        } bg-blue-600 text-white`}
+                                                    >
+                                                        Revisit
+                                                    </Badge>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className="mb-2 block text-sm text-gray-600">
+                                                    Purpose of visit
+                                                </label>
+                                                <textarea
+                                                    className="h-20 w-full rounded-lg border border-gray-200 bg-gray-100 p-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                                    onChange={
+                                                        handlePurposeOfVisit
+                                                    }
+                                                    value={purposeOfVisit}
+                                                    placeholder="Enter purpose of visit..."
+                                                />
                                             </div>
                                         </div>
-                                        <div>
-                                            <label className="mb-2 block text-sm text-gray-600">
-                                                Type of visit
-                                            </label>
-                                            <div className="flex gap-4">
-                                                <Badge
-                                                    onClick={() =>
-                                                        handleVisitType(1)
-                                                    }
-                                                    className={`cursor-pointer ${
-                                                        visitType === 1
-                                                            ? 'ring-2 ring-blue-500 ring-offset-2'
-                                                            : ''
-                                                    } bg-green-600 text-white`}
-                                                >
-                                                    New Visit
-                                                </Badge>
-                                                <Badge
-                                                    onClick={() =>
-                                                        handleVisitType(2)
-                                                    }
-                                                    className={`cursor-pointer ${
-                                                        visitType === 2
-                                                            ? 'ring-2 ring-blue-500 ring-offset-2'
-                                                            : ''
-                                                    } bg-blue-600 text-white`}
-                                                >
-                                                    Revisit
-                                                </Badge>
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <label className="mb-2 block text-sm text-gray-600">
-                                                Purpose of visit
-                                            </label>
-                                            <textarea
-                                                className="h-20 w-full rounded-lg border border-gray-200 bg-gray-100 p-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                                                onChange={handlePurposeOfVisit}
-                                                value={purposeOfVisit}
-                                                placeholder="Enter purpose of visit..."
-                                            />
-                                        </div>
-                                    </div>
-                                </CardContent>
+                                    </CardContent>
+                                </div>
                             </div>
-                        </div>
-                        <DialogFooter className="gap-2 p-6 pt-2">
-                            <Button
-                                variant="outline"
-                                onClick={() => {
-                                    setShowVisitModal(false);
-                                    resetSelections();
-                                }}
-                            >
-                                Cancel
-                            </Button>
-                            <Button onClick={handleAssign} disabled={loading}>
-                                {loading
-                                    ? 'Assigning...'
-                                    : 'Confirm Assignment'}
-                            </Button>
-                        </DialogFooter>
-                    </DialogContent>
-                </Dialog>
+                            <DialogFooter className="gap-2 p-6 pt-2">
+                                <Button
+                                    variant="outline"
+                                    onClick={() => {
+                                        setShowVisitModal(false);
+                                        resetSelections();
+                                    }}
+                                >
+                                    Cancel
+                                </Button>
+                                <Button
+                                    onClick={handleAssign}
+                                    disabled={loading}
+                                >
+                                    {loading
+                                        ? 'Assigning...'
+                                        : 'Confirm Assignment'}
+                                </Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
+                )}
             </div>
         </PatientLayout>
     );

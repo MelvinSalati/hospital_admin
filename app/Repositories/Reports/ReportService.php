@@ -1,8 +1,8 @@
 <?php
 
-namespace App\Repositories\Budgets;
+namespace App\Repositories\Reports;
 
-class BudgetRepoistory
+class ReportService
 {
     /**
      * Create a new class instance.

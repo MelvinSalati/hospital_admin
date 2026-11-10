@@ -1,10 +1,5 @@
 import { Head, usePage } from '@inertiajs/react';
 import {
-    // PageHeader actions
-    Plus,
-    Download,
-    RefreshCw,
-    // Status & Priority configs
     CheckCircle,
     XCircle,
     Clock,
@@ -12,17 +7,15 @@ import {
     FileText,
     User,
     Check,
-    X,
     Minus,
     TrendingDown,
     TrendingUp,
-    ShoppingCart,
     Shield,
     Wallet,
     Eye,
     Trash2,
 } from 'lucide-react';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 
 // UI Components
 import { toast } from 'react-hot-toast';
@@ -30,23 +23,8 @@ import Container from '@/components/container';
 import PageHeader from '@/components/PageHeader';
 import { ReusableTable } from '@/components/ReusableTable';
 import type { Column, Action } from '@/components/ReusableTable';
-import {
-    Accordion,
-    AccordionContent,
-    AccordionItem,
-    AccordionTrigger,
-} from '@/components/ui/accordion';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-    Card,
-    CardContent,
-    CardDescription,
-    CardFooter,
-    CardHeader,
-    CardTitle,
-} from '@/components/ui/card';
 import {
     Dialog,
     DialogContent,
@@ -55,30 +33,26 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Progress } from '@/components/ui/progress';
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import {
-    Tooltip,
-    TooltipContent,
-    TooltipProvider,
-    TooltipTrigger,
-} from '@/components/ui/tooltip';
 import AppLayout from '@/layouts/app-layout';
 import Http from '@/utils/Http';
 
 // ============================================
 // TYPES
 // ============================================
+
+interface POItem {
+    id?: number;
+    description: string;
+    quantity: number;
+    unit_price: number;
+    total_price: number;
+    tax_rate?: number;
+    tax_amount?: number;
+    product_code?: string;
+    category?: string;
+}
 
 interface PurchaseOrder {
     id: number;
@@ -95,10 +69,11 @@ interface PurchaseOrder {
     currency: string;
     items: POItem[];
     budget_code: string;
+    budget_name?: string;
     budget_allocated: number;
     budget_utilized: number;
     budget_remaining: number;
-    priority: 'low' | 'medium' | 'high' | 'critical';
+    priority: 'low' | 'medium' | 'high' | 'urgent' | 'critical';
     status:
         | 'draft'
         | 'pending_supervisor'
@@ -129,44 +104,37 @@ interface PurchaseOrder {
     requires_two_level_approval: boolean;
 }
 
-interface POItem {
-    id?: number;
-    description: string;
-    quantity: number;
-    unit_price: number;
-    total_price: number;
-    tax_rate?: number;
-    tax_amount?: number;
-    product_code?: string;
-    category?: string;
-}
-
 interface Budget {
     id: number;
     budget_code: string;
+    budget_name?: string;
     department: string;
-    year: number;
+    year: number | string;
     allocated_amount: number;
     utilized_amount: number;
     remaining_amount: number;
     percentage_used: number;
-    status: 'active' | 'exceeded' | 'closed';
+    status: string;
     category: string;
     description?: string;
 }
 
-interface AdminStats {
-    total_orders: number;
-    pending_supervisor: number;
-    pending_admin: number;
-    approved: number;
-    rejected: number;
-    total_value: number;
-    average_processing_time: number;
-    urgent_orders: number;
-    budgets_tracked: number;
-    budgets_used_percentage: number;
-}
+// ============================================
+// ENDPOINTS (change here if your routes differ)
+// ============================================
+
+const ENDPOINTS = {
+    list: '/admin/purchase-orders',
+    budgets: '/admin/budgets',
+    supervisorApprove: (id: number) =>
+        `/admin/purchase-orders/${id}/supervisor-approve`,
+    adminApprove: (id: number) => `/admin/purchase-orders/${id}/admin-approve`,
+    supervisorReject: (id: number) =>
+        `/admin/purchase-orders/${id}/supervisor-reject`,
+    adminReject: (id: number) => `/admin/purchase-orders/${id}/admin-reject`,
+    cancel: (id: number) => `/admin/purchase-orders/${id}/cancel`,
+    remove: (id: number) => `/admin/purchase-orders/${id}`,
+};
 
 // ============================================
 // CONFIGURATION
@@ -190,6 +158,11 @@ const PRIORITY_CONFIG: Record<
         label: 'High',
         color: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400',
         icon: <TrendingUp className="h-3 w-3" />,
+    },
+    urgent: {
+        label: 'Urgent',
+        color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
+        icon: <AlertTriangle className="h-3 w-3" />,
     },
     critical: {
         label: 'Critical',
@@ -247,72 +220,204 @@ const STATUS_CONFIG: Record<
 };
 
 // ============================================
+// API -> UI MAPPERS
+// ============================================
+
+const toNumber = (v: unknown): number => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+};
+
+const toArray = (payload: any, keys: string[] = []): any[] => {
+    if (Array.isArray(payload)) return payload;
+    for (const key of [...keys, 'data']) {
+        if (Array.isArray(payload?.[key])) return payload[key];
+    }
+    return [];
+};
+
+/** Maps a purchase requisition from the API into the shape the page uses. */
+const mapRequisition = (r: any): PurchaseOrder => {
+    const status = r.status === 'pending' ? 'pending_supervisor' : r.status;
+    const requesterName =
+        r.requester?.name ?? r.requester?.full_name ?? r.requested_by_name;
+
+    return {
+        id: r.id,
+        po_number: r.pr_number ?? r.po_number ?? `#${r.id}`,
+        title: r.justification || r.pr_number || `Requisition #${r.id}`,
+        description: r.justification ?? '',
+        department: r.department?.name ?? '',
+        requester_id: r.requested_by ?? 0,
+        requester_name: requesterName ?? 'N/A',
+        requester_department: r.department?.name ?? '',
+        supplier_name: r.supplier?.supplier_name ?? '',
+        supplier_contact: r.supplier?.contact_person ?? undefined,
+        total_amount: toNumber(r.estimated_total),
+        currency: r.supplier?.currency || 'ZMW',
+        items: (r.items ?? []).map(
+            (i: any): POItem => ({
+                id: i.id,
+                description: i.product?.service_name ?? 'Item',
+                quantity: toNumber(i.quantity),
+                unit_price: toNumber(i.estimated_unit_price),
+                total_price: toNumber(i.estimated_total),
+                product_code: i.product?.service_code,
+                category: i.product?.service_category,
+            }),
+        ),
+        budget_code: r.budget_code ?? '',
+        budget_name: r.budget_allocation?.budget_name,
+        budget_allocated: toNumber(r.budget_allocation?.allocated_amount),
+        budget_utilized: toNumber(r.budget_allocation?.actual_spent),
+        budget_remaining: toNumber(r.budget_allocation?.available_amount),
+        priority: r.priority ?? 'medium',
+        status,
+        approval_level: 1,
+        supervisor_approved_by: r.approved_by ?? undefined,
+        supervisor_approved_by_name: r.approver?.name ?? undefined,
+        supervisor_approved_at: r.approved_at ?? undefined,
+        submitted_by: r.requested_by ?? 0,
+        submitted_by_name: requesterName ?? 'N/A',
+        submitted_at: r.request_date ?? r.created_at,
+        created_at: r.created_at,
+        updated_at: r.updated_at,
+        notes: r.justification ?? '',
+        delivery_date: r.required_date,
+        is_urgent: r.priority === 'urgent' || r.priority === 'critical',
+        requires_two_level_approval: false,
+    };
+};
+
+/** Maps a budget row (either /admin/budgets shape or an embedded budget_allocation). */
+const mapBudget = (b: any): Budget => {
+    const allocated = toNumber(b.allocated_amount ?? b.original_amount);
+    const remaining = toNumber(
+        b.remaining_amount ?? b.available_amount ?? allocated,
+    );
+    const utilized = toNumber(b.utilized_amount ?? b.actual_spent);
+    return {
+        id: b.id,
+        budget_code: b.budget_code,
+        budget_name: b.budget_name,
+        department: b.department?.name ?? b.department ?? '',
+        year: b.year ?? b.fiscal_year ?? '',
+        allocated_amount: allocated,
+        utilized_amount: utilized,
+        remaining_amount: remaining,
+        percentage_used: toNumber(
+            b.percentage_used ?? b.utilization_percentage,
+        ),
+        status: b.status ?? 'active',
+        category: b.category ?? '',
+        description: b.description ?? undefined,
+    };
+};
+
+// ============================================
+// HELPERS
+// ============================================
+
+const formatDate = (date?: string) => {
+    if (!date) return 'N/A';
+    return new Date(date).toLocaleDateString('en-ZM', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+    });
+};
+
+const formatTime = (date?: string) => {
+    if (!date) return '';
+    return new Date(date).toLocaleTimeString('en-ZM', {
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+};
+
+const formatDateTime = (date?: string) => {
+    if (!date) return 'N/A';
+    return new Date(date).toLocaleDateString('en-ZM', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+};
+
+const formatCurrency = (amount: number, currency: string = 'ZMW') => {
+    try {
+        return new Intl.NumberFormat('en-ZM', {
+            style: 'currency',
+            currency: currency || 'ZMW',
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        }).format(amount || 0);
+    } catch {
+        return `${currency} ${(amount || 0).toFixed(2)}`;
+    }
+};
+
+const StatCard = ({
+    title,
+    value,
+    color,
+    icon,
+    subtitle,
+}: {
+    title: string;
+    value: React.ReactNode;
+    color: string;
+    icon: React.ReactNode;
+    subtitle?: string;
+}) => (
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+        <div className="flex items-center justify-between">
+            <div>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                    {title}
+                </p>
+                <p className="text-2xl font-bold text-slate-800 dark:text-slate-200">
+                    {value}
+                </p>
+                {subtitle && (
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                        {subtitle}
+                    </p>
+                )}
+            </div>
+            <div className={`rounded-full p-2 ${color}`}>{icon}</div>
+        </div>
+    </div>
+);
+
+// ============================================
 // MAIN COMPONENT
 // ============================================
 
 export default function Approval() {
-    const { props } = usePage();
+    const { auth } = usePage().props as any;
+
     const [loading, setLoading] = useState(false);
     const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
     const [budgets, setBudgets] = useState<Budget[]>([]);
     const [selectedOrder, setSelectedOrder] = useState<PurchaseOrder | null>(
         null,
     );
-    const [selectedBudget, setSelectedBudget] = useState<Budget | null>(null);
-    const [searchTerm, setSearchTerm] = useState('');
-    const [statusFilter, setStatusFilter] = useState<string>('');
     const [departmentFilter, setDepartmentFilter] = useState<string>('');
     const [priorityFilter, setPriorityFilter] = useState<string>('');
-    const [pagination, setPagination] = useState({
-        currentPage: 1,
-        pageSize: 10,
-        totalItems: 0,
-        totalPages: 1,
-    });
+    const [activeTab, setActiveTab] = useState<string>('all');
 
     // Modal states
     const [showDetailModal, setShowDetailModal] = useState(false);
     const [showApprovalModal, setShowApprovalModal] = useState(false);
     const [showRejectionModal, setShowRejectionModal] = useState(false);
-    const [showCreateModal, setShowCreateModal] = useState(false);
-    const [showBudgetModal, setShowBudgetModal] = useState(false);
     const [rejectionReason, setRejectionReason] = useState('');
     const [approvalComments, setApprovalComments] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
-    const [activeTab, setActiveTab] = useState<string>('all');
     const [approvalLevel, setApprovalLevel] = useState<1 | 2>(1);
 
-    // Create form state
-    const [createForm, setCreateForm] = useState({
-        title: '',
-        description: '',
-        department: '',
-        supplier_name: '',
-        supplier_contact: '',
-        total_amount: 0,
-        currency: 'USD',
-        budget_code: '',
-        priority: 'medium' as 'low' | 'medium' | 'high' | 'critical',
-        is_urgent: false,
-        requires_two_level_approval: false,
-        delivery_date: '',
-        delivery_address: '',
-        notes: '',
-        items: [] as POItem[],
-    });
-
-    // New item form
-    const [itemForm, setItemForm] = useState<POItem>({
-        description: '',
-        quantity: 1,
-        unit_price: 0,
-        total_price: 0,
-        tax_rate: 0,
-        tax_amount: 0,
-        category: '',
-    });
-
-    const { auth } = usePage().props;
     const userRole = auth?.user?.is_admin
         ? 'admin'
         : auth?.user?.is_supervisor
@@ -320,58 +425,6 @@ export default function Approval() {
           : 'staff';
     const isAdmin = userRole === 'admin';
     const isSupervisor = userRole === 'supervisor';
-    const isManager = isAdmin || isSupervisor;
-
-    // Stats
-    const [stats, setStats] = useState<AdminStats>({
-        total_orders: 0,
-        pending_supervisor: 0,
-        pending_admin: 0,
-        approved: 0,
-        rejected: 0,
-        total_value: 0,
-        average_processing_time: 0,
-        urgent_orders: 0,
-        budgets_tracked: 0,
-        budgets_used_percentage: 0,
-    });
-
-    // ============================================
-    // HELPER FUNCTIONS
-    // ============================================
-
-    const formatDate = (date: string) => {
-        if (!date) return 'N/A';
-        return new Date(date).toLocaleDateString('en-ZM', {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric',
-        });
-    };
-
-    const formatDateTime = (date: string) => {
-        if (!date) return 'N/A';
-        return new Date(date).toLocaleDateString('en-ZM', {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-        });
-    };
-
-    const formatCurrency = (amount: number, currency: string = 'USD') => {
-        return new Intl.NumberFormat('en-ZM', {
-            style: 'currency',
-            currency: currency || 'USD',
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-        }).format(amount);
-    };
-
-    const calculateTotal = (items: POItem[]) => {
-        return items.reduce((sum, item) => sum + (item.total_price || 0), 0);
-    };
 
     // ============================================
     // FETCH DATA
@@ -380,55 +433,26 @@ export default function Approval() {
     const fetchPurchaseOrders = useCallback(async () => {
         setLoading(true);
         try {
-            const params: any = {
-                page: pagination.currentPage,
-                page_size: pagination.pageSize,
-            };
-
-            if (searchTerm) params.search = searchTerm;
-            if (statusFilter) params.status = statusFilter;
-            if (activeTab !== 'all') params.status = activeTab;
-            if (departmentFilter) params.department = departmentFilter;
-            if (priorityFilter) params.priority = priorityFilter;
-
-            const response = await Http.get('/admin/purchase-orders', {
-                params,
-            });
-            const data = response.data;
-
-            setPurchaseOrders(data.data || []);
-
-            if (data.stats) {
-                setStats(data.stats);
-            }
-
-            setPagination((prev) => ({
-                ...prev,
-                totalItems: data.total || data.data?.length || 0,
-                totalPages: data.last_page || 1,
-            }));
+            const response = await Http.get(ENDPOINTS.list);
+            const list = toArray(response.data, ['orders']);
+            setPurchaseOrders(list.map(mapRequisition));
         } catch (error) {
             console.error('Failed to fetch purchase orders:', error);
             toast.error('Failed to load purchase orders');
+            setPurchaseOrders([]);
         } finally {
             setLoading(false);
         }
-    }, [
-        pagination.currentPage,
-        pagination.pageSize,
-        searchTerm,
-        statusFilter,
-        departmentFilter,
-        priorityFilter,
-        activeTab,
-    ]);
+    }, []);
 
     const fetchBudgets = useCallback(async () => {
         try {
-            const response = await Http.get('/admin/budgets');
-            setBudgets(response.data || []);
+            const response = await Http.get(ENDPOINTS.budgets);
+            const list = toArray(response.data, ['budgets']);
+            setBudgets(list.map(mapBudget));
         } catch (error) {
             console.error('Failed to fetch budgets:', error);
+            setBudgets([]); // never leave this as a non-array
         }
     }, []);
 
@@ -438,14 +462,121 @@ export default function Approval() {
     }, [fetchPurchaseOrders, fetchBudgets]);
 
     // ============================================
+    // DERIVED DATA
+    // ============================================
+
+    const stats = useMemo(
+        () => ({
+            total_orders: purchaseOrders.length,
+            pending_supervisor: purchaseOrders.filter(
+                (o) => o.status === 'pending_supervisor',
+            ).length,
+            pending_admin: purchaseOrders.filter(
+                (o) => o.status === 'pending_admin',
+            ).length,
+            approved: purchaseOrders.filter((o) => o.status === 'approved')
+                .length,
+            rejected: purchaseOrders.filter((o) => o.status === 'rejected')
+                .length,
+            urgent_orders: purchaseOrders.filter((o) => o.is_urgent).length,
+            total_value: purchaseOrders.reduce(
+                (sum, o) => sum + o.total_amount,
+                0,
+            ),
+        }),
+        [purchaseOrders],
+    );
+
+    const visibleOrders = useMemo(
+        () =>
+            purchaseOrders.filter(
+                (o) =>
+                    (activeTab === 'all' || o.status === activeTab) &&
+                    (!priorityFilter || o.priority === priorityFilter) &&
+                    (!departmentFilter || o.department === departmentFilter),
+            ),
+        [purchaseOrders, activeTab, priorityFilter, departmentFilter],
+    );
+
+    // Budgets from the API, falling back to the ones embedded in the orders
+    const budgetOptions = useMemo(() => {
+        const safe = Array.isArray(budgets) ? budgets : [];
+        if (safe.length > 0) {
+            return safe.map((b) => ({
+                value: b.budget_code,
+                label: `${b.budget_code} - ${b.budget_name ?? b.department} (${formatCurrency(b.remaining_amount)})`,
+            }));
+        }
+        const seen = new Map<string, { value: string; label: string }>();
+        purchaseOrders.forEach((o) => {
+            if (o.budget_code && !seen.has(o.budget_code)) {
+                seen.set(o.budget_code, {
+                    value: o.budget_code,
+                    label: `${o.budget_code} - ${o.budget_name ?? ''} (${formatCurrency(o.budget_remaining)})`,
+                });
+            }
+        });
+        return Array.from(seen.values());
+    }, [budgets, purchaseOrders]);
+
+    const statusOptions = Object.entries(STATUS_CONFIG).map(([key, value]) => ({
+        value: key,
+        label: value.label,
+    }));
+
+    const priorityOptions = Object.entries(PRIORITY_CONFIG).map(
+        ([key, value]) => ({
+            value: key,
+            label: value.label,
+        }),
+    );
+
+    const departmentOptions = Array.from(
+        new Set(purchaseOrders.map((o) => o.department)),
+    )
+        .filter(Boolean)
+        .map((dept) => ({ value: dept, label: dept }));
+
+    const tabs = [
+        {
+            key: 'all',
+            label: 'All',
+            count: stats.total_orders,
+            icon: <FileText className="h-4 w-4" />,
+        },
+        {
+            key: 'pending_supervisor',
+            label: 'Pending Supervisor',
+            count: stats.pending_supervisor,
+            icon: <Clock className="h-4 w-4" />,
+        },
+        {
+            key: 'pending_admin',
+            label: 'Pending Admin',
+            count: stats.pending_admin,
+            icon: <Shield className="h-4 w-4" />,
+        },
+        {
+            key: 'approved',
+            label: 'Approved',
+            count: stats.approved,
+            icon: <CheckCircle className="h-4 w-4" />,
+        },
+        {
+            key: 'rejected',
+            label: 'Rejected',
+            count: stats.rejected,
+            icon: <XCircle className="h-4 w-4" />,
+        },
+    ];
+
+    // ============================================
     // HANDLERS
     // ============================================
 
-    const handleTabChange = (tab: string) => {
-        setActiveTab(tab);
-        setStatusFilter('');
-        setPagination((prev) => ({ ...prev, currentPage: 1 }));
-    };
+    const canAct = (order: PurchaseOrder) =>
+        (order.status === 'pending_supervisor' && (isSupervisor || isAdmin)) ||
+        (order.status === 'pending_admin' && isAdmin);
 
     const handleView = (order: PurchaseOrder) => {
         setSelectedOrder(order);
@@ -454,8 +585,7 @@ export default function Approval() {
 
     const handleApprove = (order: PurchaseOrder) => {
         setSelectedOrder(order);
-        const level = order.status === 'pending_supervisor' ? 1 : 2;
-        setApprovalLevel(level);
+        setApprovalLevel(order.status === 'pending_supervisor' ? 1 : 2);
         setApprovalComments('');
         setShowApprovalModal(true);
     };
@@ -472,16 +602,16 @@ export default function Approval() {
         try {
             const endpoint =
                 selectedOrder.status === 'pending_supervisor'
-                    ? `/admin/purchase-orders/${selectedOrder.id}/supervisor-approve`
-                    : `/admin/purchase-orders/${selectedOrder.id}/admin-approve`;
+                    ? ENDPOINTS.supervisorApprove(selectedOrder.id)
+                    : ENDPOINTS.adminApprove(selectedOrder.id);
 
             const response = await Http.post(endpoint, {
                 comments: approvalComments,
-                approver_id: auth.user.id,
-                approver_name: auth.user.name,
+                approver_id: auth?.user?.id,
+                approver_name: auth?.user?.name,
             });
 
-            if (response.data.success) {
+            if (response.data?.success) {
                 toast.success(
                     `Order ${selectedOrder.po_number} approved successfully`,
                 );
@@ -490,12 +620,14 @@ export default function Approval() {
                 setSelectedOrder(null);
                 setApprovalComments('');
             } else {
-                throw new Error(response.data.message || 'Approval failed');
+                throw new Error(response.data?.message || 'Approval failed');
             }
         } catch (error: any) {
             console.error('Approval failed:', error);
             toast.error(
-                error.response?.data?.message || 'Failed to approve order',
+                error.response?.data?.message ||
+                    error.message ||
+                    'Failed to approve order',
             );
         } finally {
             setIsProcessing(false);
@@ -512,28 +644,30 @@ export default function Approval() {
         try {
             const endpoint =
                 selectedOrder.status === 'pending_supervisor'
-                    ? `/admin/purchase-orders/${selectedOrder.id}/supervisor-reject`
-                    : `/admin/purchase-orders/${selectedOrder.id}/admin-reject`;
+                    ? ENDPOINTS.supervisorReject(selectedOrder.id)
+                    : ENDPOINTS.adminReject(selectedOrder.id);
 
             const response = await Http.post(endpoint, {
                 rejection_reason: rejectionReason,
-                rejected_by: auth.user.id,
-                rejected_by_name: auth.user.name,
+                rejected_by: auth?.user?.id,
+                rejected_by_name: auth?.user?.name,
             });
 
-            if (response.data.success) {
+            if (response.data?.success) {
                 toast.success(`Order ${selectedOrder.po_number} rejected`);
                 await fetchPurchaseOrders();
                 setShowRejectionModal(false);
                 setSelectedOrder(null);
                 setRejectionReason('');
             } else {
-                throw new Error(response.data.message || 'Rejection failed');
+                throw new Error(response.data?.message || 'Rejection failed');
             }
         } catch (error: any) {
             console.error('Rejection failed:', error);
             toast.error(
-                error.response?.data?.message || 'Failed to reject order',
+                error.response?.data?.message ||
+                    error.message ||
+                    'Failed to reject order',
             );
         } finally {
             setIsProcessing(false);
@@ -544,10 +678,8 @@ export default function Approval() {
         if (!confirm('Are you sure you want to cancel this purchase order?'))
             return;
         try {
-            const response = await Http.post(
-                `/admin/purchase-orders/${id}/cancel`,
-            );
-            if (response.data.success) {
+            const response = await Http.post(ENDPOINTS.cancel(id));
+            if (response.data?.success) {
                 toast.success('Purchase order cancelled');
                 await fetchPurchaseOrders();
             }
@@ -565,8 +697,8 @@ export default function Approval() {
         )
             return;
         try {
-            const response = await Http.delete(`/admin/purchase-orders/${id}`);
-            if (response.data.success) {
+            const response = await Http.delete(ENDPOINTS.remove(id));
+            if (response.data?.success) {
                 toast.success('Purchase order deleted');
                 await fetchPurchaseOrders();
             }
@@ -576,225 +708,6 @@ export default function Approval() {
         }
     };
 
-    const handleCreate = () => {
-        setCreateForm({
-            title: '',
-            description: '',
-            department: '',
-            supplier_name: '',
-            supplier_contact: '',
-            total_amount: 0,
-            currency: 'USD',
-            budget_code: '',
-            priority: 'medium',
-            is_urgent: false,
-            requires_two_level_approval: false,
-            delivery_date: '',
-            delivery_address: '',
-            notes: '',
-            items: [],
-        });
-        setItemForm({
-            description: '',
-            quantity: 1,
-            unit_price: 0,
-            total_price: 0,
-            tax_rate: 0,
-            tax_amount: 0,
-            category: '',
-        });
-        setShowCreateModal(true);
-    };
-
-    const handleAddItem = () => {
-        if (!itemForm.description.trim()) {
-            toast.error('Please enter item description');
-            return;
-        }
-        if (itemForm.quantity <= 0) {
-            toast.error('Quantity must be greater than 0');
-            return;
-        }
-        if (itemForm.unit_price <= 0) {
-            toast.error('Unit price must be greater than 0');
-            return;
-        }
-
-        const totalPrice = itemForm.quantity * itemForm.unit_price;
-        const taxAmount = (totalPrice * (itemForm.tax_rate || 0)) / 100;
-        const totalWithTax = totalPrice + taxAmount;
-
-        const newItem: POItem = {
-            ...itemForm,
-            total_price: totalWithTax,
-            tax_amount: taxAmount,
-        };
-
-        setCreateForm({
-            ...createForm,
-            items: [...createForm.items, newItem],
-            total_amount: calculateTotal([...createForm.items, newItem]),
-        });
-
-        setItemForm({
-            description: '',
-            quantity: 1,
-            unit_price: 0,
-            total_price: 0,
-            tax_rate: 0,
-            tax_amount: 0,
-            category: '',
-        });
-    };
-
-    const handleRemoveItem = (index: number) => {
-        const updatedItems = createForm.items.filter((_, i) => i !== index);
-        setCreateForm({
-            ...createForm,
-            items: updatedItems,
-            total_amount: calculateTotal(updatedItems),
-        });
-    };
-
-    const handleCreateSubmit = async () => {
-        if (!createForm.title.trim()) {
-            toast.error('Please enter a title');
-            return;
-        }
-        if (!createForm.department) {
-            toast.error('Please select a department');
-            return;
-        }
-        if (!createForm.supplier_name.trim()) {
-            toast.error('Please enter supplier name');
-            return;
-        }
-        if (createForm.items.length === 0) {
-            toast.error('Please add at least one item');
-            return;
-        }
-        if (!createForm.budget_code) {
-            toast.error('Please select a budget code');
-            return;
-        }
-
-        const selectedBudget = budgets.find(
-            (b) => b.budget_code === createForm.budget_code,
-        );
-        if (
-            selectedBudget &&
-            selectedBudget.remaining_amount < createForm.total_amount
-        ) {
-            toast.error(
-                `Insufficient budget. Remaining: ${formatCurrency(selectedBudget.remaining_amount, createForm.currency)}`,
-            );
-            return;
-        }
-
-        setIsProcessing(true);
-        try {
-            const response = await Http.post('/admin/purchase-orders', {
-                ...createForm,
-                requester_id: auth.user.id,
-                requester_name: auth.user.name,
-                requester_department: auth.user.department || '',
-                submitted_by: auth.user.id,
-                submitted_by_name: auth.user.name,
-                status: 'pending_supervisor',
-                approval_level: createForm.requires_two_level_approval ? 2 : 1,
-            });
-
-            if (response.data.success) {
-                toast.success('Purchase order submitted successfully');
-                setShowCreateModal(false);
-                await fetchPurchaseOrders();
-                setCreateForm({
-                    title: '',
-                    description: '',
-                    department: '',
-                    supplier_name: '',
-                    supplier_contact: '',
-                    total_amount: 0,
-                    currency: 'USD',
-                    budget_code: '',
-                    priority: 'medium',
-                    is_urgent: false,
-                    requires_two_level_approval: false,
-                    delivery_date: '',
-                    delivery_address: '',
-                    notes: '',
-                    items: [],
-                });
-            } else {
-                throw new Error(response.data.message || 'Submission failed');
-            }
-        } catch (error: any) {
-            console.error('Create failed:', error);
-            toast.error(
-                error.response?.data?.message ||
-                    'Failed to submit purchase order',
-            );
-        } finally {
-            setIsProcessing(false);
-        }
-    };
-
-    const handleExport = () => {
-        toast.success('Exporting purchase orders...');
-    };
-
-    const handleRefresh = () => {
-        fetchPurchaseOrders();
-        toast.success('Data refreshed');
-    };
-
-    const handleViewBudget = (budget: Budget) => {
-        setSelectedBudget(budget);
-        setShowBudgetModal(true);
-    };
-
-    // ============================================
-    // STATS CARDS
-    // ============================================
-
-    const StatCard = ({
-        title,
-        value,
-        color,
-        icon,
-        subtitle,
-        progress,
-        progressColor,
-    }: any) => (
-        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-            <div className="flex items-center justify-between">
-                <div>
-                    <p className="text-sm text-slate-500 dark:text-slate-400">
-                        {title}
-                    </p>
-                    <p className="text-2xl font-bold text-slate-800 dark:text-slate-200">
-                        {value}
-                    </p>
-                    {subtitle && (
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
-                            {subtitle}
-                        </p>
-                    )}
-                    {progress !== undefined && (
-                        <div className="mt-2">
-                            <Progress
-                                value={progress}
-                                className="h-2"
-                                indicatorClassName={progressColor}
-                            />
-                        </div>
-                    )}
-                </div>
-                <div className={`rounded-full p-2 ${color}`}>{icon}</div>
-            </div>
-        </div>
-    );
-
     // ============================================
     // TABLE DEFINITIONS
     // ============================================
@@ -802,8 +715,8 @@ export default function Approval() {
     const columns: Column<PurchaseOrder>[] = [
         {
             id: 'po_number',
-            label: 'PO #',
-            minWidth: 100,
+            label: 'PR #',
+            minWidth: 110,
             format: (value) => (
                 <span className="font-mono text-sm font-medium text-blue-600 dark:text-blue-400">
                     {value || 'N/A'}
@@ -813,15 +726,15 @@ export default function Approval() {
         },
         {
             id: 'title',
-            label: 'Title',
-            minWidth: 150,
-            format: (value) => (
-                <div>
-                    <div className="text-sm font-medium text-slate-800 dark:text-slate-200">
+            label: 'Justification',
+            minWidth: 160,
+            format: (value, row) => (
+                <div className="max-w-[240px]">
+                    <div className="truncate text-sm font-medium text-slate-800 dark:text-slate-200">
                         {value}
                     </div>
                     <div className="text-xs text-slate-500 dark:text-slate-400">
-                        {createForm.department || 'No department'}
+                        {row.department || 'No department'}
                     </div>
                 </div>
             ),
@@ -841,6 +754,16 @@ export default function Approval() {
                         {row.requester_department}
                     </div>
                 </div>
+            ),
+        },
+        {
+            id: 'supplier_name',
+            label: 'Supplier',
+            minWidth: 140,
+            format: (value) => (
+                <span className="text-sm text-slate-700 dark:text-slate-300">
+                    {value || 'N/A'}
+                </span>
             ),
         },
         {
@@ -911,7 +834,7 @@ export default function Approval() {
                         {formatDate(value)}
                     </div>
                     <div className="text-xs text-slate-500 dark:text-slate-400">
-                        {formatDateTime(value)}
+                        {formatTime(value)}
                     </div>
                 </div>
             ),
@@ -931,24 +854,14 @@ export default function Approval() {
             icon: <CheckCircle className="h-4 w-4" />,
             color: 'success',
             onClick: (row) => handleApprove(row),
-            show: (row) => {
-                if (row.status === 'pending_supervisor' && isSupervisor)
-                    return true;
-                if (row.status === 'pending_admin' && isAdmin) return true;
-                return false;
-            },
+            show: (row) => canAct(row),
         },
         {
             label: 'Reject',
             icon: <XCircle className="h-4 w-4" />,
             color: 'error',
             onClick: (row) => handleReject(row),
-            show: (row) => {
-                if (row.status === 'pending_supervisor' && isSupervisor)
-                    return true;
-                if (row.status === 'pending_admin' && isAdmin) return true;
-                return false;
-            },
+            show: (row) => canAct(row),
         },
         {
             label: 'Cancel',
@@ -969,66 +882,8 @@ export default function Approval() {
         },
     ];
 
-    // Status options for filtering
-    const statusOptions = Object.entries(STATUS_CONFIG).map(([key, value]) => ({
-        value: key,
-        label: value.label,
-    }));
-
-    const priorityOptions = Object.entries(PRIORITY_CONFIG).map(
-        ([key, value]) => ({
-            value: key,
-            label: value.label,
-        }),
-    );
-
-    const departmentOptions = Array.from(
-        new Set(purchaseOrders.map((o) => o.department)),
-    )
-        .filter(Boolean)
-        .map((dept) => ({ value: dept, label: dept }));
-
-    const budgetOptions = budgets.map((b) => ({
-        value: b.budget_code,
-        label: `${b.budget_code} - ${b.department} (${formatCurrency(b.remaining_amount)})`,
-    }));
-
-    // Tabs
-    const tabs = [
-        {
-            key: 'all',
-            label: 'All',
-            count: stats.total_orders,
-            icon: <FileText className="h-4 w-4" />,
-        },
-        {
-            key: 'pending_supervisor',
-            label: 'Pending Supervisor',
-            count: stats.pending_supervisor,
-            icon: <Clock className="h-4 w-4" />,
-        },
-        {
-            key: 'pending_admin',
-            label: 'Pending Admin',
-            count: stats.pending_admin,
-            icon: <Shield className="h-4 w-4" />,
-        },
-        {
-            key: 'approved',
-            label: 'Approved',
-            count: stats.approved,
-            icon: <CheckCircle className="h-4 w-4" />,
-        },
-        {
-            key: 'rejected',
-            label: 'Rejected',
-            count: stats.rejected,
-            icon: <XCircle className="h-4 w-4" />,
-        },
-    ];
-
     // ============================================
-    // RENDER - Keep all your existing JSX here
+    // RENDER
     // ============================================
 
     return (
@@ -1049,12 +904,44 @@ export default function Approval() {
                         subtitle="Manage purchase requisitions"
                     />
 
+                    {/* Stats */}
+                    <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                        <StatCard
+                            title="Total Requisitions"
+                            value={stats.total_orders}
+                            color="bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
+                            icon={<FileText className="h-5 w-5" />}
+                        />
+                        <StatCard
+                            title="Pending Approval"
+                            value={
+                                stats.pending_supervisor + stats.pending_admin
+                            }
+                            subtitle={`${stats.urgent_orders} urgent`}
+                            color="bg-yellow-100 text-yellow-600 dark:bg-yellow-900/30 dark:text-yellow-400"
+                            icon={<Clock className="h-5 w-5" />}
+                        />
+                        <StatCard
+                            title="Approved"
+                            value={stats.approved}
+                            color="bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400"
+                            icon={<CheckCircle className="h-5 w-5" />}
+                        />
+                        <StatCard
+                            title="Total Value"
+                            value={formatCurrency(stats.total_value)}
+                            subtitle={`${budgetOptions.length} budgets tracked`}
+                            color="bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400"
+                            icon={<Wallet className="h-5 w-5" />}
+                        />
+                    </div>
+
                     {/* Tabs */}
                     <div className="mt-6 flex flex-wrap gap-2 border-b border-slate-200 pb-2 dark:border-slate-700">
                         {tabs.map((tab) => (
                             <button
                                 key={tab.key}
-                                onClick={() => handleTabChange(tab.key)}
+                                onClick={() => setActiveTab(tab.key)}
                                 className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
                                     activeTab === tab.key
                                         ? 'bg-blue-600 text-white shadow-sm'
@@ -1082,15 +969,15 @@ export default function Approval() {
                     <div className="mt-6">
                         <ReusableTable
                             columns={columns}
-                            data={purchaseOrders}
+                            data={visibleOrders}
                             actions={actions}
                             loading={loading}
-                            title="Purchase Requistions"
+                            title="Purchase Requisitions"
                             rowsPerPageOptions={[10, 25, 50, 100]}
                             defaultRowsPerPage={10}
                             defaultOrderBy="submitted_at"
                             defaultOrder="desc"
-                            filterPlaceholder="Search by PO #, title, supplier..."
+                            filterPlaceholder="Search by PR #, justification, supplier..."
                             statusFilterKey="status"
                             statusOptions={statusOptions}
                             additionalFilters={[
@@ -1109,33 +996,7 @@ export default function Approval() {
                                     onChange: setDepartmentFilter,
                                 },
                             ]}
-                            emptyMessage="No purchase orders found"
-                            onSearchChange={(value) => {
-                                setSearchTerm(value);
-                                setPagination((prev) => ({
-                                    ...prev,
-                                    currentPage: 1,
-                                }));
-                            }}
-                            onPageChange={(page) => {
-                                setPagination((prev) => ({
-                                    ...prev,
-                                    currentPage: page,
-                                }));
-                            }}
-                            onPageSizeChange={(size) => {
-                                setPagination((prev) => ({
-                                    ...prev,
-                                    pageSize: size,
-                                    currentPage: 1,
-                                }));
-                            }}
-                            pagination={{
-                                currentPage: pagination.currentPage,
-                                pageSize: pagination.pageSize,
-                                totalItems: pagination.totalItems,
-                                totalPages: pagination.totalPages,
-                            }}
+                            emptyMessage="No purchase requisitions found"
                         />
                     </div>
                 </Container>
@@ -1149,10 +1010,10 @@ export default function Approval() {
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
                             <FileText className="h-5 w-5 text-blue-600" />
-                            Purchase Order Details
+                            Purchase Requisition Details
                         </DialogTitle>
                         <DialogDescription>
-                            View complete details of the purchase order
+                            View complete details of the requisition
                         </DialogDescription>
                     </DialogHeader>
                     {selectedOrder && (
@@ -1185,10 +1046,8 @@ export default function Approval() {
                                             STATUS_CONFIG[selectedOrder.status]
                                                 ?.icon
                                         }
-                                        {
-                                            STATUS_CONFIG[selectedOrder.status]
-                                                ?.label
-                                        }
+                                        {STATUS_CONFIG[selectedOrder.status]
+                                            ?.label ?? selectedOrder.status}
                                     </span>
                                 </div>
                             </div>
@@ -1210,7 +1069,7 @@ export default function Approval() {
                                         Supplier
                                     </Label>
                                     <p className="font-medium text-slate-800 dark:text-slate-200">
-                                        {selectedOrder.supplier_name}
+                                        {selectedOrder.supplier_name || 'N/A'}
                                     </p>
                                     {selectedOrder.supplier_contact && (
                                         <p className="text-sm text-slate-500">
@@ -1231,19 +1090,46 @@ export default function Approval() {
                                 </div>
                                 <div>
                                     <Label className="text-xs text-slate-500">
-                                        Budget Code
+                                        Budget
                                     </Label>
                                     <p className="font-medium text-slate-800 dark:text-slate-200">
                                         {selectedOrder.budget_code}
+                                        {selectedOrder.budget_name
+                                            ? ` - ${selectedOrder.budget_name}`
+                                            : ''}
                                     </p>
-                                    {selectedOrder.budget_allocated && (
+                                    {selectedOrder.budget_allocated > 0 && (
                                         <p className="text-sm text-slate-500">
                                             Allocated:{' '}
                                             {formatCurrency(
                                                 selectedOrder.budget_allocated,
+                                                selectedOrder.currency,
+                                            )}{' '}
+                                            · Available:{' '}
+                                            {formatCurrency(
+                                                selectedOrder.budget_remaining,
+                                                selectedOrder.currency,
                                             )}
                                         </p>
                                     )}
+                                </div>
+                                <div>
+                                    <Label className="text-xs text-slate-500">
+                                        Required By
+                                    </Label>
+                                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                                        {formatDate(
+                                            selectedOrder.delivery_date,
+                                        )}
+                                    </p>
+                                </div>
+                                <div>
+                                    <Label className="text-xs text-slate-500">
+                                        Priority
+                                    </Label>
+                                    <p className="text-sm text-slate-700 capitalize dark:text-slate-300">
+                                        {selectedOrder.priority}
+                                    </p>
                                 </div>
                             </div>
 
@@ -1319,9 +1205,6 @@ export default function Approval() {
                                                     Unit Price
                                                 </th>
                                                 <th className="px-3 py-2 text-right">
-                                                    Tax
-                                                </th>
-                                                <th className="px-3 py-2 text-right">
                                                     Total
                                                 </th>
                                             </tr>
@@ -1330,11 +1213,18 @@ export default function Approval() {
                                             {selectedOrder.items?.map(
                                                 (item, index) => (
                                                     <tr
-                                                        key={index}
+                                                        key={item.id ?? index}
                                                         className="border-t border-slate-200 dark:border-slate-700"
                                                     >
                                                         <td className="px-3 py-2">
                                                             {item.description}
+                                                            {item.product_code && (
+                                                                <div className="text-xs text-slate-500">
+                                                                    {
+                                                                        item.product_code
+                                                                    }
+                                                                </div>
+                                                            )}
                                                         </td>
                                                         <td className="px-3 py-2 text-right">
                                                             {item.quantity}
@@ -1342,15 +1232,13 @@ export default function Approval() {
                                                         <td className="px-3 py-2 text-right">
                                                             {formatCurrency(
                                                                 item.unit_price,
+                                                                selectedOrder.currency,
                                                             )}
-                                                        </td>
-                                                        <td className="px-3 py-2 text-right">
-                                                            {item.tax_rate || 0}
-                                                            %
                                                         </td>
                                                         <td className="px-3 py-2 text-right font-semibold">
                                                             {formatCurrency(
                                                                 item.total_price,
+                                                                selectedOrder.currency,
                                                             )}
                                                         </td>
                                                     </tr>
@@ -1360,7 +1248,7 @@ export default function Approval() {
                                         <tfoot className="border-t-2 border-slate-300 dark:border-slate-600">
                                             <tr>
                                                 <td
-                                                    colSpan={4}
+                                                    colSpan={3}
                                                     className="px-3 py-2 text-right font-bold"
                                                 >
                                                     Total:
@@ -1377,11 +1265,10 @@ export default function Approval() {
                                 </div>
                             </div>
 
-                            {/* Notes and Attachments */}
                             {selectedOrder.notes && (
                                 <div>
                                     <Label className="text-xs text-slate-500">
-                                        Notes
+                                        Justification
                                     </Label>
                                     <p className="text-sm text-slate-700 dark:text-slate-300">
                                         {selectedOrder.notes}
@@ -1395,16 +1282,15 @@ export default function Approval() {
                                     Approval History
                                 </Label>
                                 <div className="mt-2 space-y-2">
-                                    {selectedOrder.supervisor_approved_by_name && (
+                                    {selectedOrder.supervisor_approved_at && (
                                         <div className="flex items-center gap-2 text-sm">
                                             <CheckCircle className="h-4 w-4 text-green-500" />
                                             <span>
-                                                Approved by{' '}
-                                                {
-                                                    selectedOrder.supervisor_approved_by_name
-                                                }
-                                                {selectedOrder.supervisor_approved_at &&
-                                                    ` on ${formatDateTime(selectedOrder.supervisor_approved_at)}`}
+                                                Approved
+                                                {selectedOrder.supervisor_approved_by_name
+                                                    ? ` by ${selectedOrder.supervisor_approved_by_name}`
+                                                    : ''}
+                                                {` on ${formatDateTime(selectedOrder.supervisor_approved_at)}`}
                                             </span>
                                         </div>
                                     )}
@@ -1478,23 +1364,23 @@ export default function Approval() {
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
                             <CheckCircle className="h-5 w-5 text-green-600" />
-                            Approve Purchase Order
+                            Approve Requisition
                         </DialogTitle>
                         <DialogDescription>
                             {approvalLevel === 1
-                                ? 'Are you sure you want to approve this purchase order at the supervisor level?'
-                                : 'Are you sure you want to approve this purchase order at the admin level?'}
+                                ? 'Are you sure you want to approve this requisition at the supervisor level?'
+                                : 'Are you sure you want to approve this requisition at the admin level?'}
                         </DialogDescription>
                     </DialogHeader>
                     {selectedOrder && (
                         <div className="space-y-4">
                             <div className="rounded-lg bg-green-50 p-4 dark:bg-green-900/20">
                                 <p className="text-sm text-green-800 dark:text-green-300">
-                                    <strong>PO #:</strong>{' '}
+                                    <strong>PR #:</strong>{' '}
                                     {selectedOrder.po_number}
                                 </p>
                                 <p className="text-sm text-green-800 dark:text-green-300">
-                                    <strong>Title:</strong>{' '}
+                                    <strong>Justification:</strong>{' '}
                                     {selectedOrder.title}
                                 </p>
                                 <p className="text-sm text-green-800 dark:text-green-300">
@@ -1567,22 +1453,22 @@ export default function Approval() {
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
                             <XCircle className="h-5 w-5 text-red-600" />
-                            Reject Purchase Order
+                            Reject Requisition
                         </DialogTitle>
                         <DialogDescription>
-                            Please provide a reason for rejecting this purchase
-                            order.
+                            Please provide a reason for rejecting this
+                            requisition.
                         </DialogDescription>
                     </DialogHeader>
                     {selectedOrder && (
                         <div className="space-y-4">
                             <div className="rounded-lg bg-red-50 p-4 dark:bg-red-900/20">
                                 <p className="text-sm text-red-800 dark:text-red-300">
-                                    <strong>PO #:</strong>{' '}
+                                    <strong>PR #:</strong>{' '}
                                     {selectedOrder.po_number}
                                 </p>
                                 <p className="text-sm text-red-800 dark:text-red-300">
-                                    <strong>Title:</strong>{' '}
+                                    <strong>Justification:</strong>{' '}
                                     {selectedOrder.title}
                                 </p>
                                 <p className="text-sm text-red-800 dark:text-red-300">
@@ -1602,7 +1488,7 @@ export default function Approval() {
                                 </Label>
                                 <Textarea
                                     id="rejectionReason"
-                                    placeholder="Please explain why this purchase order is being rejected..."
+                                    placeholder="Please explain why this requisition is being rejected..."
                                     value={rejectionReason}
                                     onChange={(e) =>
                                         setRejectionReason(e.target.value)

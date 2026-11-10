@@ -1,36 +1,53 @@
 <?php
+
 namespace App\Models\Services;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use App\Models\Departments\Department;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Str;
+
 class Service extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     protected $fillable = [
+        'scheme_type',
+        'commodity_id',
         'service_uuid',
-        'service_category',
-        'provider_id',
-        'service_name',
+        'product_uuid',
         'department_id',
-        'cash_price',
-        'nhima_price',
-        'insurance_price',
-        'charity_price',
+        'service_name',
+        'service_category',
+        'service_code',
+        'description',
+        'price',
+        'is_active',
     ];
 
     protected $casts = [
-        'service_uuid' => 'string',
-        'provider_id' => 'integer',
-        'cash_price' => 'decimal:2',
-        'nhima_price' => 'decimal:2',
-        'insurance_price' => 'decimal:2',
-        'charity_price' => 'decimal:2',
+        'scheme_type'   => 'integer',
+        'commodity_id'  => 'integer',
+        'department_id' => 'integer',
+        'price'         => 'decimal:2',
+        'is_active'     => 'boolean',
     ];
 
-    public function department(): BelongsTo
+    protected static function booted(): void
+    {
+        static::creating(function (Service $service) {
+            if (blank($service->service_uuid)) {
+                $service->service_uuid = (string) Str::uuid();
+            }
+        });
+    }
+
+    public function commodity()
+    {
+        return $this->belongsTo(Product::class, 'commodity_id');
+    }
+
+    public function department()
     {
         return $this->belongsTo(Department::class);
     }

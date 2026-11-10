@@ -22,12 +22,9 @@ import ConfirmModal from './components/ConfirmModal';
 import DispenseModal from './components/DispenseModal';
 import ViewItemsModal from './components/ViewItemsModal';
 
-// DEV MODE - Set to true to force all items as paid
-const DEV_MODE = true;
-
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface PrescriptionItem {
+export interface PrescriptionItem {
     id?: number;
     drug_id?: number;
     name?: string;
@@ -43,12 +40,10 @@ interface PrescriptionItem {
     dosage_amount?: number;
     quantity_dispensed?: number;
     price?: number | string;
-    payment_status?: string;
-    is_paid?: boolean;
     priority?: string;
 }
 
-interface Dispensation {
+export interface Dispensation {
     id?: number;
     prescription_number: string;
     status:
@@ -58,8 +53,6 @@ interface Dispensation {
         | 'completed'
         | 'cancelled';
     items: PrescriptionItem[];
-    invoice_status?: string;
-    payment_scheme?: string;
     priority?: string;
     created_at?: string;
     prescribed_date?: string;
@@ -68,51 +61,6 @@ interface Dispensation {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const normalizeScheme = (scheme?: string) => {
-    if (!scheme) return 'cash';
-    const s = scheme.toLowerCase();
-    if (['cash', 'nhima', 'insurance', 'charity', 'mobile_money'].includes(s)) {
-        return s;
-    }
-    return 'cash';
-};
-
-const SCHEME_META: Record<
-    string,
-    { label: string; color: string; bg: string }
-> = {
-    cash: {
-        label: 'Cash',
-        color: 'text-emerald-700',
-        bg: 'bg-emerald-50 border-emerald-200',
-    },
-    nhima: {
-        label: 'NHIMA',
-        color: 'text-blue-700',
-        bg: 'bg-blue-50 border-blue-200',
-    },
-    insurance: {
-        label: 'Insurance',
-        color: 'text-violet-700',
-        bg: 'bg-violet-50 border-violet-200',
-    },
-    charity: {
-        label: 'Charity',
-        color: 'text-amber-700',
-        bg: 'bg-amber-50 border-amber-200',
-    },
-    mobile_money: {
-        label: 'Mobile Money',
-        color: 'text-emerald-700',
-        bg: 'bg-emerald-50 border-emerald-200',
-    },
-};
-
-const getSchemeMeta = (scheme?: string) => {
-    const normalized = normalizeScheme(scheme);
-    return SCHEME_META[normalized] || SCHEME_META.cash;
-};
 
 const formatDate = (date?: string): string => {
     if (!date) return 'N/A';
@@ -126,6 +74,19 @@ const formatDate = (date?: string): string => {
         return 'N/A';
     }
 };
+
+// Robust price parsing — strips currency symbols, commas, etc.
+export const parsePrice = (raw: unknown): number => {
+    if (typeof raw === 'number') return isFinite(raw) ? raw : 0;
+    if (typeof raw === 'string') {
+        const n = parseFloat(raw.replace(/[^0-9.-]/g, ''));
+        return isFinite(n) ? n : 0;
+    }
+    return 0;
+};
+
+export const getItemQuantity = (item: PrescriptionItem): number =>
+    item.quantity ?? item.dosage_amount ?? 1;
 
 // ─── Priority meta ───────────────────────────────────────────────────────────
 
@@ -173,47 +134,13 @@ export default function Dispensation() {
     const [showRemoveConfirm, setShowRemoveConfirm] = useState<any>(null);
     const [viewItemsModalOpen, setViewItemsModalOpen] = useState(false);
 
-    // ─── Payment helpers ─────────────────────────────────────────────────────
-    // NOTE: Prescription prices are FIXED per course — never multiply by qty.
-    // These are still used by the ViewItemsModal and DispenseModal for
-    // payment gating (unpaid items cannot be dispensed).
-
-    const isItemPaid = (item: PrescriptionItem) => {
-        if (DEV_MODE) return true;
-        if (item.payment_status) {
-            return (
-                item.payment_status === 'paid' ||
-                item.payment_status === 'completed'
-            );
-        }
-        if (selectedPrescription?.invoice_status) {
-            return (
-                selectedPrescription.invoice_status === 'paid' ||
-                selectedPrescription.invoice_status === 'completed'
-            );
-        }
-        return false;
-    };
-
-    const areAllItemsPaid = (items?: PrescriptionItem[]) => {
-        if (!items || items.length === 0) return false;
-        if (DEV_MODE) return true;
-        return items.every((item) => isItemPaid(item));
-    };
-
-    const getPaidItemsCount = (items?: PrescriptionItem[]) => {
-        if (DEV_MODE) return items?.length || 0;
-        return items?.filter((item) => isItemPaid(item)).length || 0;
-    };
+    // ─── Totals (fixed course price — never multiply by qty) ────────────────
 
     const getTotalItems = (items?: PrescriptionItem[]) => items?.length || 0;
 
     const getTotalQuantity = (items?: PrescriptionItem[]) => {
         return (
-            items?.reduce(
-                (sum, item) => sum + (item.quantity || item.dosage_amount || 1),
-                0,
-            ) || 0
+            items?.reduce((sum, item) => sum + getItemQuantity(item), 0) || 0
         );
     };
 
@@ -226,32 +153,12 @@ export default function Dispensation() {
         );
     };
 
-    // ✅ FIX: Fixed course price only — no qty multiplication
-    const getTotalPaidAmount = (items?: PrescriptionItem[]) => {
-        return (
-            items?.reduce((sum, item) => {
-                if (!item.is_paid) return sum;
-                const price =
-                    typeof item.price === 'string'
-                        ? parseFloat(item.price)
-                        : item.price || 0;
-                return sum + (isNaN(price) ? 0 : price);
-            }, 0) || 0
-        );
+    const getTotalAmount = (items?: PrescriptionItem[]) => {
+        if (!items?.length) return 0;
+        return items.reduce((sum, item) => sum + parsePrice(item.price), 0);
     };
 
-    // ─── Derived progress helpers ────────────────────────────────────────────
-
-    const getDispensedCount = (items?: PrescriptionItem[]) => {
-        if (!items) return 0;
-        return items.filter(
-            (item) =>
-                item.quantity_dispensed !== undefined &&
-                item.quantity_dispensed !== null &&
-                item.quantity_dispensed >=
-                    (item.quantity || item.dosage_amount || 1),
-        ).length;
-    };
+    // ─── Derived helpers ────────────────────────────────────────────────────
 
     const getOverallPriority = (row: Dispensation): string => {
         if (row.priority) return row.priority;
@@ -271,31 +178,17 @@ export default function Dispensation() {
     };
 
     const handleDispenseClick = (prescription: Dispensation) => {
-        if (!DEV_MODE) {
-            const hasPaidItems = prescription.items?.some((item) =>
-                isItemPaid(item),
-            );
-            if (!hasPaidItems) {
-                Notiflix.Notify.warning(
-                    'Cannot dispense: No items have been paid for.',
-                );
-                return;
-            }
-        }
-
         const initialItems =
             prescription.items?.map((item) => {
-                const isPaid = DEV_MODE ? true : isItemPaid(item);
-                const prescribedQty = item.quantity || item.dosage_amount || 1;
+                const prescribedQty = getItemQuantity(item);
                 return {
                     ...item,
                     original_quantity: prescribedQty,
-                    quantity_dispensed: isPaid ? prescribedQty : 0,
+                    quantity_dispensed: prescribedQty,
                     quantity_prescribed: prescribedQty,
-                    status: isPaid ? 'pending' : 'not_dispensed',
-                    reason_not_dispensed: isPaid ? null : 'payment_pending',
-                    is_removed: !isPaid,
-                    is_paid: isPaid,
+                    status: 'pending',
+                    reason_not_dispensed: null,
+                    is_removed: false,
                 };
             }) || [];
 
@@ -305,11 +198,6 @@ export default function Dispensation() {
     };
 
     const handleRemoveItem = (itemIndex: number) => {
-        const item = editedItems[itemIndex];
-        if (!item.is_paid && !DEV_MODE) {
-            Notiflix.Notify.warning('Cannot remove unpaid item.');
-            return;
-        }
         setShowRemoveConfirm({
             index: itemIndex,
             item: editedItems[itemIndex],
@@ -334,10 +222,6 @@ export default function Dispensation() {
     const handleUpdateQuantity = (itemIndex: number, newQuantity: number) => {
         const updatedItems = [...editedItems];
         const item = updatedItems[itemIndex];
-        if (!item.is_paid && !DEV_MODE) {
-            Notiflix.Notify.warning('Cannot dispense unpaid item.');
-            return;
-        }
         const maxQuantity = item.original_quantity;
         const quantity = Math.max(0, Math.min(maxQuantity, newQuantity));
         updatedItems[itemIndex] = {
@@ -359,69 +243,64 @@ export default function Dispensation() {
     };
 
     const handleDispenseAll = async () => {
-        if (selectedPrescription) {
-            setIsDispensing(true);
-            try {
-                const itemsToDispense = editedItems.filter(
-                    (item) => item.quantity_dispensed > 0 && item.is_paid,
-                );
-                if (itemsToDispense.length === 0) {
-                    Notiflix.Notify.warning('No items to dispense.');
-                    setIsDispensing(false);
-                    return;
-                }
-
-                const dispensationData = {
-                    items: itemsToDispense.map((item) => ({
-                        drug_id: item.id || item.drug_id,
-                        drug_name:
-                            item.name ||
-                            item.medicine_name ||
-                            item.drug_name ||
-                            item.service_name,
-                        quantity_dispensed: item.quantity_dispensed,
-                        quantity_prescribed: item.original_quantity,
-                        dosage: item.dosage || item.strength,
-                        frequency: item.frequency,
-                        route: item.route,
-                        notes: item.notes,
-                        reason_not_dispensed: null,
-                        payment_status: 'paid',
-                    })),
-                    dispensed_at: new Date().toISOString(),
-                    status: itemsToDispense.some(
-                        (item) =>
-                            item.quantity_dispensed < item.original_quantity,
-                    )
-                        ? 'partially_dispensed'
-                        : 'dispensed',
-                };
-
-                const response = await dispensationAPI.dispense(
-                    selectedPrescription.prescription_number,
-                    dispensationData,
-                );
-                if (response.data.success) {
-                    setIsModalOpen(false);
-                    setSelectedPrescription(null);
-                    setEditedItems([]);
-                    setIsDispensing(false);
-                    Notiflix.Notify.success(
-                        'Dispensation completed successfully!',
-                    );
-                    router.reload({
-                        preserveScroll: true,
-                        preserveState: true,
-                        only: ['dispensations'],
-                    });
-                }
-            } catch (error: any) {
-                console.error('Dispensation failed:', error);
+        if (!selectedPrescription) return;
+        setIsDispensing(true);
+        try {
+            const itemsToDispense = editedItems.filter(
+                (item) => item.quantity_dispensed > 0,
+            );
+            if (itemsToDispense.length === 0) {
+                Notiflix.Notify.warning('No items to dispense.');
                 setIsDispensing(false);
-                Notiflix.Notify.failure(
-                    error.response?.data?.message || 'Dispensation failed.',
-                );
+                return;
             }
+
+            const dispensationData = {
+                items: itemsToDispense.map((item) => ({
+                    drug_id: item.id || item.drug_id,
+                    drug_name:
+                        item.name ||
+                        item.medicine_name ||
+                        item.drug_name ||
+                        item.service_name,
+                    quantity_dispensed: item.quantity_dispensed,
+                    quantity_prescribed: item.original_quantity,
+                    dosage: item.dosage || item.strength,
+                    frequency: item.frequency,
+                    route: item.route,
+                    notes: item.notes,
+                    reason_not_dispensed: null,
+                })),
+                dispensed_at: new Date().toISOString(),
+                status: itemsToDispense.some(
+                    (item) => item.quantity_dispensed < item.original_quantity,
+                )
+                    ? 'partially_dispensed'
+                    : 'dispensed',
+            };
+
+            const response = await dispensationAPI.dispense(
+                selectedPrescription.prescription_number,
+                dispensationData,
+            );
+            if (response.data.success) {
+                setIsModalOpen(false);
+                setSelectedPrescription(null);
+                setEditedItems([]);
+                setIsDispensing(false);
+                Notiflix.Notify.success('Dispensation completed successfully!');
+                router.reload({
+                    preserveScroll: true,
+                    preserveState: true,
+                    only: ['dispensations'],
+                });
+            }
+        } catch (error: any) {
+            console.error('Dispensation failed:', error);
+            setIsDispensing(false);
+            Notiflix.Notify.failure(
+                error.response?.data?.message || 'Dispensation failed.',
+            );
         }
     };
 
@@ -480,8 +359,6 @@ export default function Dispensation() {
     };
 
     // ─── Table Columns ───────────────────────────────────────────────────────
-    // Dispenser-focused: no prices, no totals — just what to pull, how much
-    // has been done, who to route to, and how urgent it is.
 
     const columns: Column<Dispensation>[] = [
         {
@@ -496,6 +373,23 @@ export default function Dispensation() {
                     <span className="font-mono text-sm font-semibold text-blue-600">
                         {value}
                     </span>
+                </div>
+            ),
+        },
+        {
+            id: 'patient_name',
+            label: 'Patient',
+            sortable: true,
+            format: (_, row) => (
+                <div className="space-y-0.5">
+                    <div className="text-sm font-medium text-gray-800">
+                        {row.patient_name || '—'}
+                    </div>
+                    {row.patient_number && (
+                        <div className="font-mono text-xs text-gray-400">
+                            {row.patient_number}
+                        </div>
+                    )}
                 </div>
             ),
         },
@@ -546,16 +440,15 @@ export default function Dispensation() {
                     return <span className="text-xs text-gray-400">—</span>;
                 }
 
-                // Determine per-item state
                 const dispensed = items.filter((i) => {
-                    const prescribed = i.quantity || i.dosage_amount || 1;
+                    const prescribed = getItemQuantity(i);
                     return (
                         (i.quantity_dispensed || 0) >= prescribed &&
                         prescribed > 0
                     );
                 }).length;
                 const partial = items.filter((i) => {
-                    const prescribed = i.quantity || i.dosage_amount || 1;
+                    const prescribed = getItemQuantity(i);
                     const d = i.quantity_dispensed || 0;
                     return d > 0 && d < prescribed;
                 }).length;
@@ -603,18 +496,14 @@ export default function Dispensation() {
             },
         },
         {
-            id: 'payment_scheme',
-            label: 'Scheme',
-            sortable: true,
-            filterable: true,
-            filterType: 'status',
-            format: (value) => {
-                const meta = getSchemeMeta(value);
+            id: 'price',
+            label: 'Price',
+            sortable: false,
+            format: (_, row) => {
+                const total = getTotalAmount(row.items);
                 return (
-                    <span
-                        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${meta.bg} ${meta.color}`}
-                    >
-                        {meta.label}
+                    <span className="text-sm font-medium text-gray-700 tabular-nums">
+                        ZMW {total.toFixed(2)}
                     </span>
                 );
             },
@@ -746,12 +635,9 @@ export default function Dispensation() {
                     onClose={closeViewModal}
                     prescription={selectedPrescription}
                     onDispense={handleDispenseClick}
-                    getPaidItemsCount={getPaidItemsCount}
                     getTotalItems={getTotalItems}
                     getTotalQuantity={getTotalQuantity}
-                    getTotalPaidAmount={getTotalPaidAmount}
-                    isItemPaid={isItemPaid}
-                    devMode={DEV_MODE}
+                    getTotalAmount={getTotalAmount}
                 />
 
                 <DispenseModal
@@ -765,7 +651,7 @@ export default function Dispensation() {
                     onDispenseAll={handleDispenseAll}
                     getTotalDispensedQuantity={getTotalDispensedQuantity}
                     getTotalQuantity={getTotalQuantity}
-                    getTotalPaidAmount={getTotalPaidAmount}
+                    getTotalAmount={getTotalAmount}
                 />
 
                 <ConfirmModal

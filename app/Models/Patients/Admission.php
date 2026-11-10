@@ -17,6 +17,7 @@ class Admission extends Model
         'admitted_by',
         'doctor_id',
         'diagnosis_on_admission',
+        'admitted_to_ward',
         'diagnosis_on_discharge',
         'date_of_admission',
         'time_of_admission'

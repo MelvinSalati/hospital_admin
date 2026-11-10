@@ -1,409 +1,270 @@
 <?php
-// app/Services/BudgetService.php
+// app/Services/Budgets/BudgetService.php
 
 namespace App\Services\Budgets;
 
 use App\Models\Budgets\BudgetAllocation;
 use App\Repositories\Budgets\BudgetRepository;
 use App\Repositories\Budgets\BudgetTransactionRepository;
-
+use App\Services\Budgets\Exceptions\InsufficientBudget;
 use Illuminate\Support\Facades\Log;
 
-class BudgetService 
+class BudgetService
 {
-    protected BudgetRepository $budgetRepository;
-    protected BudgetTransactionRepository $transactionRepository;
-
     public function __construct(
-        BudgetRepository $budgetRepository,
-        BudgetTransactionRepository $transactionRepository
-    ) {
-        $this->budgetRepository = $budgetRepository;
-        $this->transactionRepository = $transactionRepository;
-    }
+        protected BudgetRepository $budgets,
+        protected BudgetTransactionRepository $transactions,
+    ) {}
 
-    /**
-     * Check budget availability
-     */
-    public function checkAvailability(string $budgetCode, float $amount, ?int $departmentId = null): array
-    {
-        try {
-            $budget = $this->budgetRepository->findByCode($budgetCode, $departmentId);
+    public function checkAvailability(
+        string $budgetCode,
+        float $amount,
+        ?int $departmentId = null
+    ): BudgetResult {
+        $budget = $this->budgets->findByCode($budgetCode, $departmentId);
 
-            if (!$budget) {
-                return $this->errorResponse('Budget code not found');
-            }
-
-            $isSufficient = $this->budgetRepository->hasSufficientFunds($budget, $amount);
-            $utilization = $budget->utilization_percentage;
-
-            return [
-                'success' => true,
-                'budget' => $this->formatBudgetData($budget),
-                'request' => [
-                    'amount' => $amount,
-                    'is_sufficient' => $isSufficient,
-                    'shortfall' => $isSufficient ? 0 : $amount - $budget->available_amount,
-                    'remaining_after' => $isSufficient ? $budget->available_amount - $amount : 0,
-                ],
-                'recommendation' => $this->getRecommendation($utilization, $isSufficient, $amount, $budget->available_amount),
-            ];
-        } catch (\Exception $e) {
-            Log::error('Budget check failed: ' . $e->getMessage(), [
-                'budget_code' => $budgetCode,
-                'amount' => $amount,
-                'department_id' => $departmentId,
-            ]);
-
-            return $this->errorResponse('Failed to check budget: ' . $e->getMessage());
+        if (!$budget) {
+            return BudgetResult::fail('Budget code not found', ['budget_code' => $budgetCode]);
         }
+
+        $available = $budget->available();
+        $sufficient = $budget->canCover($amount);
+
+        return BudgetResult::ok(
+            $sufficient ? 'Budget is sufficient' : 'Budget is insufficient',
+            $budget,
+            [
+                'amount' => $amount,
+                'is_sufficient' => $sufficient,
+                'available' => $available,
+                'shortfall' => $sufficient ? 0.0 : round($amount - $available, 2),
+                'remaining_after' => $sufficient ? round($available - $amount, 2) : 0.0,
+                'utilization' => $budget->utilization(),
+            ]
+        );
+    }
+
+    public function reserve(
+        string $budgetCode,
+        float $amount,
+        string $referenceType,
+        int $referenceId,
+        ?int $departmentId = null
+    ): BudgetResult {
+        return $this->execute(
+            'reservation',
+            $budgetCode,
+            $amount,
+            $referenceType,
+            $referenceId,
+            $departmentId,
+            function (BudgetAllocation $b) use ($amount) {
+                if (!$b->canCover($amount)) {
+                    throw new InsufficientBudget('budget', $amount, $b->available());
+                }
+                $b->reserved_amount = round((float) $b->reserved_amount + $amount, 2);
+            }
+        );
+    }
+
+    public function commit(
+        string $budgetCode,
+        float $amount,
+        string $referenceType,
+        int $referenceId,
+        ?int $departmentId = null
+    ): BudgetResult {
+        return $this->execute(
+            'commitment',
+            $budgetCode,
+            $amount,
+            $referenceType,
+            $referenceId,
+            $departmentId,
+            function (BudgetAllocation $b) use ($amount) {
+                if ((float) $b->reserved_amount < $amount) {
+                    throw new InsufficientBudget('reserved', $amount, (float) $b->reserved_amount);
+                }
+                $b->reserved_amount  = round((float) $b->reserved_amount - $amount, 2);
+                $b->committed_amount = round((float) $b->committed_amount + $amount, 2);
+            }
+        );
+    }
+
+    public function actualize(
+        string $budgetCode,
+        float $amount,
+        string $referenceType,
+        int $referenceId,
+        ?int $departmentId = null
+    ): BudgetResult {
+        return $this->execute(
+            'actual',
+            $budgetCode,
+            $amount,
+            $referenceType,
+            $referenceId,
+            $departmentId,
+            function (BudgetAllocation $b) use ($amount) {
+                if ((float) $b->committed_amount < $amount) {
+                    throw new InsufficientBudget('committed', $amount, (float) $b->committed_amount);
+                }
+                $b->committed_amount = round((float) $b->committed_amount - $amount, 2);
+                $b->actual_spent     = round((float) $b->actual_spent + $amount, 2);
+            }
+        );
     }
 
     /**
-     * Reserve budget
+     * Release from an explicit bucket. No silent guessing.
+     *
+     * @param 'reserved'|'committed' $bucket
      */
-    public function reserveBudget(string $budgetCode, float $amount, string $referenceType, int $referenceId, ?int $departmentId = null): array
-    {
-        try {
-            $budget = $this->budgetRepository->findForUpdate($budgetCode, $departmentId);
-
-            if (!$budget) {
-                return $this->errorResponse('Budget not found');
-            }
-
-            if (!$this->budgetRepository->hasSufficientFunds($budget, $amount)) {
-                return $this->errorResponse(
-                    'Insufficient budget',
-                    [
-                        'available' => $budget->available_amount,
-                        'required' => $amount,
-                        'shortfall' => $amount - $budget->available_amount,
-                    ]
-                );
-            }
-
-            // Reserve
-            $budget = $this->budgetRepository->reserveBudget($budget, $amount);
-
-            // Log transaction
-            $this->transactionRepository->create([
-                'budget_code' => $budgetCode,
-                'transaction_type' => 'reservation',
-                'reference_type' => $referenceType,
-                'reference_id' => $referenceId,
-                'amount' => $amount,
-                'description' => "Budget reserved for {$referenceType} #{$referenceId}",
-                'transaction_date' => now()
-            ]);
-
-            return [
-                'success' => true,
-                'message' => 'Budget reserved successfully',
-                'budget' => [
-                    'code' => $budget->budget_code,
-                    'available' => $budget->available_amount,
-                    'reserved' => $budget->reserved_amount,
-                ],
-            ];
-        } catch (\Exception $e) {
-            Log::error('Budget reservation failed: ' . $e->getMessage(), [
-                'budget_code' => $budgetCode,
-                'amount' => $amount,
-                'reference_type' => $referenceType,
-                'reference_id' => $referenceId,
-            ]);
-
-            return $this->errorResponse('Failed to reserve budget: ' . $e->getMessage());
+    public function release(
+        string $budgetCode,
+        float $amount,
+        string $bucket,
+        string $referenceType,
+        int $referenceId,
+        ?string $reason = null,
+        ?int $departmentId = null
+    ): BudgetResult {
+        if (!in_array($bucket, ['reserved', 'committed'], true)) {
+            return BudgetResult::fail("Invalid release bucket '{$bucket}'", ['bucket' => $bucket]);
         }
+
+        return $this->execute(
+            'reversal',
+            $budgetCode,
+            $amount,
+            $referenceType,
+            $referenceId,
+            $departmentId,
+            function (BudgetAllocation $b) use ($amount, $bucket) {
+                $column = $bucket . '_amount';
+                $current = (float) $b->{$column};
+                if ($current < $amount) {
+                    throw new InsufficientBudget($bucket, $amount, $current);
+                }
+                $b->{$column} = round($current - $amount, 2);
+            },
+            $reason
+        );
     }
 
-    /**
-     * Commit budget
-     */
-    public function commitBudget(string $budgetCode, float $amount, string $referenceType, int $referenceId, ?int $departmentId = null): array
-    {
-        try {
-            $budget = $this->budgetRepository->findForUpdate($budgetCode, $departmentId);
-
-            if (!$budget) {
-                return $this->errorResponse('Budget not found');
-            }
-
-            if ($budget->reserved_amount < $amount) {
-                return $this->errorResponse(
-                    'Insufficient reserved budget',
-                    [
-                        'reserved' => $budget->reserved_amount,
-                        'required' => $amount,
-                    ]
-                );
-            }
-
-            $budget = $this->budgetRepository->commitBudget($budget, $amount);
-
-            $this->transactionRepository->create([
-                'budget_code' => $budgetCode,
-                'transaction_type' => 'commitment',
-                'reference_type' => $referenceType,
-                'reference_id' => $referenceId,
-                'amount' => $amount,
-                'description' => "Budget committed for {$referenceType} #{$referenceId}",
-                'transaction_date' => now()
-            ]);
-
-            return [
-                'success' => true,
-                'message' => 'Budget committed successfully',
-                'budget' => [
-                    'code' => $budget->budget_code,
-                    'available' => $budget->available_amount,
-                    'committed' => $budget->committed_amount,
-                ],
-            ];
-        } catch (\Exception $e) {
-            Log::error('Budget commitment failed: ' . $e->getMessage(), [
-                'budget_code' => $budgetCode,
-                'amount' => $amount,
-            ]);
-
-            return $this->errorResponse('Failed to commit budget: ' . $e->getMessage());
-        }
-    }
-
-    /**
-     * Actualize budget
-     */
-    public function actualizeBudget(string $budgetCode, float $amount, string $referenceType, int $referenceId, ?int $departmentId = null): array
-    {
-        try {
-            $budget = $this->budgetRepository->findForUpdate($budgetCode, $departmentId);
-
-            if (!$budget) {
-                return $this->errorResponse('Budget not found');
-            }
-
-            if ($budget->committed_amount < $amount) {
-                return $this->errorResponse(
-                    'Insufficient committed budget',
-                    [
-                        'committed' => $budget->committed_amount,
-                        'required' => $amount,
-                    ]
-                );
-            }
-
-            $budget = $this->budgetRepository->actualizeBudget($budget, $amount);
-
-            $this->transactionRepository->create([
-                'budget_code' => $budgetCode,
-                'transaction_type' => 'actual',
-                'reference_type' => $referenceType,
-                'reference_id' => $referenceId,
-                'amount' => $amount,
-                'description' => "Budget actualized for {$referenceType} #{$referenceId}",
-                'transaction_date' => now(),
-            ]);
-
-            return [
-                'success' => true,
-                'message' => 'Budget actualized successfully',
-                'budget' => [
-                    'code' => $budget->budget_code,
-                    'available' => $budget->available_amount,
-                    'actual_spent' => $budget->actual_spent,
-                ],
-            ];
-        } catch (\Exception $e) {
-            Log::error('Budget actualization failed: ' . $e->getMessage(), [
-                'budget_code' => $budgetCode,
-                'amount' => $amount,
-            ]);
-
-            return $this->errorResponse('Failed to actualize budget: ' . $e->getMessage());
-        }
-    }
-
-    /**
-     * Release budget
-     */
-    public function releaseBudget(string $budgetCode, float $amount, string $referenceType, int $referenceId, ?string $reason = null, ?int $departmentId = null): array
-    {
-        try {
-            $budget = $this->budgetRepository->findForUpdate($budgetCode, $departmentId);
-
-            if (!$budget) {
-                return $this->errorResponse('Budget not found');
-            }
-
-            $budget = $this->budgetRepository->releaseBudget($budget, $amount);
-
-            $this->transactionRepository->create([
-                'budget_code' => $budgetCode,
-                'transaction_type' => 'reversal',
-                'reference_type' => $referenceType,
-                'reference_id' => $referenceId,
-                'amount' => $amount,
-                'description' => "Budget released for {$referenceType} #{$referenceId}" . ($reason ? " ({$reason})" : ''),
-                'transaction_date' => now()
-            ]);
-
-            return [
-                'success' => true,
-                'message' => 'Budget released successfully',
-                'budget' => [
-                    'code' => $budget->budget_code,
-                    'available' => $budget->available_amount,
-                ],
-            ];
-        } catch (\Exception $e) {
-            Log::error('Budget release failed: ' . $e->getMessage(), [
-                'budget_code' => $budgetCode,
-                'amount' => $amount,
-            ]);
-
-            return $this->errorResponse('Failed to release budget: ' . $e->getMessage());
-        }
-    }
-
-    /**
-     * Get department budget summary
-     */
     public function getDepartmentSummary(int $departmentId, ?int $year = null): array
     {
-        $year = $year ?? date('Y');
-        $budgets = $this->budgetRepository->getDepartmentBudgets($departmentId, $year);
+        $year = $year ?? now()->year;
+        $budgets = $this->budgets->getDepartmentBudgets($departmentId, $year);
 
-        $totalAllocated = $budgets->sum('allocated_amount');
-        $totalReserved = $budgets->sum('reserved_amount');
-        $totalCommitted = $budgets->sum('committed_amount');
-        $totalActual = $budgets->sum('actual_spent');
+        $allocated = round((float) $budgets->sum('allocated_amount'), 2);
+        $reserved  = round((float) $budgets->sum('reserved_amount'), 2);
+        $committed = round((float) $budgets->sum('committed_amount'), 2);
+        $actual    = round((float) $budgets->sum('actual_spent'), 2);
+        $used      = round($reserved + $committed + $actual, 2);
 
         return [
             'department_id' => $departmentId,
             'fiscal_year' => $year,
             'summary' => [
-                'total_allocated' => $totalAllocated,
-                'total_reserved' => $totalReserved,
-                'total_committed' => $totalCommitted,
-                'total_actual_spent' => $totalActual,
-                'total_available' => $totalAllocated - $totalReserved - $totalCommitted - $totalActual,
-                'overall_utilization' => $totalAllocated > 0 ? round(($totalActual / $totalAllocated) * 100, 2) : 0,
+                'total_allocated' => $allocated,
+                'total_reserved'  => $reserved,
+                'total_committed' => $committed,
+                'total_actual'    => $actual,
+                'total_available' => round($allocated - $used, 2),
+                'overall_utilization' => $allocated > 0 ? round(($used / $allocated) * 100, 2) : 0.0,
             ],
-            'budgets' => $budgets->map(function ($budget) {
-                return [
-                    'id' => $budget->id,
-                    'code' => $budget->budget_code,
-                    'name' => $budget->budget_name,
-                    'category' => $budget->category->name ?? 'N/A',
-                    'allocated' => $budget->allocated_amount,
-                    'reserved' => $budget->reserved_amount,
-                    'committed' => $budget->committed_amount,
-                    'actual_spent' => $budget->actual_spent,
-                    'available' => $budget->available_amount,
-                    'utilization' => $budget->utilization_percentage,
-                    'utilization_color' => $this->getUtilizationColor($budget->utilization_percentage),
-                    'status' => $budget->status_label,
-                    'alert_triggered' => $budget->alert_triggered,
-                ];
-            }),
+            'budgets' => $budgets->map(fn(BudgetAllocation $b) => [
+                'id' => $b->id,
+                'code' => $b->budget_code,
+                'name' => $b->budget_name,
+                'category' => $b->category?->name ?? 'N/A',
+                'allocated' => (float) $b->allocated_amount,
+                'reserved' => (float) $b->reserved_amount,
+                'committed' => (float) $b->committed_amount,
+                'actual_spent' => (float) $b->actual_spent,
+                'available' => $b->available(),
+                'utilization' => $b->utilization(),
+                'status' => $b->status,
+                'alert_triggered' => (bool) $b->alert_triggered,
+            ])->all(),
         ];
     }
 
-    /**
-     * Get active budgets
-     */
     public function getActiveBudgets(array $filters = []): array
     {
-        $budgets = $this->budgetRepository->getActiveBudgets($filters);
-
         return [
-            'data' => $budgets->map(function ($budget) {
-                return [
-                    'id' => $budget->id,
-                    'budget_code' => $budget->budget_code,
-                    'budget_name' => $budget->budget_name,
-                    'category' => $budget->category->name ?? 'N/A',
-                    'department' => $budget->department->name ?? 'N/A',
-                    'allocated' => $budget->allocated_amount,
-                    'available' => $budget->available_amount,
-                    'utilization' => $budget->utilization_percentage,
-                    'utilization_color' => $this->getUtilizationColor($budget->utilization_percentage),
-                    'status' => $budget->status_label,
-                ];
-            }),
+            'data' => $this->budgets->getActiveBudgets($filters)
+                ->map(fn(BudgetAllocation $b) => [
+                    'id' => $b->id,
+                    'budget_code' => $b->budget_code,
+                    'budget_name' => $b->budget_name,
+                    'category' => $b->category?->name ?? 'N/A',
+                    'department' => $b->department?->name ?? 'N/A',
+                    'allocated' => (float) $b->allocated_amount,
+                    'available' => $b->available(),
+                    'utilization' => $b->utilization(),
+                    'status' => $b->status,
+                ])->all(),
         ];
     }
 
-    // ============================================
-    // PRIVATE HELPERS
-    // ============================================
-
-    private function formatBudgetData(BudgetAllocation $budget): array
+    public function getAllActiveBudgets()
     {
-        return [
-            'id' => $budget->id,
-            'code' => $budget->budget_code,
-            'name' => $budget->budget_name,
-            'category' => $budget->category->name ?? 'N/A',
-            'department' => $budget->department->name ?? 'N/A',
-            'allocated' => $budget->allocated_amount,
-            'reserved' => $budget->reserved_amount,
-            'committed' => $budget->committed_amount,
-            'actual_spent' => $budget->actual_spent,
-            'available' => $budget->available_amount,
-            'utilization' => $budget->utilization_percentage,
-            'utilization_color' => $this->getUtilizationColor($budget->utilization_percentage),
-            'utilization_level' => $this->getUtilizationLevel($budget->utilization_percentage),
-            'status' => $budget->status_label,
-            'alert_triggered' => $budget->alert_triggered,
-            'alert_message' => $budget->alert_message,
-            'warning_threshold' => $budget->warning_threshold,
-            'critical_threshold' => $budget->critical_threshold,
-        ];
+        return $this->budgets->getAllActiveBudgets();
     }
 
-    private function getUtilizationColor(float $utilization): string
-    {
-        if ($utilization >= 90) return 'danger';
-        if ($utilization >= 75) return 'warning';
-        if ($utilization >= 50) return 'info';
-        return 'success';
-    }
+    // ------------------------------------------------------------------
 
-    private function getUtilizationLevel(float $utilization): string
-    {
-        if ($utilization >= 90) return 'critical';
-        if ($utilization >= 75) return 'warning';
-        if ($utilization >= 50) return 'moderate';
-        return 'good';
-    }
+    /** One transaction. One mutation. One audit row. */
+    private function execute(
+        string $transactionType,
+        string $budgetCode,
+        float $amount,
+        string $referenceType,
+        int $referenceId,
+        ?int $departmentId,
+        callable $mutation,
+        ?string $reason = null
+    ): BudgetResult {
+        try {
+            $budget = $this->budgets->mutate($budgetCode, $departmentId, $mutation);
 
-    private function getRecommendation(float $utilization, bool $isSufficient, float $requested, float $available): string
-    {
-        if (!$isSufficient) {
-            return sprintf(
-                '⚠️ Insufficient budget. Required: %s, Available: %s, Shortfall: %s. Please reduce quantities or select a different budget.',
-                number_format($requested, 2),
-                number_format($available, 2),
-                number_format($requested - $available, 2)
+            if (!$budget) {
+                return BudgetResult::fail('Budget not found', ['budget_code' => $budgetCode]);
+            }
+
+            $this->transactions->create([
+                'budget_code'      => $budgetCode,
+                'transaction_type' => $transactionType,
+                'reference_type'   => $referenceType,
+                'reference_id'     => $referenceId,
+                'amount'           => $amount,
+                'description'      => "{$transactionType} for {$referenceType} #{$referenceId}"
+                    . ($reason ? " ({$reason})" : ''),
+                'transaction_date' => now(),
+            ]);
+
+            return BudgetResult::ok(
+                "Budget {$transactionType} succeeded",
+                $budget,
+                ['amount' => $amount]
             );
+        } catch (InsufficientBudget $e) {
+            return BudgetResult::fail($e->getMessage(), [
+                'bucket'    => $e->bucket,
+                'required'  => $e->required,
+                'available' => $e->available,
+                'shortfall' => $e->shortfall(),
+            ]);
+        } catch (\Throwable $e) {
+            Log::error("Budget {$transactionType} failed", [
+                'budget_code' => $budgetCode,
+                'amount' => $amount,
+                'reference' => "{$referenceType}#{$referenceId}",
+                'exception' => $e,
+            ]);
+            return BudgetResult::fail("Failed to {$transactionType} budget");
         }
-
-        if ($utilization >= 90) return '🔴 CRITICAL: Budget nearly depleted. Consider priority approval.';
-        if ($utilization >= 75) return '🟡 WARNING: Budget utilization is high. Monitor spending.';
-        if ($utilization >= 50) return '🟢 Budget utilization is moderate. Proceed with normal approval.';
-        return '🟢 Budget is healthy. Proceed with request.';
-    }
-
-    private function errorResponse(string $message, array $data = []): array
-    {
-        return array_merge([
-            'success' => false,
-            'message' => $message,
-        ], $data);
-    } 
-
-    public function getAllActiveBudgets(){
-        return  $this->budgetRepository->getAllActiveBudgets();
     }
 }

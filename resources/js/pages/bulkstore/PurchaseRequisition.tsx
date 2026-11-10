@@ -499,7 +499,7 @@ export default function PurchaseRequisitionPage() {
     // RENDER
     // ============================================
 
-    console.log(requisitions);
+    console.log('products', products);
     return (
         <AppLayout
             breadcrumbs={[

@@ -37,7 +37,7 @@ class PurchaseRepository implements PurchaseRepositoryInterface
                 'supplier_id' => $data['supplier_id'] ?? null,
             ];
 
-           
+
 
             // Create the requisition
             $purchaseRequisition = PurchaseRequisition::create($requisitionDetails);
@@ -77,8 +77,7 @@ class PurchaseRepository implements PurchaseRepositoryInterface
             DB::commit();
 
             // Load relationships for response
-            return $purchaseRequisition->load(['items.product', 'department', 'budgetAllocation']);
-
+            return $purchaseRequisition->load(['items.service', 'department', 'budgetAllocation']);
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Failed to create purchase requisition: ' . $e->getMessage(), [
@@ -111,21 +110,21 @@ class PurchaseRepository implements PurchaseRepositoryInterface
     /**
      * Get all requisitions with filters
      */
-public function getRequisitions()
-{
-    return PurchaseRequisition::with(['department', 'items.product', 'supplier', 'requester'])
-        ->withCount('items')
-        ->withSum('items', 'estimated_total')
-        ->whereNotNull('department_id')
-        ->orderBy('created_at', 'desc')
-        ->get()
-        ->map(function($requisition) {
-            // Add total_amount to the response
-            $requisition->total_amount = $requisition->items_sum_estimated_total ?? 0;
-            $requisition->items_count = $requisition->items_count ?? 0;
-            return $requisition;
-        });
-}
+    public function getRequisitions()
+    {
+        return PurchaseRequisition::with(['department', 'items.product', 'supplier', 'requester'])
+            ->withCount('items')
+            ->withSum('items', 'estimated_total')
+            ->whereNotNull('department_id')
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function ($requisition) {
+                // Add total_amount to the response
+                $requisition->total_amount = $requisition->items_sum_estimated_total ?? 0;
+                $requisition->items_count = $requisition->items_count ?? 0;
+                return $requisition;
+            });
+    }
     /**
      * Update requisition status
      */
@@ -290,4 +289,3 @@ public function getRequisitions()
             ->get();
     }
 }
-

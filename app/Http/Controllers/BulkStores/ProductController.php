@@ -18,6 +18,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Notification;
 use Inertia\Inertia;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
+use App\Models\Services\Service;
 
 class ProductController extends Controller
 {
@@ -28,13 +31,101 @@ class ProductController extends Controller
         $this->productService = $productService;
     }
 
+    public function addService(Request $request)
+    {
+        $validated = $request->validate([
+            'user'                    => 'required|integer|exists:users,id',
+            'rows'                    => 'required|array|min:1|max:2',
+            'rows.*.commodity_id'     => 'required|integer|exists:products,id',
+            'rows.*.scheme_type'      => ['required', 'integer', Rule::in([1, 2])],
+            'rows.*.service_name'     => 'required|string|max:255',
+            'rows.*.service_code'     => 'nullable|string|max:100',
+            'rows.*.service_category' => 'nullable|string|max:100',
+            'rows.*.department_id'    => 'required|integer|exists:departments,id',
+            'rows.*.description'      => 'nullable|string',
+            'rows.*.price'            => 'required|numeric|min:0',
+            'rows.*.is_active'        => 'boolean',
+        ]);
+
+        $commodityIds = collect($validated['rows'])->pluck('commodity_id')->unique();
+        if ($commodityIds->count() !== 1) {
+            return response()->json([
+                'message' => 'All rows must belong to the same product.',
+            ], 422);
+        }
+
+        $commodityId = $commodityIds->first();
+        $product = Product::findOrFail($commodityId);
+
+        $created = [];
+        $updated = [];
+
+        DB::transaction(function () use ($validated, $product, &$created, &$updated) {
+            foreach ($validated['rows'] as $row) {
+                $existing = Service::where('product_uuid', $product->product_uuid)
+                    ->where('scheme_type', $row['scheme_type'])
+                    ->first();
+
+                $code = $row['service_code'] ?? null;
+
+                if ($existing) {
+                    $existing->update([
+                        'department_id'    => $row['department_id'],
+                        'service_name'     => $row['service_name'],
+                        'service_category' => $row['service_category'] ?? null,
+                        'service_code'     => $code,
+                        'description'      => $row['description'] ?? null,
+                        'price'            => $row['price'],
+                        'is_active'        => $row['is_active'] ?? true,
+                    ]);
+                    $updated[] = $existing->id;
+                } else {
+                    $service = Service::create([
+                        'scheme_type'      => $row['scheme_type'],
+                        // 'commodity_id'  => $row['commodity_id'],   // ❌ column doesn't exist
+                        'product_uuid'     => $product->product_uuid, // ✅ existing link
+                        'service_uuid'     => (string) Str::uuid(),
+                        'department_id'    => $row['department_id'],
+                        'service_name'     => $row['service_name'],
+                        'service_category' => $row['service_category'] ?? null,
+                        'service_code'     => $code,
+                        'description'      => $row['description'] ?? null,
+                        'price'            => $row['price'],
+                        'is_active'        => $row['is_active'] ?? true,
+                    ]);
+                    $created[] = $service->id;
+                }
+            }
+        });
+
+        $message = match (true) {
+            count($created) === 2 => "{$product->product_name} added to services with cash & insurance prices.",
+            count($created) === 1 && count($updated) === 1 => "{$product->product_name} updated — one price created, one updated.",
+            count($updated) === 2 => "{$product->product_name} prices updated.",
+            default => "{$product->product_name} saved to services.",
+        };
+
+        return response()->json([
+            'message'  => $message,
+            'created'  => $created,
+            'updated'  => $updated,
+            // filter by the real link, not commodity_id
+            'services' => Service::where('product_uuid', $product->product_uuid)
+                ->whereIn('scheme_type', [1, 2])
+                ->get(),
+        ]);
+    }
+
     /**
      * Show products page with all product data
      */
     public function showProducts(Request $request)
     {
-        return Inertia::render('bulkstore/Products', [
-            'products' => $this->productService->getProducts()
+        Log::info('Showing products page', \Illuminate\Support\Facades\DB::table('categories')->get());
+        return Inertia::render('bulkstore/products', [
+            'products' => $this->productService->getProducts(),
+            'categories' => \Illuminate\Support\Facades\DB::table('categories')->get(),
+            'departments' => \App\Models\Departments\Department::all()
         ]);
     }
 
@@ -43,166 +134,252 @@ class ProductController extends Controller
      *  in order to fix pricing
      */
 
-     public function getStockPricing(Request $request)
+    public function getStockPricing(Request $request)
     {
         return Inertia::render('bulkstore/StockPricing', [
             'products' => $this->productService->getProductsWithStock()
         ]);
     }
 
-    public function adjustPrice(Request $request, int $productId){
+    public function adjustPrice(Request $request, int $productId)
+    {
         $serviceDetails  = [
             'commodity_id'   => $productId,
             'insurance_price' => $request->insurance_price,
             'cash_price' => $request->cash_price
         ];
         $addPrice       =  $this->productService->addPrice($serviceDetails);
-        if($addPrice){
+        if ($addPrice) {
             $response = [
                 'message' => 'Commodity pricing added succesfully!',
                 'status'  => 200
             ];
         } else {
-                $response = [
+            $response = [
                 'message' => 'Commodity Pricing Failed!',
                 'status'  => 500
             ];
-        }  
+        }
 
-        return $this->response($response['message'],$response['status']);
+        return $this->response($response['message'], $response['status']);
     }
 
-    public function adjustedProducts(){
-        return Inertia::render('bulkstore/Expiry',
-        [
-            'adjustments'  => $this->getAdjustedStock()
-        ]);
+    public function adjustedProducts()
+    {
+        return Inertia::render(
+            'bulkstore/Adjustments',
+            [
+                'adjustments'  => $this->getAdjustedStock()
+            ]
+        );
     }
     /**
      * Get all products with their expiry information
      */
-    public function getExpiry(Request $request)
-    {
-        try {
-            // Query batches with product information
-            $batches = DB::table('stock_batches')
-                ->join('products', 'stock_batches.product_id', '=', 'products.id')
-                ->whereNull('stock_batches.deleted_at')
-                ->where('stock_batches.remaining_quantity', '>', 0)
-                ->select([
-                    'stock_batches.id',
-                    'stock_batches.product_id',
-                    'stock_batches.batch_number',
-                    'stock_batches.supplier_id',
-                    'stock_batches.remaining_quantity',
-                    'stock_batches.expiry_date',
-                    'stock_batches.created_at',
-                    'products.product_name',
-                    'products.product_code',
-                    DB::raw('DATEDIFF(stock_batches.expiry_date, CURDATE()) AS days_remaining'),
-                    DB::raw("
-                        CASE
-                            WHEN stock_batches.expiry_date < CURDATE() THEN 'expired'
-                            WHEN DATEDIFF(stock_batches.expiry_date, CURDATE()) < 30 THEN 'critical'
-                            WHEN DATEDIFF(stock_batches.expiry_date, CURDATE()) < 90 THEN 'warning'
-                            ELSE 'ok'
-                        END AS status
-                    ")
-                ])
-                ->orderBy('stock_batches.expiry_date', 'asc')
+   public function getExpiry(Request $request)
+{
+    try {
+        // ---------------------------------------------------------
+        // 1. Batches with product info
+        // ---------------------------------------------------------
+        $batches = DB::table('stock_batches')
+            ->join('products', 'stock_batches.product_id', '=', 'products.id')
+            ->whereNull('stock_batches.deleted_at')
+            ->where('stock_batches.remaining_quantity', '>', 0)
+            ->select([
+                'stock_batches.id',
+                'stock_batches.product_id',
+                'stock_batches.batch_number',
+                'stock_batches.supplier_id',
+                'stock_batches.remaining_quantity',
+                'stock_batches.expiry_date',
+                'stock_batches.created_at',
+                'products.product_name',
+                'products.product_code',
+                DB::raw('DATEDIFF(stock_batches.expiry_date, CURDATE()) AS days_remaining'),
+                DB::raw("
+                    CASE
+                        WHEN stock_batches.expiry_date < CURDATE() THEN 'expired'
+                        WHEN DATEDIFF(stock_batches.expiry_date, CURDATE()) < 30 THEN 'critical'
+                        WHEN DATEDIFF(stock_batches.expiry_date, CURDATE()) < 90 THEN 'warning'
+                        ELSE 'ok'
+                    END AS status
+                ")
+            ])
+            ->orderBy('stock_batches.expiry_date', 'asc')
+            ->get();
+
+        // ---------------------------------------------------------
+        // 2. Supplier names
+        // ---------------------------------------------------------
+        $supplierIds = $batches->pluck('supplier_id')->filter()->unique()->toArray();
+        $suppliers = [];
+        if (!empty($supplierIds)) {
+            $supplierColumns = DB::getSchemaBuilder()->getColumnListing('suppliers');
+            $nameColumn = 'name';
+            foreach (['name', 'supplier_name', 'company_name', 'company', 'business_name'] as $col) {
+                if (in_array($col, $supplierColumns)) {
+                    $nameColumn = $col;
+                    break;
+                }
+            }
+
+            $supplierData = DB::table('suppliers')
+                ->whereIn('id', $supplierIds)
+                ->select('id', $nameColumn . ' as name')
                 ->get();
 
-            // Get supplier names separately
-            $supplierIds = $batches->pluck('supplier_id')->filter()->unique()->toArray();
-            $suppliers = [];
-            if (!empty($supplierIds)) {
-                // Get the column names from suppliers table
-                $supplierColumns = DB::getSchemaBuilder()->getColumnListing('suppliers');
-                $nameColumn = 'name'; // default
-                foreach (['name', 'supplier_name', 'company_name', 'company', 'business_name'] as $col) {
-                    if (in_array($col, $supplierColumns)) {
-                        $nameColumn = $col;
-                        break;
-                    }
-                }
-
-                $supplierData = DB::table('suppliers')
-                    ->whereIn('id', $supplierIds)
-                    ->select('id', $nameColumn . ' as name')
-                    ->get();
-
-                foreach ($supplierData as $supplier) {
-                    $suppliers[$supplier->id] = $supplier->name;
-                }
+            foreach ($supplierData as $supplier) {
+                $suppliers[$supplier->id] = $supplier->name;
             }
-
-            // Transform the data (without unit cost)
-            $expiryItems = $batches->map(function ($batch) use ($suppliers) {
-                return [
-                    'id' => $batch->id,
-                    'product_id' => $batch->product_id,
-                    'product_name' => $batch->product_name ?? 'Unknown Product',
-                    'product_code' => $batch->product_code ?? 'N/A',
-                    'batch_number' => $batch->batch_number ?? 'N/A',
-                    'supplier_id' => $batch->supplier_id,
-                    'supplier_name' => $suppliers[$batch->supplier_id] ?? 'N/A',
-                    'remaining_quantity' => $batch->remaining_quantity,
-                    'unit_cost' => 0, // Set to 0 since we can't get it
-                    'total_value' => 0, // Set to 0 since we can't get it
-                    'expiry_date' => $batch->expiry_date,
-                    'days_until_expiry' => $batch->days_remaining,
-                    'status' => $batch->status,
-                    'created_at' => $batch->created_at,
-                ];
-            });
-
-            // Calculate summary statistics
-            $summary = [
-                'total_products' => $expiryItems->unique('product_id')->count(),
-                'total_batches' => $expiryItems->count(),
-                'expired_batches' => $expiryItems->where('status', 'expired')->count(),
-                'critical_batches' => $expiryItems->where('status', 'critical')->count(),
-                'warning_batches' => $expiryItems->where('status', 'warning')->count(),
-                'ok_batches' => $expiryItems->where('status', 'ok')->count(),
-                'total_value' => 0, // Set to 0 since we can't get it
-            ];
-
-            // Apply filters
-            $filteredItems = $expiryItems;
-            if ($request->filled('search')) {
-                $search = $request->search;
-                $filteredItems = $filteredItems->filter(function ($item) use ($search) {
-                    return stripos($item['product_name'], $search) !== false ||
-                        stripos($item['product_code'], $search) !== false ||
-                        stripos($item['batch_number'], $search) !== false ||
-                        stripos($item['supplier_name'], $search) !== false;
-                });
-            }
-
-            if ($request->filled('status')) {
-                $status = $request->status;
-                $filteredItems = $filteredItems->where('status', $status);
-            }
-
-            return Inertia::render('bulkstore/Expiry', [
-                'expiryItems' => $filteredItems->values()->all(),
-                'summary' => $summary,
-                'filters' => [
-                    'search' => $request->search,
-                    'status' => $request->status,
-                ]
-            ]);
-        } catch (\Exception $e) {
-            \Log::error('Bulk store expiry error: ' . $e->getMessage());
-            \Log::error($e->getTraceAsString());
-
-            return Inertia::render('bulkstore/Expiry', [
-                'expiryItems' => [],
-                'summary' => null,
-                'error' => 'Failed to load expiry data: ' . $e->getMessage()
-            ]);
         }
+
+        // ---------------------------------------------------------
+        // 3. Ledger scope + latest ledger row per product (inline)
+        // ---------------------------------------------------------
+        $bulkStoreId  = $request->filled('bulk_store_id')  ? (int) $request->input('bulk_store_id')  : null;
+        $departmentId = $request->filled('department_id')  ? (int) $request->input('department_id')  : null;
+
+        $productIds = $batches->pluck('product_id')->unique()->values();
+
+        $ledger = [];
+        if ($productIds->isNotEmpty()) {
+            // latest ledger_date per product within scope
+            $latestDates = StockLedger::query()
+                ->select('product_id', DB::raw('MAX(ledger_date) as max_date'))
+                ->whereIn('product_id', $productIds)
+                ->when($bulkStoreId,  fn($q) => $q->where('bulk_store_id', $bulkStoreId))
+                ->when($departmentId, fn($q) => $q->where('department_id', $departmentId))
+                ->groupBy('product_id');
+
+            $ledgerRows = StockLedger::query()
+                ->joinSub($latestDates, 'latest', function ($join) {
+                    $join->on('stock_ledger.product_id', '=', 'latest.product_id')
+                         ->on('stock_ledger.ledger_date', '=', 'latest.max_date');
+                })
+                ->when($bulkStoreId,  fn($q) => $q->where('stock_ledger.bulk_store_id', $bulkStoreId))
+                ->when($departmentId, fn($q) => $q->where('stock_ledger.department_id', $departmentId))
+                ->orderByDesc('stock_ledger.id')
+                ->get()
+                ->unique('product_id');
+
+            foreach ($ledgerRows as $row) {
+                $ledger[$row->product_id] = [
+                    'closing_balance' => (int) $row->closing_balance,
+                    'avg_unit_cost'   => (float) $row->avg_unit_cost,
+                    'updated_at'      => $row->updated_at,
+                ];
+            }
+        }
+
+        // total batch qty per product (reconciliation)
+        $batchTotals = DB::table('stock_batches')
+            ->whereNull('deleted_at')
+            ->whereIn('product_id', $productIds)
+            ->groupBy('product_id')
+            ->pluck(DB::raw('SUM(remaining_quantity)'), 'product_id')
+            ->toArray();
+
+        // ---------------------------------------------------------
+        // 4. Transform
+        // ---------------------------------------------------------
+        $expiryItems = $batches->map(function ($batch) use ($suppliers, $ledger, $batchTotals) {
+            $entry     = $ledger[$batch->product_id] ?? null;
+            $ledgerQty = (int) ($entry['closing_balance'] ?? 0);
+            $avgCost   = (float) ($entry['avg_unit_cost'] ?? 0);
+            $batchSum  = (int) ($batchTotals[$batch->product_id] ?? 0);
+            $batchQty  = (int) $batch->remaining_quantity;
+
+            return [
+                'id'                 => $batch->id,
+                'product_id'         => $batch->product_id,
+                'product_name'       => $batch->product_name ?? 'Unknown Product',
+                'product_code'       => $batch->product_code ?? 'N/A',
+                'batch_number'       => $batch->batch_number ?? 'N/A',
+                'supplier_id'        => $batch->supplier_id,
+                'supplier_name'      => $suppliers[$batch->supplier_id] ?? 'N/A',
+                'remaining_quantity' => $batchQty,
+                'unit_cost'          => $avgCost,
+                'total_value'        => $avgCost * $batchQty,
+
+                'ledger_stock'       => $ledgerQty,
+                'batch_total'        => $batchSum,
+                'batch_share'        => $ledgerQty > 0
+                    ? round(($batchQty / $ledgerQty) * 100, 2)
+                    : null,
+                'reconciled'         => $batchSum === $ledgerQty,
+                'ledger_diff'        => $batchSum - $ledgerQty,
+                'ledger_synced_at'   => $entry['updated_at'] ?? null,
+
+                'expiry_date'        => $batch->expiry_date,
+                'days_until_expiry'  => $batch->days_remaining,
+                'status'             => $batch->status,
+                'created_at'         => $batch->created_at,
+            ];
+        });
+
+        // ---------------------------------------------------------
+        // 5. Summary
+        // ---------------------------------------------------------
+        $summary = [
+            'total_products'      => $expiryItems->unique('product_id')->count(),
+            'total_batches'       => $expiryItems->count(),
+            'expired_batches'     => $expiryItems->where('status', 'expired')->count(),
+            'critical_batches'    => $expiryItems->where('status', 'critical')->count(),
+            'warning_batches'     => $expiryItems->where('status', 'warning')->count(),
+            'ok_batches'          => $expiryItems->where('status', 'ok')->count(),
+            'total_value'         => round($expiryItems->sum('total_value'), 2),
+            'ledger_units'        => $expiryItems->unique('product_id')->sum('ledger_stock'),
+            'batch_units'         => $expiryItems->unique('product_id')->sum('batch_total'),
+            'mismatched_products' => $expiryItems->where('reconciled', false)
+                ->unique('product_id')->count(),
+        ];
+
+        // ---------------------------------------------------------
+        // 6. Filters
+        // ---------------------------------------------------------
+        $filteredItems = $expiryItems;
+
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $filteredItems = $filteredItems->filter(function ($item) use ($search) {
+                return stripos($item['product_name'], $search) !== false
+                    || stripos($item['product_code'], $search) !== false
+                    || stripos($item['batch_number'], $search) !== false
+                    || stripos($item['supplier_name'], $search) !== false;
+            });
+        }
+
+        if ($request->filled('status')) {
+            $filteredItems = $filteredItems->where('status', $request->status);
+        }
+
+        if ($request->boolean('mismatched_only')) {
+            $filteredItems = $filteredItems->where('reconciled', false);
+        }
+
+        return Inertia::render('bulkstore/Expiry', [
+            'expiryItems' => $filteredItems->values()->all(),
+            'summary'     => $summary,
+            'filters'     => [
+                'search'          => $request->search,
+                'status'          => $request->status,
+                'bulk_store_id'   => $bulkStoreId,
+                'department_id'   => $departmentId,
+                'mismatched_only' => $request->boolean('mismatched_only'),
+            ],
+        ]);
+    } catch (\Exception $e) {
+        \Log::error('Bulk store expiry error: ' . $e->getMessage());
+        \Log::error($e->getTraceAsString());
+
+        return Inertia::render('bulkstore/Expiry', [
+            'expiryItems' => [],
+            'summary'     => null,
+            'error'       => 'Failed to load expiry data: ' . $e->getMessage(),
+        ]);
     }
+}
     public function showDetails(string $uuid)
     {
         try {
@@ -242,7 +419,8 @@ class ProductController extends Controller
         }
     }
 
-    public function addProduct(Request $request){
+    public function addProduct(Request $request)
+    {
         $productDetails = [
             'product_uuid' => \Illuminate\Support\Str::uuid(),
             'product_name' => $request->input('product_name'),
@@ -271,11 +449,11 @@ class ProductController extends Controller
         ];
 
         $create  =  $this->productService->addProduct($productDetails);
-       if ($create) {
-        $response = [
-            'message' => 'Product added successfully',
-            'status'  => 200
-        ];
+        if ($create) {
+            $response = [
+                'message' => 'Product added successfully',
+                'status'  => 200
+            ];
         } else {
             $response = [
                 'message' => 'Product added failed!',  // ✅ Use comma
@@ -292,12 +470,12 @@ class ProductController extends Controller
         $status   =  $response['status'];
 
         return $this->response($message, $status);
-
     }
     /**
      * fetch product in stock based on search params
      */
-    public function getProductInStock($barcode){
+    public function getProductInStock($barcode)
+    {
         return $this->productService->getProduct($barcode);
     }
     /**
@@ -357,7 +535,7 @@ class ProductController extends Controller
                 'include_date' => true,
                 'reset_on' => 'month', // Resets monthly
             ]
-        );
+        ).rand(000,999);
     }
 
     /**
@@ -376,7 +554,7 @@ class ProductController extends Controller
                 'date_format' => 'Ym',
                 'reset_on' => 'month',
             ]
-        );
+        ).rand(000,999);
     }
 
     /**
@@ -389,223 +567,218 @@ class ProductController extends Controller
             model: '\App\Models\Bulkstores\ProductAdjustment',
         );
     }
+    public function getAdjustedStock()
+{
+    return $this->productService->getAdjustedStock();
+}
 
     /**
      * Stock Adjustment - Handles both draft and approval workflow
      */
    public function stockAdjustment(Request $request)
 {
+    $validated = $request->validate([
+        'product_id' => 'required|exists:products,id',
+        'quantity' => 'required|integer|min:0',
+        'reason' => 'required|string|min:10',
+        'adjustment_type' => 'required|in:addition,reduction',
+        'adjustment_category' => 'required|in:correction,damage,expiry,shortage,surplus,quality_issue',
+        'evidence' => 'nullable|array',
+        'evidence.*' => 'string',
+        'created_by' => 'required|exists:users,id',
+        'batch_number' => 'nullable|string',
+        'expiry_date' => 'nullable|date',
+        'unit_cost' => 'nullable|numeric|min:0',
+        'department_id' => 'nullable|exists:departments,id',
+        'bulk_store_id' => 'nullable|exists:bulk_stores,id',
+    ]);
+
     try {
-        // 1. Validate request
-        $validated = $request->validate([
-            'product_id' => 'required|exists:products,id',
-            'quantity' => 'required|integer|min:0',
-            'reason' => 'required|string|min:10',
-            'previous_quantity' => 'required|integer|min:0',
-            'adjustment_type' => 'required|in:addition,reduction',
-            'difference' => 'required|integer|not_in:0',
-            'adjustment_category' => 'required|in:correction,damage,expiry,shortage,surplus,quality_issue',
-            'evidence' => 'nullable|array',
-            'evidence.*' => 'string',
-            'batch_number' => 'nullable|string',
-            'expiry_date' => 'nullable|date',
-            'unit_cost' => 'nullable|numeric|min:0',
-        ]);
+        $adjustment = DB::transaction(function () use ($validated) {
 
-        DB::beginTransaction();
+            // Validate the direction and quantity.
+          $difference = $validated['adjustment_type'] === 'addition'
+    ?  abs((int) $validated['quantity'])
+    : -abs((int) $validated['quantity']);
 
-        // 2. Determine if approval is required
-        $requiresApproval = $validated['difference'] < 0; // Negative adjustments require approval
-        $isNegative = $validated['difference'] < 0;
+if (abs($difference) !== (int) $validated['quantity']) {
+    throw new \InvalidArgumentException(
+        'Adjustment quantity must match the absolute difference.'
+    );
+}
 
-        // 3. Create adjustment record with generated number
-        $adjustment = \App\Models\Bulkstores\ProductAdjustment::create([
-            'adjustment_uuid' => (string) \Illuminate\Support\Str::uuid(),
-            'adjustment_number' => $this->generateAdjustmentNumber(),
-            'product_id' => $validated['product_id'],
-            'current_stock' => $validated['previous_quantity'] ?? 0,  // ✅ Fixed: added closing parenthesis
-            'proposed_quantity' => $validated['quantity'],
-            'adjustment_difference' => $validated['difference'],
-            'adjustment_type' => $validated['adjustment_type'],
-            'category' => $validated['adjustment_category'],
-            'batch_number' => $validated['batch_number'] ?? null,
-            'expiry_date' => $validated['expiry_date'] ?? null,
-            'unit_cost' => $validated['unit_cost'] ?? null,
-            'reason' => $validated['reason'],
-            'evidence' => $validated['evidence'] ?? null,
-            'status' => $requiresApproval ? 'pending' : 'draft',
-            'approval_required' => $requiresApproval,
-            'created_by' => $request->created_by ?? auth()->id(),
-            'requested_by' => $request->created_by ?? auth()->id(),
-            'requested_at' => $requiresApproval ? now() : null,
-        ]);
+            if (abs($difference) !== (int) $validated['quantity']) {
+                throw new \InvalidArgumentException(
+                    'Adjustment quantity must match the absolute difference.'
+                );
+            }
+            $requiresApproval = $difference < 0;
 
-        // 4. If approval is required
-        if ($requiresApproval) {
-            // Create approval record
-            $approval = $this->createApprovalRecord($adjustment);
+            // Retrieve the current balance from the correct ledger scope.
+            $balance = $this->getCurrentStockBalance(
+                $validated['product_id'],
+                $validated['department_id'] ?? null,
+                $validated['bulk_store_id'] ?? null
+            );
 
-            // Dispatch job for async processing
-            StockAdjustmentJob::dispatch([
-                'adjustment_id' => $adjustment->id,
-                'approval_id' => $approval->id,
-                'action' => 'pending_approval',
-                'user_id' => Auth::id(),
-                'notify_approvers' => true,
+            $adjustment = \App\Models\Bulkstores\ProductAdjustment::create([
+                'adjustment_uuid' => (string) \Illuminate\Support\Str::uuid(),
+                'adjustment_number' => $this->generateAdjustmentNumber(),
+                'product_id' => $validated['product_id'],
+                'department_id' => $validated['department_id'] ?? null,
+                'bulk_store_id' => $validated['bulk_store_id'] ?? null,
+                'current_stock' => $balance,
+                'proposed_quantity' => $validated['quantity'],
+                'adjustment_difference' => $difference,
+                'adjustment_type' => $validated['adjustment_type'],
+                'category' => $validated['adjustment_category'],
+                'batch_number' => $validated['batch_number'] ?? null,
+                'expiry_date' => $validated['expiry_date'] ?? null,
+                'unit_cost' => $validated['unit_cost'] ?? null,
+                'reason' => $validated['reason'],
+                'evidence' => $validated['evidence'] ?? null,
+                'status' => $requiresApproval ? 'pending' : 'draft',
+                'approval_required' => $requiresApproval,
+                'created_by' => $validated['created_by'],
+                'requested_by' => $validated['created_by'],
+                'requested_at' => now(),
             ]);
 
-            // Notify approvers
-            $this->notifyApprovers($adjustment);
+            if ($requiresApproval) {
+                $approval = $this->createApprovalRecord($adjustment);
 
-            DB::commit();
+                StockAdjustmentJob::dispatch([
+                    'adjustment_id' => $adjustment->id,
+                    'approval_id' => $approval->id,
+                    'action' => 'pending_approval',
+                    'user_id' => Auth::id(),
+                    'notify_approvers' => true,
+                ])->afterCommit();
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Stock adjustment submitted for approval',
-                'requires_approval' => true,
-                'approval_status' => 'pending',
-                'data' => [
+                return [
                     'adjustment' => $adjustment,
                     'approval' => $approval,
-                ]
-            ]);
+                ];
+            }
+
+            // Positive adjustments are applied immediately.
+            $this->applyAdjustment($adjustment);
+
+            return [
+                'adjustment' => $adjustment->fresh(),
+                'approval' => null,
+            ];
+        });
+
+        // Notifications are dispatched after the database transaction.
+        if ($adjustment['approval']) {
+            $this->notifyApprovers($adjustment['adjustment']);
         }
-
-        // 5. For positive adjustments (auto-apply)
-        $this->applyAdjustment($adjustment);
-
-        DB::commit();
 
         return response()->json([
             'success' => true,
-            'message' => 'Stock adjusted successfully',
-            'requires_approval' => false,
-            'data' => $adjustment
+            'message' => $adjustment['approval']
+                ? 'Stock adjustment submitted for approval.'
+                : 'Stock adjustment applied successfully.',
+            'requires_approval' => (bool) $adjustment['approval'],
+            'data' => $adjustment,
         ]);
 
     } catch (\Illuminate\Validation\ValidationException $e) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Validation failed',
-            'errors' => $e->errors()
-        ], 422);
-    } catch (\Exception $e) {
-        DB::rollBack();
+        throw $e;
+
+    } catch (\Throwable $e) {
+        \Log::error('Stock adjustment failed', [
+            'error' => $e->getMessage(),
+            'user_id' => Auth::id(),
+        ]);
 
         return response()->json([
             'success' => false,
             'message' => $e->getMessage(),
-            'trace' => config('app.debug') ? $e->getTrace() : null
-        ], 500);
+        ], $e instanceof \InvalidArgumentException ? 422 : 500);
     }
 }
-
-public function getAdjustedStock(){
-    return $this->productService->getAdjustedStock();
-}
-protected function applyAdjustment(ProductAdjustment $adjustment)
+protected function applyAdjustment(ProductAdjustment $adjustment): void
 {
-    DB::transaction(function () use ($adjustment) {
-        // Get the product (no stock field needed)
-        $product = Product::find($adjustment->product_id);
-
-        // Get the current stock balance from ledger
-        $balanceBefore = $this->getCurrentStockBalance($adjustment->product_id);
-        $balanceAfter = $balanceBefore + $adjustment->adjustment_difference;
-        $quantity = abs($adjustment->adjustment_difference);
-
-        $user      = User::findOrFail($adjustment->created_by);
-
-        // Validate the adjustment won't make stock negative
-        if ($balanceAfter < 0) {
-            throw new \Exception("Insufficient stock. Current balance: {$balanceBefore}, Adjustment: {$adjustment->adjustment_difference}");
-        }
-
-        // Create stock movement record
-        $movement = StockMovement::create([
-            'movement_uuid' => (string) \Illuminate\Support\Str::uuid(),
-            'product_id' => $adjustment->product_id,
-            'department_id' => $adjustment->department_id,
-            'bulk_store_id' => $adjustment->bulk_store_id,
-            'from_department_id' => $adjustment->department_id,
-            'to_department_id' => $adjustment->department_id,
-            'created_by' => Auth::id(),
-            'type' => 'adjustment',
-            'quantity' => $quantity,
-            'balance_before' => $balanceBefore,
-            'balance_after' => $balanceAfter,
-            'reference_number' => $adjustment->adjustment_number,
-            'batch_number' => $adjustment->batch_number,
-            'expiry_date' => $adjustment->expiry_date,
-            'unit_cost' => $adjustment->unit_cost,
-            'remarks' => "Applied from adjustment #{$adjustment->adjustment_number}: {$adjustment->reason}",
-            'moved_at' => now(),
-        ]);
-
-        // ✅ Update Stock Ledger (source of truth)
-        $this->updateStockLedger($product, $adjustment, $movement, $balanceBefore, $balanceAfter);
-
-        // Update adjustment status
-        $adjustment->status = 'applied';
-        $adjustment->applied_by = Auth::id();
-        $adjustment->applied_at = now();
-        $adjustment->save();
-
-        // Notify requester
-        if ($adjustment->requester) {
-            $adjustment->requester->notify(new StockAdjustmentNotification(
-                $adjustment,
-                'applied',
-                $user->name
-            ));
-        }
-    });
-}
-
-/**
- * Get current stock balance from ledger
- */
-protected function getCurrentStockBalance($productId)
-{
-    $lastLedger = StockLedger::where('product_id', $productId)
-        ->orderBy('created_at', 'desc')
-        ->orderBy('id', 'desc')
+    // Opening balance = last ledger closing for this product + bulk store
+    $lastLedger = StockLedger::where('product_id', $adjustment->product_id)
+        ->where('bulk_store_id', $adjustment->bulk_store_id)
+        ->orderByDesc('ledger_date')
+        ->orderByDesc('id')
+        ->lockForUpdate()
         ->first();
 
-    return $lastLedger ? $lastLedger->balance_after : 0;
-}
+    $openingBalance = (int) ($lastLedger?->closing_balance ?? 0);
+    $delta          = (int) $adjustment->adjustment_difference; // signed
+    $closingBalance = $openingBalance + $delta;
 
-/**
- * Update stock ledger with running balance
- */
-protected function updateStockLedger($product, $adjustment, $movement, $balanceBefore, $balanceAfter)
-{
-    $quantityChange = $adjustment->adjustment_difference;
-    $movementType = $quantityChange > 0 ? 'in' : 'out';
-
-    // Create ledger entry
+    // Ledger row
     StockLedger::create([
-        'product_id' => $product->id,
-        'stock_movement_id' => $movement->id,
-        'reference_number' => $adjustment->adjustment_number,
-        'movement_type' => $movementType,
-        'quantity_change' => $quantityChange,
-        'balance_before' => $balanceBefore,
-        'balance_after' => $balanceAfter,
-        'unit_cost' => $adjustment->unit_cost,
-        'total_value' => $balanceAfter * $adjustment->unit_cost,
-        'department_id' => 1,
-        'ledger_date'  => \Carbon\Carbon::now(),
-        'batch_number' => $adjustment->batch_number,
-        'expiry_date' => $adjustment->expiry_date,
-        'created_by' => Auth::id(),
-        'remarks' => "Stock adjustment: {$adjustment->reason}"
+        'ledger_uuid'      => (string) Str::uuid(),
+        'department_id'    => 1,
+        'bulk_store_id'    => $adjustment->bulk_store_id,
+        'product_id'       => $adjustment->product_id,
+        'ledger_date'      => now()->toDateString(),
+        'opening_balance'  => $openingBalance,
+        'total_in'         => $delta > 0 ? $delta : 0,
+        'total_out'        => $delta < 0 ? abs($delta) : 0,
+        'closing_balance'  => $closingBalance,
+        'adjustments_in'   => $delta > 0 ? $delta : 0,
+        'adjustments_out'  => $delta < 0 ? abs($delta) : 0,
+        'purchases_in'     => 0,
+        'returns_in'       => 0,
+        'transfers_in'     => 0,
+        'sales_out'        => 0,
+        'damage_out'       => 0,
+        'expiry_out'       => 0,
+        'transfers_out'    => 0,
+        'returns_out'      => 0,
+        'movement_count'   => 1,
+        'unique_batches'   => $adjustment->batch_number ? 1 : 0,
+        'avg_unit_cost'    => $adjustment->unit_cost ?? 0,
+        'batch_number'     => $adjustment->batch_number,
+        'created_by'       => Auth::id(),
+        'updated_by'       => Auth::id(),
+        'is_verified'      => 1,
+        'verified_at'      => now(),
+        'verified_by'      => Auth::id(),
+        'notes'            => "Adjustment {$adjustment->adjustment_number}: {$adjustment->reason}",
+    ]);
+
+    // Mark adjustment applied
+    $adjustment->update([
+        'status'      => 'approved',
+        'approved_by' => Auth::id(),
+        'approved_at' => now(),
     ]);
 }
+protected function getCurrentStockBalance(
+    int $productId,
+    ?int $departmentId = null,
+    ?int $bulkStoreId = null
+): int {
+    // Bulk-store-only app: department path kept just for safety
+    $query = StockLedger::where('product_id', $productId);
 
-/**
- * Update stock ledger with running balance
- */
+    // if ($bulkStoreId) {
+    //     $query->where('bulk_store_id', 12);
+    // } elseif ($departmentId) {
+    //     $query->where('department_id', 12);
+    // } else {
+    //     throw new \InvalidArgumentException(
+    //         'A department or bulk store must be specified.'
+    //     );
+    // }
+
+    return (int) ($query
+        ->orderByDesc('ledger_date')
+        ->orderByDesc('id')
+        ->value('closing_balance') ?? 0);
+}
+    /**
+     * Update stock ledger with running balance
+     */
 // protected function updateStockLedger($product, $adjustment, $movement, $balanceBefore, $balanceAfter)
 // {
 //     // Get the last ledger entry for this product
@@ -643,19 +816,19 @@ protected function updateStockLedger($product, $adjustment, $movement, $balanceB
 //     }
 // }
 
-/**
- * Update weighted average cost
- */
-protected function updateAverageCost($product, $newUnitCost, $quantityAdded)
-{
-    $totalValue = ($product->current_stock * $product->average_unit_cost) + ($quantityAdded * $newUnitCost);
-    $totalQuantity = $product->current_stock + $quantityAdded;
+    /**
+     * Update weighted average cost
+     */
+    protected function updateAverageCost($product, $newUnitCost, $quantityAdded)
+    {
+        $totalValue = ($product->current_stock * $product->average_unit_cost) + ($quantityAdded * $newUnitCost);
+        $totalQuantity = $product->current_stock + $quantityAdded;
 
-    if ($totalQuantity > 0) {
-        $product->average_unit_cost = $totalValue / $totalQuantity;
-        $product->save();
+        if ($totalQuantity > 0) {
+            $product->average_unit_cost = $totalValue / $totalQuantity;
+            $product->save();
+        }
     }
-}
 
     /**
      * Create approval record
@@ -694,7 +867,7 @@ protected function updateAverageCost($product, $newUnitCost, $quantityAdded)
         $approvers = [];
 
         // Find department manager
-        $manager = User::where('department_id', $departmentId)
+        $manager = User::join('users','users.id','=','user_profiles.user_id')
             ->where('is_supervisor', true)
             ->where('is_active', true)
             ->first();
@@ -720,21 +893,21 @@ protected function updateAverageCost($product, $newUnitCost, $quantityAdded)
      */
     protected function notifyApprovers(ProductAdjustment $adjustment)
     {
-        try{
+        try {
             $approvers = $this->getApprovers($adjustment->department_id);
 
-        foreach ($approvers as $role => $userId) {
-            $user = User::find($userId);
-            if ($user) {
-                Notification::send($user, new StockAdjustmentNotification(
-                    $adjustment,
-                    'needs_approval',
-                    Auth::user()->name
-                ));
+            foreach ($approvers as $role => $userId) {
+                $user = User::find($userId);
+                if ($user) {
+                    Notification::send($user, new StockAdjustmentNotification(
+                        $adjustment,
+                        'needs_approval',
+                        Auth::user()->name
+                    ));
+                }
             }
-        }
-        } catch(\Exception $e){
-            Log::info('issues with notifying',[$e->getMessage()]);
+        } catch (\Exception $e) {
+            Log::info('issues with notifying', [$e->getMessage()]);
         }
     }
 
@@ -792,7 +965,6 @@ protected function updateAverageCost($product, $newUnitCost, $quantityAdded)
                 'message' => 'Adjustment approved successfully',
                 'data' => $adjustment
             ]);
-
         } catch (\Exception $e) {
             DB::rollBack();
 
@@ -861,7 +1033,6 @@ protected function updateAverageCost($product, $newUnitCost, $quantityAdded)
                 'message' => 'Adjustment rejected',
                 'data' => $adjustment
             ]);
-
         } catch (\Exception $e) {
             DB::rollBack();
 
@@ -872,10 +1043,10 @@ protected function updateAverageCost($product, $newUnitCost, $quantityAdded)
         }
     }
 
-    private function response(string $message, int $status){
+    private function response(string $message, int $status)
+    {
         return response()->json([
             'message' => $message
-        ],$status);
+        ], $status);
     }
 }
-

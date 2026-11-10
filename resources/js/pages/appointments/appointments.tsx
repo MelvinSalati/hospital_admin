@@ -1,4 +1,4 @@
-import { usePage } from '@inertiajs/react';
+import { usePage, router } from '@inertiajs/react';
 import {
     User,
     Clock,
@@ -112,31 +112,14 @@ const formatDate = (date: string): string => {
 
 export default function Appointments() {
     // ===== STATE =====
-    const [appointments, setAppointments] = useState<Appointment[]>([]);
+
     const [loading, setLoading] = useState(false);
     const [editingId, setEditingId] = useState<number | null>(null);
     const [editForm, setEditForm] = useState<Partial<Appointment>>({});
 
     // Get initial data from server props
-    const pageProps = usePage().props as { appointments?: Appointment[] };
-    const initialAppointments = pageProps.appointments || [];
-
-    // ===== FETCH APPOINTMENTS =====
-    const fetchAppointments = async () => {
-        setLoading(true);
-        try {
-            const res = await Http.get('/api/appointments/today');
-            setAppointments(res.data);
-        } catch {
-            Notiflix.Notify.failure('Failed to load appointments');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    useEffect(() => {
-        fetchAppointments();
-    }, []);
+    const { appointments } = usePage().props;
+    const initialAppointments = appointments || [];
 
     // ===== APPOINTMENT ACTIONS =====
 
@@ -145,7 +128,6 @@ export default function Appointments() {
         try {
             await Http.post(`/appointments/${id}/start`);
             Notiflix.Notify.success('Consultation started');
-            fetchAppointments();
         } catch {
             Notiflix.Notify.failure('Failed to start');
         }
@@ -154,9 +136,8 @@ export default function Appointments() {
     // ✅ Complete
     const completeAppointment = async (id: number) => {
         try {
-            await Http.post(`/api/appointments/${id}/complete`);
+            await Http.post(`appointments/${id}/complete`);
             Notiflix.Notify.success('Completed');
-            fetchAppointments();
         } catch {
             Notiflix.Notify.failure('Failed');
         }
@@ -165,9 +146,8 @@ export default function Appointments() {
     // ❌ Cancel
     const cancelAppointment = async (id: number) => {
         try {
-            await Http.post(`/api/appointments/${id}/cancel`);
+            await Http.post(`appointments/${id}/cancel`);
             Notiflix.Notify.success('Cancelled');
-            fetchAppointments();
         } catch {
             Notiflix.Notify.failure('Failed to cancel');
         }
@@ -184,11 +164,11 @@ export default function Appointments() {
         if (!editingId || !editForm) return;
 
         try {
-            await Http.put(`/api/appointments/${editingId}`, editForm);
+            await Http.put(`appointments/${editingId}`, editForm);
             Notiflix.Notify.success('Appointment updated successfully');
             setEditingId(null);
             setEditForm({});
-            fetchAppointments();
+            router.reload({ only: ['appointments'] });
         } catch (error: any) {
             Notiflix.Notify.failure(
                 error.response?.data?.message || 'Failed to update appointment',

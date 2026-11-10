@@ -1,4 +1,4 @@
-// pages/patients/Laboratory.tsx - Refactored with two-column layout
+// pages/patients/Laboratory.tsx - Refactored with two-column layout + flat/nested data compatibility
 import { usePage, router } from '@inertiajs/react';
 import {
     AlertCircle,
@@ -457,6 +457,380 @@ const OrderDetailsModal = ({
         </div>
     );
 };
+
+// ─── Order Results Drawer ───────────────────────────────────────────────────
+const OrderResultsDrawer = ({
+    isOpen,
+    onClose,
+    order,
+}: {
+    isOpen: boolean;
+    onClose: () => void;
+    order: LabOrder | null;
+}) => {
+    if (!isOpen || !order) return null;
+
+    const items = order.item || [];
+    const completedItems = items.filter(
+        (i) => i.status === 'completed' && i.result_value,
+    );
+    const pendingItems = items.filter(
+        (i) => i.status === 'pending' || i.status === 'ordered',
+    );
+    const rejectedItems = items.filter(
+        (i) => i.status === 'rejected' || i.status === 'cancelled',
+    );
+
+    const getPriorityStyle = (priority?: string) => {
+        switch (priority) {
+            case 'urgent':
+                return 'bg-rose-50 text-rose-700 ring-rose-200';
+            case 'stat':
+                return 'bg-orange-50 text-orange-700 ring-orange-200';
+            default:
+                return 'bg-slate-50 text-slate-600 ring-slate-200';
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 overflow-hidden">
+            {/* Backdrop */}
+            <div
+                className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+                onClick={onClose}
+            />
+
+            {/* Drawer Panel */}
+            <div className="absolute inset-y-0 right-0 flex w-full max-w-xl">
+                <div className="flex h-full w-full flex-col bg-white shadow-2xl ring-1 ring-slate-200">
+                    {/* Header */}
+                    <div className="shrink-0 border-b border-slate-200 bg-white px-6 py-5">
+                        <div className="flex items-start justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-blue-50 ring-1 ring-blue-100">
+                                    <FlaskConical className="h-5 w-5 text-blue-600" />
+                                </div>
+                                <div>
+                                    <h2 className="text-base font-bold tracking-tight text-slate-900">
+                                        Test Results
+                                    </h2>
+                                    <p className="mt-0.5 font-mono text-xs text-slate-500">
+                                        {order.order_number}
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={onClose}
+                                aria-label="Close drawer"
+                                className="flex h-9 w-9 items-center justify-center rounded-full text-slate-400 transition-all hover:bg-slate-100 hover:text-slate-700 active:scale-95"
+                            >
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+
+                        {/* Stat chips */}
+                        <div className="mt-4 flex flex-wrap items-center gap-2">
+                            <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-600 ring-1 ring-slate-200">
+                                <Calendar className="h-3 w-3" />
+                                {formatDate(order.created_at)}
+                            </span>
+                            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700 ring-1 ring-emerald-200">
+                                <CheckCircle className="h-3 w-3" />
+                                {completedItems.length} Ready
+                            </span>
+                            {pendingItems.length > 0 && (
+                                <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-700 ring-1 ring-amber-200">
+                                    <Clock className="h-3 w-3 animate-pulse" />
+                                    {pendingItems.length} Pending
+                                </span>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Scrollable Body */}
+                    <div className="flex-1 overflow-y-auto bg-slate-50/50">
+                        <div className="space-y-5 p-5">
+                            {/* Completed Results */}
+                            {completedItems.length > 0 && (
+                                <div>
+                                    <div className="mb-2.5 flex items-center gap-2">
+                                        <CheckCircle className="h-4 w-4 text-emerald-600" />
+                                        <h3 className="text-xs font-bold tracking-wider text-slate-500 uppercase">
+                                            Available Results
+                                        </h3>
+                                        <span className="ml-auto rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                                            {completedItems.length}
+                                        </span>
+                                    </div>
+
+                                    <div className="space-y-2.5">
+                                        {completedItems.map((item) => (
+                                            <div
+                                                key={item.id}
+                                                className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
+                                            >
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <div className="min-w-0 flex-1">
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-blue-50 ring-1 ring-blue-100">
+                                                                <TestTube className="h-3.5 w-3.5 text-blue-600" />
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <p className="truncate text-sm font-semibold text-slate-800">
+                                                                    {
+                                                                        item.test_name
+                                                                    }
+                                                                </p>
+                                                                <p className="truncate font-mono text-[10px] text-slate-400">
+                                                                    {
+                                                                        item.order_number
+                                                                    }
+                                                                </p>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Result value display */}
+                                                        <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50/50 p-3">
+                                                            <p className="text-[10px] font-semibold tracking-wider text-blue-600 uppercase">
+                                                                Result
+                                                            </p>
+                                                            <p className="mt-0.5 text-lg font-bold text-slate-800">
+                                                                {
+                                                                    item.result_value
+                                                                }
+                                                                {item.unit && (
+                                                                    <span className="ml-1 text-xs font-medium text-slate-500">
+                                                                        {
+                                                                            item.unit
+                                                                        }
+                                                                    </span>
+                                                                )}
+                                                            </p>
+                                                            {item.reference_range && (
+                                                                <p className="mt-1 text-[11px] text-slate-500">
+                                                                    Reference:{' '}
+                                                                    <span className="font-medium text-slate-700">
+                                                                        {
+                                                                            item.reference_range
+                                                                        }
+                                                                    </span>
+                                                                </p>
+                                                            )}
+                                                        </div>
+
+                                                        {/* Meta info */}
+                                                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+                                                            {item.performed_by && (
+                                                                <span className="inline-flex items-center gap-1">
+                                                                    <User className="h-3 w-3" />
+                                                                    {
+                                                                        item.performed_by
+                                                                    }
+                                                                </span>
+                                                            )}
+                                                            {item.performed_date && (
+                                                                <span className="inline-flex items-center gap-1">
+                                                                    <Calendar className="h-3 w-3" />
+                                                                    {formatDate(
+                                                                        item.performed_date,
+                                                                    )}
+                                                                </span>
+                                                            )}
+                                                            {item.interpretation && (
+                                                                <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-1.5 py-0.5 font-medium text-blue-700 ring-1 ring-blue-100">
+                                                                    {
+                                                                        item.interpretation
+                                                                    }
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+
+                                                    <span
+                                                        className={`inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[10px] font-bold uppercase ring-1 ${getPriorityStyle(item.priority)}`}
+                                                    >
+                                                        {item.priority ||
+                                                            'routine'}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Pending Items */}
+                            {pendingItems.length > 0 && (
+                                <div>
+                                    <div className="mb-2.5 flex items-center gap-2">
+                                        <Clock className="h-4 w-4 text-amber-600" />
+                                        <h3 className="text-xs font-bold tracking-wider text-slate-500 uppercase">
+                                            Awaiting Results
+                                        </h3>
+                                        <span className="ml-auto rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                                            {pendingItems.length}
+                                        </span>
+                                    </div>
+
+                                    <div className="space-y-2.5">
+                                        {pendingItems.map((item) => (
+                                            <div
+                                                key={item.id}
+                                                className="rounded-lg border border-amber-200 bg-white p-4 shadow-sm"
+                                            >
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <div className="min-w-0 flex-1">
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-amber-50 ring-1 ring-amber-100">
+                                                                <Clock className="h-3.5 w-3.5 animate-pulse text-amber-600" />
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <p className="truncate text-sm font-semibold text-slate-800">
+                                                                    {
+                                                                        item.test_name
+                                                                    }
+                                                                </p>
+                                                                <p className="truncate font-mono text-[10px] text-slate-400">
+                                                                    {
+                                                                        item.order_number
+                                                                    }
+                                                                </p>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-100 bg-amber-50/50 p-3">
+                                                            <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+                                                            <div>
+                                                                <p className="text-xs font-semibold text-amber-800">
+                                                                    Pending
+                                                                    Result
+                                                                </p>
+                                                                <p className="mt-0.5 text-[11px] leading-relaxed text-amber-700">
+                                                                    Results for
+                                                                    this test
+                                                                    are
+                                                                    currently
+                                                                    being
+                                                                    processed.
+                                                                    Please check
+                                                                    back later
+                                                                    or contact
+                                                                    the
+                                                                    laboratory
+                                                                    for updates.
+                                                                </p>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+                                                            <span className="inline-flex items-center gap-1">
+                                                                <Calendar className="h-3 w-3" />
+                                                                Ordered{' '}
+                                                                {formatDate(
+                                                                    order.created_at,
+                                                                )}
+                                                            </span>
+                                                            <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 font-medium text-amber-700 ring-1 ring-amber-100">
+                                                                <Activity className="h-3 w-3" />
+                                                                In Progress
+                                                            </span>
+                                                        </div>
+                                                    </div>
+
+                                                    <span
+                                                        className={`inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[10px] font-bold uppercase ring-1 ${getPriorityStyle(item.priority)}`}
+                                                    >
+                                                        {item.priority ||
+                                                            'routine'}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Rejected / Cancelled */}
+                            {rejectedItems.length > 0 && (
+                                <div>
+                                    <div className="mb-2.5 flex items-center gap-2">
+                                        <Ban className="h-4 w-4 text-rose-600" />
+                                        <h3 className="text-xs font-bold tracking-wider text-slate-500 uppercase">
+                                            Rejected / Cancelled
+                                        </h3>
+                                        <span className="ml-auto rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-700">
+                                            {rejectedItems.length}
+                                        </span>
+                                    </div>
+
+                                    <div className="space-y-2.5">
+                                        {rejectedItems.map((item) => (
+                                            <div
+                                                key={item.id}
+                                                className="rounded-lg border border-rose-200 bg-white p-4 shadow-sm"
+                                            >
+                                                <div className="flex items-center gap-2">
+                                                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-rose-50 ring-1 ring-rose-100">
+                                                        <Ban className="h-3.5 w-3.5 text-rose-600" />
+                                                    </div>
+                                                    <div className="min-w-0 flex-1">
+                                                        <p className="truncate text-sm font-semibold text-slate-800">
+                                                            {item.test_name}
+                                                        </p>
+                                                        <p className="text-[11px] text-rose-600 capitalize">
+                                                            {item.status}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                {item.notes && (
+                                                    <p className="mt-2 text-[11px] text-slate-500">
+                                                        {item.notes}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Empty state */}
+                            {items.length === 0 && (
+                                <div className="flex flex-col items-center justify-center py-16">
+                                    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-slate-100">
+                                        <FlaskConical className="h-8 w-8 text-slate-300" />
+                                    </div>
+                                    <p className="mt-3 text-sm font-medium text-slate-500">
+                                        No tests in this order
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Footer */}
+                    <div className="shrink-0 border-t border-slate-200 bg-white px-5 py-3.5">
+                        <div className="flex items-center justify-between">
+                            <p className="text-[11px] text-slate-500">
+                                <span className="font-semibold text-slate-700">
+                                    {items.length}
+                                </span>{' '}
+                                test{items.length !== 1 ? 's' : ''} in this
+                                order
+                            </p>
+                            <Button
+                                onClick={onClose}
+                                className="bg-blue-600 text-sm font-medium text-white hover:bg-blue-700"
+                            >
+                                Done
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 // ─── Previous Results Component ─────────────────────────────────────────────
 interface PreviousResult {
     id: string | number;
@@ -688,6 +1062,11 @@ const LabOrderTable = ({
     const [selectedOrder, setSelectedOrder] = useState<LabOrder | null>(null);
     const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
 
+    // Drawer state
+    const [selectedResultsOrder, setSelectedResultsOrder] =
+        useState<LabOrder | null>(null);
+    const [isResultsDrawerOpen, setIsResultsDrawerOpen] = useState(false);
+
     // Filter orders
     const filteredOrders = useMemo(() => {
         return orders.filter((order) => {
@@ -776,6 +1155,12 @@ const LabOrderTable = ({
         }
     };
 
+    // Handle view results (drawer)
+    const handleViewResults = (order: LabOrder) => {
+        setSelectedResultsOrder(order);
+        setIsResultsDrawerOpen(true);
+    };
+
     // Define columns for the Table component — NO pricing, NO standalone test name
     const columns: Column<LabOrder>[] = [
         {
@@ -825,9 +1210,7 @@ const LabOrderTable = ({
                     className={`flex w-fit items-center gap-1.5 ${getStatusColor(value)}`}
                 >
                     {getStatusIcon(value)}
-                    <span className="text-2xl text-red-900 capitalize">
-                        {value}
-                    </span>
+                    <span className="text-xs capitalize">{value}</span>
                 </Badge>
             ),
             sortable: true,
@@ -842,12 +1225,30 @@ const LabOrderTable = ({
             ),
             sortable: true,
         },
+        {
+            key: 'id' as any,
+            header: '',
+            render: (_value, row) => (
+                <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        handleViewResults(row);
+                    }}
+                    className="border-blue-200 bg-white text-blue-700 hover:bg-blue-50"
+                >
+                    <FileText className="mr-1 h-3.5 w-3.5" />
+                    Results
+                </Button>
+            ),
+            className: 'text-right',
+        },
     ];
 
     // Add action column for lab technicians
     const renderActions = (row: LabOrder) => {
         if (!isLabTechnician) return null;
-
         const items = row.item || [];
         const pendingItems = items.filter(
             (it) => it.status === 'ordered' || it.status === 'pending',
@@ -1045,6 +1446,16 @@ const LabOrderTable = ({
                 }}
                 order={selectedOrder}
             />
+
+            {/* Order Results Drawer */}
+            <OrderResultsDrawer
+                isOpen={isResultsDrawerOpen}
+                onClose={() => {
+                    setIsResultsDrawerOpen(false);
+                    setSelectedResultsOrder(null);
+                }}
+                order={selectedResultsOrder}
+            />
         </div>
     );
 };
@@ -1121,7 +1532,7 @@ const ResultsEntryDialog = ({
                     className="fixed inset-0 bg-black/50 backdrop-blur-sm"
                     onClick={onClose}
                 />
-                <div className="relative w-full max-w-lg rounded-2xl shadow-2xl">
+                <div className="relative w-full max-w-lg rounded-2xl bg-white shadow-2xl">
                     <div className="flex items-center justify-between border-b px-6 py-4">
                         <div className="flex items-center gap-3">
                             <div className="rounded-lg bg-blue-50 p-2">
@@ -1342,8 +1753,6 @@ const OrderModal = ({
                 price: item.price || 0,
                 quantity: item.quantity,
             }));
-
-            console.log(itemsToSubmit);
 
             await onSave(itemsToSubmit, patientId);
             setCart([]);
@@ -1667,19 +2076,101 @@ export default function Laboratory() {
     const userRoles = (props as any).auth?.user?.profile?.roles || [];
     const isLabTechnician = userRoles.includes('lab_technician');
 
-    // Normalize incoming orders — keep nested item[] intact
+    // ─── FIXED: Normalize incoming data (handles both nested LabOrder[] and flat item[]) ───
     const enhancedOrders: LabOrder[] = useMemo(() => {
-        return (previousOrders || []).map((order) => ({
-            ...order,
-            item: order.item || [],
-        }));
+        const raw = previousOrders || [];
+
+        // Case 1: Backend already returns nested structure (preferred)
+        if (raw.length > 0 && Array.isArray((raw[0] as any).item)) {
+            return (raw as LabOrder[]).map((order) => ({
+                ...order,
+                item: order.item || [],
+            }));
+        }
+
+        // Case 2: Backend currently returns a flat list of items → group by lab_order_id
+        const groups = new Map<string | number, LabOrder>();
+
+        for (const it of raw as any[]) {
+            const orderKey =
+                it.lab_order_id ?? it.order_number ?? `unknown-${it.id}`;
+
+            if (!groups.has(orderKey)) {
+                groups.set(orderKey, {
+                    id: it.lab_order_id ?? it.id,
+                    order_number: it.order_number ?? `LAB-${orderKey}`,
+                    visit_token: it.visit_token,
+                    patient_id: it.patient_id,
+                    status:
+                        it.status === 'completed'
+                            ? 'completed'
+                            : (it.status ?? 'ordered'),
+                    priority: it.priority ?? 'routine',
+                    created_at: it.ordered_date || it.created_at,
+                    updated_at: it.updated_at,
+                    item: [],
+                });
+            }
+
+            const order = groups.get(orderKey)!;
+
+            order.item.push({
+                id: it.id,
+                order_number: it.order_number ?? order.order_number,
+                test_id: it.test_id,
+                test_name: it.test_name,
+                test_category: it.test_category,
+                status: it.status,
+                priority: it.priority ?? 'routine',
+                // Map backend field names → frontend expected names
+                result_value: it.value ?? it.result_value ?? null,
+                reference_range:
+                    it.ref_low != null && it.ref_high != null
+                        ? `${it.ref_low} - ${it.ref_high}`
+                        : null,
+                unit: it.unit ?? null,
+                notes: it.notes ?? null,
+                performed_by: it.uploaded_by ?? it.performed_by ?? null,
+                performed_date:
+                    it.processing_completed_at ||
+                    it.processing_date ||
+                    it.created_at ||
+                    null,
+                created_at: it.created_at,
+                updated_at: it.updated_at,
+                patient_id: it.patient_id,
+                lab_order_id: it.lab_order_id,
+                created_by: it.ordered_by ?? it.created_by ?? null,
+            });
+        }
+
+        // Improve parent order status based on its children
+        return Array.from(groups.values()).map((order) => {
+            const items = order.item;
+            if (items.length === 0) return order;
+
+            const allCompleted = items.every((i) => i.status === 'completed');
+            const anyRejected = items.some(
+                (i) => i.status === 'rejected' || i.status === 'cancelled',
+            );
+            const anyPending = items.some(
+                (i) => i.status === 'pending' || i.status === 'ordered',
+            );
+
+            let status: LabOrder['status'] = order.status;
+            if (allCompleted) status = 'completed';
+            else if (anyRejected && !anyPending) status = 'rejected';
+            else if (anyPending) status = 'pending';
+
+            return { ...order, status };
+        });
     }, [previousOrders]);
 
     const handleSaveOrder = async (items: any[], identifier: string) => {
         try {
             const response = await Http.post(`${identifier}/lab-orders`, {
                 patient_id: identifier,
-                created_by: props.auth?.user.id,
+                created_by: (props as any).auth?.user?.id,
                 services: items.map((item) => ({
                     id: item.id,
                     service_name: item.service_name,

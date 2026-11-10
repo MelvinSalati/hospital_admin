@@ -309,11 +309,18 @@ export function ReusableTable<T extends Record<string, any>>({
                     <div className="flex flex-1 flex-col gap-3 sm:flex-row md:flex-none">
                         {/* Global Search */}
                         <input
-                            type="text"
-                            placeholder={filterPlaceholder}
+                            type="search"
+                            name="table_filter_query"
+                            id="table_filter_query"
+                            autoComplete="new-password"
+                            data-lpignore="true"
+                            data-1p-ignore="true"
+                            data-bwignore="true"
+                            spellCheck={false}
                             value={globalFilter}
                             onChange={handleGlobalFilterChange}
-                            className="w-full rounded-lg border border-slate-100 bg-blue-[#e8efff] px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-blue-500 focus:outline-none sm:w-64 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200"
+                            placeholder={filterPlaceholder}
+                            className="w-full rounded-lg border border-slate-100 px-3 py-2 text-sm sm:w-64"
                         />
 
                         {/* Status Filter */}
@@ -321,7 +328,7 @@ export function ReusableTable<T extends Record<string, any>>({
                             <select
                                 value={statusFilter}
                                 onChange={handleStatusFilterChange}
-                                className="w-full rounded-lg border bg-blue-50 border-slate-300 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-blue-500 focus:outline-none sm:w-40 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200"
+                                className="w-full rounded-lg border border-slate-300 bg-blue-50 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-blue-500 focus:outline-none sm:w-40 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200"
                             >
                                 <option value="">All Status</option>
                                 {statusOptions.map((opt) => (

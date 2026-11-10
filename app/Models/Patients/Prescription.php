@@ -84,4 +84,10 @@ class Prescription extends Model
         return $this->belongsTo(\App\Models\User::class);
     }
 
+    // app/Models/Patients/Prescription.php
+    public function items()
+    {
+        return $this->hasMany(PrescriptionItem::class, 'prescription_id');
+    }
+
 }

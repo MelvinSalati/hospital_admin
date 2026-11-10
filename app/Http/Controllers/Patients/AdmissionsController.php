@@ -15,6 +15,7 @@ use App\Models\Patients\Prescription;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Models\Payments\PaymentMethod;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia; 
 
 class AdmissionsController extends Controller
@@ -159,14 +160,18 @@ class AdmissionsController extends Controller
      * Store a newly created resource in storage.
      */
     public function store(Request $request)
-    {
+    { 
+
+
         $visitToken   = VisitTokenHelper::getActiveToken($request->patient_id);
 
         // add to array 
 
         $data         = array_merge($request->all(),[
             'visit_token' => $visitToken->token
-        ]);
+        ]); 
+
+        Log::info('Admission Data: ', $data);
         
         $validateInput = Validator::make($data,[
             'patient_id' => 'required|exists:patients,id',

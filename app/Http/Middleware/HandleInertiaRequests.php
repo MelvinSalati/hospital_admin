@@ -111,6 +111,7 @@ class HandleInertiaRequests extends Middleware
                     'user_uuid' => $user->user_uuid ?? null,
                     'profile' => $userProfile ? [
                         'id' => $userProfile->id,
+                        'department_id' => $userProfile->department_id,
                         'first_name' => $userProfile->first_name,
                         'surname' => $userProfile->surname,
                         'date_of_birth' => $userProfile->date_of_birth,

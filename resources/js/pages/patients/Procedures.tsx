@@ -1,8 +1,8 @@
+// resources/js/pages/patients/procedures.tsx
 import { usePage } from '@inertiajs/react';
 import {
     Plus,
     ClipboardCheck,
-    AlertCircle,
     Package,
     ScissorsIcon,
     Eye as EyeIcon,
@@ -12,7 +12,6 @@ import {
     Clock,
     X,
     Calendar,
-    User,
     DollarSign,
     Hash,
     ChevronRight,
@@ -20,13 +19,15 @@ import {
     Download,
     Mail,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
 import PatientLayout from '@/layouts/patients/PatientLayout';
 import Http from '@/utils/Http';
 import ProcedureModal from './components/ProcedureModal';
-import { Table, StatusBadge } from './components/Table';
+import { Table } from './components/Table';
+
+/* ---------------------------------- Types --------------------------------- */
 
 interface ProcedureItem {
     id: number;
@@ -55,7 +56,26 @@ interface GroupedProcedure {
     created_at: string;
 }
 
-// Detail Modal Component
+interface Procedure {
+    id: number;
+    name: string;
+    description?: string;
+    price?: number;
+    [key: string]: any;
+}
+
+interface PageProps {
+    patient: any;
+    procedures?: Procedure[];
+    previousProcedures?: ProcedureItem[];
+    error?: string | null;
+    patientId?: number | string;
+    procedureItems?: Record<string, any>;
+    [key: string]: any;
+}
+
+/* ------------------------------ Detail Modal ------------------------------ */
+
 const DetailModal = ({
     isOpen,
     onClose,
@@ -135,7 +155,8 @@ const DetailModal = ({
                     <div className="rounded-lg bg-emerald-50 p-3">
                         <p className="text-xs text-slate-500">Total Amount</p>
                         <p className="text-xl font-bold text-emerald-600">
-                            ZMW {selectedVisit.total_amount.toFixed(2)}
+                            ZMW{' '}
+                            {Number(selectedVisit.total_amount || 0).toFixed(2)}
                         </p>
                     </div>
                     <div className="rounded-lg bg-purple-50 p-3">
@@ -215,7 +236,10 @@ const DetailModal = ({
                                     Grand Total
                                 </span>
                                 <span className="text-2xl font-bold text-blue-600">
-                                    ZMW{selectedVisit.total_amount.toFixed(2)}
+                                    ZMW
+                                    {Number(
+                                        selectedVisit.total_amount || 0,
+                                    ).toFixed(2)}
                                 </span>
                             </div>
                         </div>
@@ -254,15 +278,56 @@ const DetailModal = ({
     );
 };
 
+/* --------------------------------- Helpers -------------------------------- */
+
+const groupByVisitToken = (data: ProcedureItem[]): GroupedProcedure[] => {
+    const groups: Record<string, ProcedureItem[]> = {};
+
+    data.forEach((item) => {
+        const token = item.visit_token || 'unknown';
+        if (!groups[token]) groups[token] = [];
+        groups[token].push(item);
+    });
+
+    return Object.entries(groups).map(([token, items]) => ({
+        visit_token: token,
+        items,
+        total_amount: items.reduce(
+            (sum, item) => sum + (Number(item.total) || 0),
+            0,
+        ),
+        item_count: items.length,
+        created_at: items[0]?.created_at || new Date().toISOString(),
+    }));
+};
+
+/* ------------------------------ Main Component ---------------------------- */
+
 export default function Procedures() {
+    const props = usePage().props as unknown as PageProps;
+    // Debugging line
+    // Safely destructure with defaults so nothing blows up
     const {
-        patient,
-        procedures,
-        previousProcedures,
-        error,
-        patientId,
-        procedureItems,
-    } = usePage().props;
+        patient = null,
+        procedures = [],
+        previousProcedures = [],
+        error = null,
+        patientId = null,
+        procedureItems = {},
+    } = props;
+    console.log('Procedures Page Props:', props);
+    // Ensure procedures is always an array
+    const safeProcedures = useMemo<Procedure[]>(
+        () => (Array.isArray(procedures) ? procedures : []),
+        [procedures],
+    );
+
+    // Ensure previousProcedures is always an array
+    const displayData = useMemo<ProcedureItem[]>(
+        () => (Array.isArray(previousProcedures) ? previousProcedures : []),
+        [previousProcedures],
+    );
+
     const [showModal, setShowModal] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
@@ -271,37 +336,15 @@ export default function Procedures() {
         null,
     );
     const [showDetailModal, setShowDetailModal] = useState(false);
-    console.log('procedures', procedures);
-    // Get the data - handle both array and object cases
-    const rawData = previousProcedures || [];
-    const displayData = Array.isArray(rawData) ? rawData : [];
 
-    // Group by visit token
-    const groupByVisitToken = (data: any[]): GroupedProcedure[] => {
-        const groups: Record<string, any[]> = {};
-        data.forEach((item) => {
-            const token = item.visit_token || 'unknown';
-            if (!groups[token]) {
-                groups[token] = [];
-            }
-            groups[token].push(item);
-        });
+    // Group data by visit token
+    const groupedData = useMemo(
+        () => groupByVisitToken(displayData),
+        [displayData],
+    );
 
-        return Object.entries(groups).map(([token, items]) => ({
-            visit_token: token,
-            items: items,
-            total_amount: items.reduce(
-                (sum, item) => sum + (Number(item.total) || 0),
-                0,
-            ),
-            item_count: items.length,
-            created_at: items[0]?.created_at || new Date().toISOString(),
-        }));
-    };
+    /* -------------------------------- Columns ------------------------------- */
 
-    const groupedData = groupByVisitToken(displayData);
-
-    // Table columns for grouped view
     const columns = [
         {
             key: 'visit_token',
@@ -371,7 +414,8 @@ export default function Procedures() {
         },
     ];
 
-    // Get procedure details
+    /* ------------------------------- Handlers ------------------------------- */
+
     const viewProcedure = async (procedure: ProcedureItem) => {
         try {
             setLoading(true);
@@ -379,19 +423,13 @@ export default function Procedures() {
             if (response.status === 200) {
                 toast.success('Procedure details loaded');
             }
-        } catch (error) {
+        } catch (err) {
             toast.error('Failed to load procedure details');
         } finally {
             setLoading(false);
         }
     };
 
-    // Handle modal confirm - Now receives procedureId from modal
-    // In Procedures.tsx — replace the existing handleConfirm with this:
-
-    // Handle modal confirm - procedureId is now guaranteed non-null by the modal,
-    // but we still validate defensively in case onConfirm is ever called from
-    // elsewhere.
     const handleConfirm = async (
         items: any[],
         procedureId: number | null | undefined,
@@ -400,11 +438,6 @@ export default function Procedures() {
             toast.error('Patient ID is required');
             return;
         }
-        console.log('data procedure id', procedureId);
-        // if (procedureId === null || procedureId === undefined) {
-        //     toast.error('Please select a procedure');
-        //     return;
-        // }
 
         setIsSubmitting(true);
         try {
@@ -429,34 +462,35 @@ export default function Procedures() {
             } else {
                 toast.error(response.data.message || 'Failed to add procedure');
             }
-        } catch (error: any) {
+        } catch (err: any) {
             toast.error(
-                error.response?.data?.message || 'Failed to add procedure',
+                err.response?.data?.message || 'Failed to add procedure',
             );
         } finally {
             setIsSubmitting(false);
         }
     };
 
-    // Handle row click - show detail modal
     const handleRowClick = (row: GroupedProcedure) => {
         setSelectedVisit(row);
         setShowDetailModal(true);
     };
 
-    // Close detail modal
     const closeDetailModal = () => {
         setShowDetailModal(false);
         setTimeout(() => setSelectedVisit(null), 300);
     };
 
-    // Safely calculate stats
+    /* --------------------------------- Stats -------------------------------- */
+
     const totalItems = displayData.length;
     const totalAmount = displayData.reduce(
         (sum, p) => sum + (Number(p.total) || 0),
         0,
     );
     const uniqueVisits = groupedData.length;
+
+    /* -------------------------------- Render -------------------------------- */
 
     return (
         <PatientLayout
@@ -467,7 +501,6 @@ export default function Procedures() {
             ]}
         >
             <div className="min-h-screen bg-blue-50 p-4">
-                {/* Page Header */}
                 <PageHeader
                     icon={<ScissorsIcon className="h-5 w-5" />}
                     title="Procedure Items"
@@ -481,7 +514,6 @@ export default function Procedures() {
                     ]}
                 />
 
-                {/* Procedures Table */}
                 <div className="mt-4">
                     {error ? (
                         <div className="flex min-h-[400px] flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50 p-8 text-center">
@@ -511,7 +543,7 @@ export default function Procedures() {
                             searchable={true}
                             searchPlaceholder="Search by visit token..."
                             onRowClick={handleRowClick}
-                            actions={(row) => (
+                            actions={(row: GroupedProcedure) => (
                                 <div className="flex items-center justify-end gap-1">
                                     <button
                                         onClick={(e) => {
@@ -526,9 +558,7 @@ export default function Procedures() {
                                     <button
                                         onClick={(e) => {
                                             e.stopPropagation();
-                                            toast.info(
-                                                `Visit: ${row.visit_token}`,
-                                            );
+                                            toast(`Visit: ${row.visit_token}`);
                                         }}
                                         className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
                                         title="More options"
@@ -538,10 +568,11 @@ export default function Procedures() {
                                 </div>
                             )}
                             pagination={{
-                                currentPage: currentPage,
+                                currentPage,
                                 totalPages:
                                     Math.ceil(groupedData.length / 10) || 1,
-                                onPageChange: (page) => setCurrentPage(page),
+                                onPageChange: (page: number) =>
+                                    setCurrentPage(page),
                                 totalItems: groupedData.length,
                                 itemsPerPage: 10,
                             }}
@@ -552,14 +583,14 @@ export default function Procedures() {
                 </div>
             </div>
 
-            {/* Procedure Modal - Pass procedureItems from props */}
+            {/* Procedure Modal */}
             <ProcedureModal
                 isOpen={showModal}
                 onClose={() => setShowModal(false)}
                 onConfirm={handleConfirm}
-                procedures={procedures}
+                procedures={safeProcedures}
                 procedureItems={procedureItems || {}}
-                patientId={patientId}
+                patientId={patientId ?? undefined}
                 isLoading={isSubmitting}
             />
 

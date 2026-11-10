@@ -40,11 +40,16 @@ class LaboratoryController extends Controller
 
             // Get previous laboratory orders - GROUPED and DISTINCT
             $previousOrders = $this->getGroupedPreviousOrders($patientId);
-
+            $labOrders = LabOrder::query()
+                ->join('lab_result_files', 'lab_orders.id', '=', 'lab_result_files.lab_order_id')
+                ->join('lab_result_items', 'lab_result_files.id', '=', 'lab_result_items.lab_result_id')
+                ->where('lab_orders.patient_id', $patientId)
+                ->whereNull('lab_orders.deleted_at')
+                ->get();
             return Inertia::render('patients/laboratory', [
                 'patientId' => $patientId,
                 'services' => $laboratoryServices,
-                'previousOrders' => LabOrder::with('item')->where('patient_id',$patientId)->get(),
+                'previousOrders' => $labOrders,
             ]);
         } catch (\Exception $e) {
             Log::error('Laboratory Index Error: ' . $e->getMessage(), [

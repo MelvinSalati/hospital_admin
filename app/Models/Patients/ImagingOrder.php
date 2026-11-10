@@ -1,11 +1,13 @@
 <?php
 
+
 namespace App\Models\Patients;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use App\Models\User;
 use App\Models\Payments\Invoice;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ImagingOrder extends Model
 {
@@ -37,6 +39,10 @@ class ImagingOrder extends Model
         'performed_date',
         'reported_by',
         'reported_date',
+        'reviewed_by',
+        'reviewed_at',
+        'amended_at',
+        'amendment_reason',
         'cancelled_by',
         'cancelled_date',
         'cancelled_reason',
@@ -46,23 +52,27 @@ class ImagingOrder extends Model
         'report_content',
         'report_file_path',
         'notes',
-        'is_admitted'
+        'is_admitted',
+        'ordered_by'
     ];
 
     protected $casts = [
         'contrast_required' => 'boolean',
-        'is_admitted' => 'boolean',
-        'ordered_date' => 'datetime',
-        'scheduled_date' => 'datetime',
-        'performed_date' => 'datetime',
-        'reported_date' => 'datetime',
-        'cancelled_date' => 'datetime',
-        'created_at' => 'datetime',
-        'updated_at' => 'datetime',
-        'total_amount' => 'decimal:2'
+        'is_admitted'       => 'boolean',
+        'ordered_date'      => 'datetime',
+        'scheduled_date'    => 'datetime',
+        'performed_date'    => 'datetime',
+        'reported_date'     => 'datetime',
+        'reviewed_at'       => 'datetime',
+        'amended_at'        => 'datetime',
+        'cancelled_date'    => 'datetime',
+        'created_at'        => 'datetime',
+        'updated_at'        => 'datetime',
+        'total_amount'      => 'decimal:2',
     ];
 
-    // Relationships
+    /* ---------------- Relationships ---------------- */
+
     public function patient()
     {
         return $this->belongsTo(Patient::class, 'patient_id');
@@ -98,6 +108,11 @@ class ImagingOrder extends Model
         return $this->belongsTo(User::class, 'reported_by');
     }
 
+    public function reviewedBy()
+    {
+        return $this->belongsTo(User::class, 'reviewed_by');
+    }
+
     public function cancelledBy()
     {
         return $this->belongsTo(User::class, 'cancelled_by');
@@ -108,11 +123,29 @@ class ImagingOrder extends Model
         return $this->hasMany(ImagingOrderItem::class, 'imaging_order_id');
     }
 
-    // Helper method to generate order number
+    // ✅ THIS is where the controller's `with('resultFiles')` looks for it
+    public function resultFiles()
+    {
+        return $this->hasMany(ImagingResultFile::class, 'imaging_order_id');
+    }
+
+    public function activeResultFiles()
+    {
+        return $this->hasMany(ImagingResultFile::class, 'imaging_order_id')
+            ->whereNull('deleted_at');
+    }
+
+    public function results()
+    {
+        return $this->hasMany(ImagingResult::class, 'imaging_order_id');
+    }
+
+    /* ---------------- Helpers ---------------- */
+
     public static function generateOrderNumber()
     {
         $prefix = 'IMG';
-        $date = now()->format('Ymd');
+        $date   = now()->format('Ymd');
         $lastOrder = self::whereDate('created_at', today())
             ->orderBy('id', 'desc')
             ->first();
@@ -120,12 +153,20 @@ class ImagingOrder extends Model
         if ($lastOrder) {
             preg_match('/(\d+)$/', $lastOrder->order_number, $matches);
             $lastNumber = isset($matches[1]) ? intval($matches[1]) : 0;
-            $newNumber = str_pad($lastNumber + 1, 4, '0', STR_PAD_LEFT);
+            $newNumber  = str_pad($lastNumber + 1, 4, '0', STR_PAD_LEFT);
         } else {
             $newNumber = '0001';
         }
 
         return "{$prefix}-{$date}-{$newNumber}";
+    }
+    /**
+     * Get the result files (images, PDFs) uploaded for this imaging order.
+     */
+    public function imagingResultFiles(): HasMany
+    {
+        // Assuming the foreign key on imaging_result_files is 'imaging_order_id'
+        return $this->hasMany(ImagingResultFile::class, 'imaging_order_id');
     }
 }
 

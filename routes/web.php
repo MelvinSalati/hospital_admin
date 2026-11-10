@@ -38,6 +38,8 @@ use App\Http\Controllers\Patients\MartenalChildHealthController;
 use App\Http\Controllers\Patients\PaymentsController;
 use App\Http\Controllers\Pharmacies\OrderController;
 use App\Http\Controllers\Laboratories\LaboratoryController as MainLaboratoryController;
+// routes/web.php
+use App\Models\Patients\ImagingOrder;
 
 Route::inertia('/', 'welcome', [
     'canRegister' => Features::enabled(Features::registration()),
@@ -47,58 +49,56 @@ Route::inertia('/', 'welcome', [
  * Main navigation
  */
 Route::middleware(['auth', 'verified'])->group(function () {
-   Route::get('/dashboard', function () {
+    Route::get('/dashboard', function () {
+        $user = auth()->user();
+        $roles = $user->profile?->roles ?? [];
 
-    $user = auth()->user();
-    $roles = $user->profile?->roles ?? [];
-
-    // Keep adding roles here
-    if (in_array('bulkstore', $roles)) {
+        // Keep adding roles here
+        if (in_array('bulkstore', $roles)) {
             return redirect('/bulkstore/dashboard');
-    }
+        }
         if (in_array('receptionist', $roles)) {
             return redirect('/reception/dashboard');
         }
-    if (in_array('laboratory', $roles)) {
-        return redirect('/laboratory/dashboard');
-    }
+        if (in_array('laboratory/dashoard', $roles)) {
+            return redirect('/laboratory/dashboard/{deaprtementId}');
+        }
 
-    if (in_array('pharmacy', $roles)) {
-        return redirect('/pharmacy/dashboard');
-    }
+        if (in_array('pharmacy', $roles)) {
+            return redirect('/pharmacy/dashboard/1');
+        }
 
-    if (in_array('nurses', $roles)) {
-        return redirect('/nurses/dashboard');
-    }
+        if (in_array('nurses', $roles)) {
+            return redirect('/nurses/dashboard');
+        }
 
-    if (in_array('admin', $roles)) {
-        return redirect('/bulkstore/dashboard');
-    }
+        if (in_array('admin', $roles)) {
+            return redirect('/bulkstore/dashboard');
+        }
 
-    // Existing logic
-    return app(\App\Http\Controllers\Dashboard\MetricsController::class)
-        ->dashboard();
-
-})->name('dashboard');
+        // Existing logic
+        return app(\App\Http\Controllers\Dashboard\MetricsController::class)
+            ->dashboard();
+    })->name('dashboard');
     Route::get('/patients', function () {
         return Inertia::render('patients/registry');
     })->name('patient');
-    Route::get('/reception', function (){
+    Route::get('/reception', function () {
         return Inertia::render('receptions/reception');
     });
-     Route::get('patients/register', function (){
+    Route::get('patients/register', function () {
         return Inertia::render('receptions/create');
     });
-    Route::get('/reception/queues',[ReceptionController::class,'queues']);
+    Route::get('/reception/queues', [ReceptionController::class, 'queues']);
     Route::get('/pharmacy', [PharmacyController::class, 'index'])->name('pharmacy');
-    Route::get('/mch',[MartenalChildHealthController::class,'index'])->name('mch');
-    Route::get('/theater',[TheaterController::class, 'index'])->name('theater');
-   Route::resource('/dental', DentalController::class);
+    Route::get('/mch', [MartenalChildHealthController::class, 'index'])->name('mch');
+    Route::get('/theater', [TheaterController::class, 'index'])->name('theater');
+    Route::resource('/dental', DentalController::class);
     // Route::get('/dental',[DentalController::class, 'índex'])->name('dental');
     Route::get('/opthamology', [OpthamologyController::class, 'index'])->name('opthamology');
-    });
+});
 
-Route::middleware(['auth','verified'])->group(function () {
+Route::middleware(['auth'])->group(function () {
 
 
     /**
@@ -124,73 +124,83 @@ Route::middleware(['auth','verified'])->group(function () {
         // Route::get('/bills/{patientId}', [BillsController::class, 'index'])->name('patient.bills');
         Route::get("/payment/{patientId}", [DischargesController::class, 'index'])->name('patient.payment');
         Route::get("mch/{patientId}", [MartenalChildHealthController::class, 'index'])->name('patient.mch');
-         Route::get("dental/{patientId}", [PatientDentalController::class, 'index'])->name('patient.dental');
-         Route::get("theater/{patientId}", [PatientTheater::class, 'index'])->name('patient.theater');
-         Route::get("opthamology/{patientId}", [OpthamologyController::class, 'index'])->name('patient.opthamology');
-
-
-         });
+        Route::get("dental/{patientId}", [PatientDentalController::class, 'index'])->name('patient.dental');
+        Route::get("theater/{patientId}", [PatientTheater::class, 'index'])->name('patient.theater');
+        Route::get("opthamology/{patientId}", [OpthamologyController::class, 'index'])->name('patient.opthamology');
+    });
 
 
 
-         /**
+    /**
      * vital signs
      */
-    Route::get('vital-signs/{patientId}',[VitalSignsController::class,'show'])->name('patient.vitals');
-    Route::get('vital-signs/create/{patientId}',[VitalSignsController::class,'create'])->name('vitals.create');
+    Route::get('vital-signs/{patientId}', [VitalSignsController::class, 'show'])->name('patient.vitals');
+    Route::get('vital-signs/create/{patientId}', [VitalSignsController::class, 'create'])->name('vitals.create');
 
     /**
      * pharmacy routes
      */
 
-    Route::prefix('/pharmacy')->group(function(){
-        Route::get('/suppliers',[PharmacyController::class, 'suppliers']);
-        Route::get('/order-products',[OrderController::class,'index']);       Route::get('/dashboard',[PharmacyController::class, 'dashboard']);
-        Route::get('/logistics',[PharmacyController::class, 'logistics']);
-        Route::get('/drugs',[PharmacyController::class, 'drugs']);
+    Route::prefix('/pharmacy')->group(function () {
+        Route::get('/suppliers', [PharmacyController::class, 'suppliers']);
+        Route::get('/order-products', [OrderController::class, 'index']);
+        Route::get('/dashboard', [PharmacyController::class, 'dashboard']);
+        Route::get('/logistics', [PharmacyController::class, 'logistics']);
+        Route::get('/drugs', [PharmacyController::class, 'drugs']);
         Route::get('/dispensed', [PharmacyController::class, 'getDispensed']);
         Route::get('/suppliers', [SupplierController::class, 'index'])->name('pharmacy.suppliers');
         Route::post('/suppliers', [SupplierController::class, 'storeSupplier'])->name('pharmacy.suppliers.store');
         Route::put('/suppliers/{id}', [SupplierController::class, 'updateSupplier'])->name('pharmacy.suppliers.update');
         Route::delete('/suppliers/{id}', [SupplierController::class, 'deleteSupplier'])->name('pharmacy.suppliers.delete');
+        Route::get('stock-monitoring', [PharmacyController::class, 'stockMonitoring']);
     });
 });
 
-Route::middleware(['auth','verified'])
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::post('/api-token', function (Request $request) {
+        // Revoke previous tokens of same name to prevent buildup
+        $request->user()->tokens()->where('name', 'spa')->delete();
+
+        return response()->json([
+            'token' => $request->user()->createToken('spa')->plainTextToken,
+        ]);
+    });
+});
+
+Route::middleware(['auth', 'verified'])
     ->prefix('patients')
     ->group(function () {
 
-    Route::get('/opd/{patient}', [OPDController::class, 'index'])->name('patients.opd');
+        Route::get('/opd/{patient}', [OPDController::class, 'index'])->name('patients.opd');
 
-    Route::get('/admissions/{patient}', [AdmissionsController::class, 'index'])->name('patients.admissions');
+        Route::get('/admissions/{patient}', [AdmissionsController::class, 'index'])->name('patients.admissions');
 
-    Route::get('/discharges/{patient}', [DischargesController::class, 'index'])->name('patients.discharges');
+        Route::get('/discharges/{patient}', [DischargesController::class, 'index'])->name('patients.discharges');
 
-    Route::get('/appointments/{patient}', [AppointmentsController::class, 'index'])->name('patients.appointments');
+        Route::get('/appointments/{patient}', [AppointmentsController::class, 'index'])->name('patients.appointments');
 
-    Route::get('/consultations/{patient}', [InteractionController::class, 'index'])->name('patients.consultations');
+        Route::get('/consultations/{patient}', [InteractionController::class, 'index'])->name('patients.consultations');
 
-    Route::get('/vital-signs/{patient}', [VitalSignsController::class, 'index'])->name('patients.vitals');
+        Route::get('/vital-signs/{patient}', [VitalSignsController::class, 'index'])->name('patients.vitals');
 
-    Route::get('/vital-signs/create/{patient}', [VitalSignsController::class, 'create'])->name('patients.vitals.create');
+        Route::get('/vital-signs/create/{patient}', [VitalSignsController::class, 'create'])->name('patients.vitals.create');
 
-    Route::get('/lab/{patient}', [LaboratoryController::class, 'index'])->name('patients.lab');
+        Route::get('/lab/{patient}', [LaboratoryController::class, 'index'])->name('patients.lab');
 
-    Route::get('/radiology/{patient}', [RadiologyController::class, 'index'])->name('patients.radiology');
+        Route::get('/radiology/{patient}', [RadiologyController::class, 'index'])->name('patients.radiology');
 
-    Route::get('/ultrasound/{patient}', [UltrasoundController::class, 'index'])->name('patients.ultrasound');
+        Route::get('/ultrasound/{patient}', [UltrasoundController::class, 'index'])->name('patients.ultrasound');
 
-    Route::get('/xray/{patient}', [XRayController::class, 'index'])->name('patients.xray');
+        Route::get('/xray/{patient}', [XRayController::class, 'index'])->name('patients.xray');
 
-    Route::get('/pharmacy/dispense/{patient}', [DispensingController::class, 'index'])->name('patients.pharmacy.dispense');
+        Route::get('/pharmacy/dispense/{patient}', [DispensingController::class, 'index'])->name('patients.pharmacy.dispense');
 
-    Route::get('/pharmacy/prescriptions/{patient}', [PrescriptionsController::class, 'index'])->name('patients.pharmacy.prescriptions');
+        Route::get('/pharmacy/prescriptions/{patient}', [PrescriptionsController::class, 'index'])->name('patients.pharmacy.prescriptions');
 
-    Route::get('/billing/{patient}', [BillingController::class, 'index'])->name('patients.billing');
+        Route::get('/billing/{patient}', [BillingController::class, 'index'])->name('patients.billing');
 
-    Route::get('/payments/{patient}', [PaymentsController::class, 'index'])->name('patients.payments');
-
-});
+        Route::get('/payments/{patient}', [PaymentsController::class, 'index'])->name('patients.payments');
+    });
 
 Route::prefix('payments')->group(function () {
     Route::get('/', [PaymentController::class, 'index'])->name('payments.index');
@@ -205,24 +215,22 @@ Route::middleware(['auth', 'verified'])
     ->group(function () {
 
         Route::get('/opd/{patient}', [OPDController::class, 'index'])->name('patients.opd');
-});
+    });
 
 /**
  * Nurses separtment
  */
 
-Route::middleware(['auth','verified'])->group(function (){
+Route::middleware(['auth', 'verified'])->group(function () {
 
-Route::prefix('nurses/')->group( function (){
+    Route::prefix('nurses/')->group(function () {
         Route::get('/dashboard', [NursesController::class, 'dashboard']);
         Route::get('/queue', [NursesController::class, 'index']);
-});
-
-
+    });
 });
 
 Route::middleware(['auth', 'verified'])->group(function () {
-    Route::prefix('/laboratory')->group(function (){
+    Route::prefix('/laboratory')->group(function () {
         Route::get('/', [LaboratoriesLaboratoryController::class, 'index']);
         Route::get('/dashboard', [MainLaboratoryController::class, 'dashboard']);
         Route::get('/processed', [MainLaboratoryController::class, 'processed']);
@@ -235,26 +243,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::prefix("user")->group(function () {
         Route::get('/create', function () {
-            return Inertia::render('users/register',[
+            return Inertia::render('users/register', [
                 'departments' => \App\Models\Department::all()
             ]);
         });
     });
 
 
-    /**
-     *  Bulkstore routes
-     *
-     *
-     */
-
-    Route::prefix('bulkstore')->group(function () {
-        Route::get('/dashboard', [BulkStoreController::class, 'index']);
-        Route::get('/products', [BulkStoreController::class, 'products']);
-        Route::get('/orders',[BulkStoreController::class, 'orders']);
-        Route::get('/issues',[BulkStoreController::class, 'issues']);
-        Route::get('/suppliers',[BulkStoreController::class, 'suppliers']);
-    });
 
     /**
      *  Users managemert routes
@@ -265,10 +260,27 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/users/list', [AdminController::class, 'index']);
     });
 
-    Route::prefix('users')->group(function (){
-        Route::get('/manage-account',[UserController::class, 'index']);
+    Route::prefix('users')->group(function () {
+        Route::get('/manage-account', [UserController::class, 'index']);
     });
 });
+
+
+Route::get('/api/imaging/recent-notifications', function () {
+    return ImagingOrder::where('department_id', 5)
+        ->where('created_at', '>=', now()->subMinutes(1))
+        ->latest()
+        ->limit(5)
+        ->get()
+        ->map(fn($o) => [
+            'id'          => $o->id,
+            'orderNumber' => $o->order_number,
+            'patientName' => $o->patient?->name,
+            'test'        => trim(($o->modality ?? '') . ' ' . ($o->body_part ?? '')),
+            'createdAt'   => $o->created_at->toIso8601String(),
+        ]);
+})->middleware('auth');
+
 Route::get('/check-auth', function () {
     return [
         'authenticated' => auth()->check(),
@@ -276,6 +288,7 @@ Route::get('/check-auth', function () {
         'session_id' => session()->getId()
     ];
 })->middleware('auth');
+
 
 require __DIR__ . '/bulk_store_web.php';
 require __DIR__ . '/patients_web.php';
@@ -287,3 +300,10 @@ require __DIR__ . '/notifications_web.php';
 require __DIR__ . '/departments.php';
 require __DIR__ . '/dispense.php';
 require __DIR__ . '/admin_web.php';
+require __DIR__ . '/lab_web.php';
+require __DIR__ . '/radiology_web.php';
+require __DIR__ . '/pharmacy_web.php';
+require __DIR__ . '/maternal_web.php';
+require __DIR__ . '/theatre_web.php';
+require __DIR__ . '/dental_web.php';
+require __DIR__ . '/ophthalmology_web.php';

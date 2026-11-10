@@ -51,5 +51,9 @@ class PatientVisit extends Model
     public function invoice(){
         return $this->belongsTo(Invoice::class,'patient_id');
     }
+    public function assignedDepartment()
+    {
+        return $this->belongsTo(\App\Models\Departments\Department::class, 'department_id');
+    }
 
 }

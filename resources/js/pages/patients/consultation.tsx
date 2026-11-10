@@ -1,4 +1,4 @@
-import { router } from '@inertiajs/react';
+import { router, usePage } from '@inertiajs/react';
 import {
     Activity,
     Plus,
@@ -53,6 +53,7 @@ function ConsultationModal({
     onClose,
     patientName,
     children,
+    vitalSign,
 }: ConsultationModalProps) {
     const dialogRef = useRef<HTMLDivElement>(null);
 
@@ -199,7 +200,8 @@ export default function Consultation({
     const patientIdFromUrl = Number.isFinite(Number(lastSegment))
         ? Number(lastSegment)
         : null;
-
+    const { latestVitalSigns } = usePage().props;
+    console.log('vital-signs', latestVitalSigns);
     const patientId = patient?.id ?? patientIdFromUrl;
 
     /* ---- State ---- */

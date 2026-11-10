@@ -10,23 +10,32 @@ use App\Http\Controllers\BulkStores\GoodsReceivedNoteController;
 use App\Http\Controllers\BulkStores\ProductController;
 use App\Http\Controllers\Reports\BulkStore\AdjustmentController;
 use App\Http\Controllers\Reports\BulkStore\CurrentStockController;
+use App\Http\Controllers\BulkStores\BulkStoreController;
+use Illuminate\Supports\Facades\DB;
+
 
 Route::prefix('v1/bulk-store')->group(function () {
 
-    Route::get('/stock',[ProductController::class,'products']);
+    Route::post('issue-stock', [BulkStoreController::class, 'issueStockToDepartment']);
+
+    /**
+     * order for departments
+     *
+     */
+
+    Route::post('/order/items', [BulkStoreController::class, 'orderStock']);
+
+    Route::get('/stock', [ProductController::class, 'products']);
 
     // adjust stockprice
 
-    Route::post('/products/{productId}/pricing',[ProductController::class, 'adjustPrice']);
-
-    //add a product
-    Route::post('/add-product', [ProductController::class,'addProduct']);
+    Route::post('/products/{productId}/pricing', [ProductController::class, 'adjustPrice']);
     //verify
-    Route::post('/{otp}/verify-token',[GoodsReceivedNoteController::class,'verifyOtp']);
+    Route::post('/{otp}/verify-token', [GoodsReceivedNoteController::class, 'verifyOtp']);
     Route::prefix('/{userId}/')->group(function () {
         Route::post('/verify-approval-code', [GoodsReceivedNoteController::class, 'authorizeApprovalCode']);
     });
-    Route::get('/products/{uuid}/details',[ProductController::class, 'productDetails']);
+    Route::get('/products/{uuid}/details', [ProductController::class, 'productDetails']);
     // GRN Rout'es
     Route::prefix('grns')->group(function () {
         // GET routes
@@ -61,11 +70,11 @@ Route::prefix('v1/bulk-store')->group(function () {
     Route::put('/product/{id}', [\App\Http\Controllers\BulkStores\ProductController::class, 'updateProduct']);
     Route::get('/requisition/budget/check-balance/{budget}/{amount}', [RequisitionController::class, 'checkBudget']);
     Route::post('purchase/requisition/create', [RequisitionController::class, 'createRequisition']);
-        Route::post('/adjust-stock', [\App\Http\Controllers\BulkStores\ProductController::class,'stockAdjustment']);
+    Route::post('/adjust-stock', [\App\Http\Controllers\BulkStores\ProductController::class, 'stockAdjustment']);
     Route::get('/purchase-orders', [RequisitionController::class, 'getRequisitions']);
     Route::get('/requisitions', [RequisitionController::class, 'getRequisitions']);
-    Route::get('/purchase-orders/{id}',[\App\Http\Controllers\Bulkstores\PurchaseOrderController::class,'index']);
-    Route::post('/purchase-orders/{authorityId}/authorize',[RequisitionController::class,'approveRequisition']);
+    Route::get('/purchase-orders/{id}', [\App\Http\Controllers\Bulkstores\PurchaseOrderController::class, 'index']);
+    Route::post('/purchase-orders/{authorityId}/authorize', [RequisitionController::class, 'approveRequisition']);
     // Optional: Add these if you need them
     Route::get('/requisition/{id}', [RequisitionController::class, 'getRequisition']);
     Route::put('/requisition/{id}', [RequisitionController::class, 'updateRequisition']);
@@ -75,7 +84,7 @@ Route::prefix('v1/bulk-store')->group(function () {
     //show items to be received
     Route::get('/purchase-requisitions/approved', [PurchaseOrderController::class, 'approvedPurchaseRequesition'])->name('purchase-requisition');
     Route::post('/receiving', [\App\Http\Controllers\BulkStores\ReceivingController::class, 'receiveProduct']);
-    Route::post('/returns',[\App\Http\Controllers\BulkStores\ReturningController::class,'returnProduct']);
+    Route::post('/returns', [\App\Http\Controllers\BulkStores\ReturningController::class, 'returnProduct']);
 
     // GET - Return history with filters
     Route::get('/returns/history', [\App\Http\Controllers\BulkStores\ReturningController::class, 'getReturnHistory']);
@@ -86,18 +95,15 @@ Route::prefix('v1/bulk-store')->group(function () {
     Route::get('/products/all', [StockPricingController::class, 'getProducts']);
 
 
-    Route::prefix('/reports')->group(function (){
-        Route::post('/product-adjustment',[AdjustmentController::class,'getAdjustmentReport']);
-        Route::post('/current-stock',[CurrentStockController::class,'getCurrentStock']);
-    }); 
-
-    
-
-
-})->middleware(['auth','verified']);
+    Route::prefix('/reports')->group(function () {
+        Route::post('/product-adjustment', [AdjustmentController::class, 'getAdjustmentReport']);
+        Route::post('/current-stock', [CurrentStockController::class, 'getCurrentStock']);
+    });
+});
 
 
 // Bulk Store Settings Routes
+
 Route::prefix('settings/bulkstore')->group(function () {
     Route::get('/', [BulkStoreSettingController::class, 'index']);
     Route::get('/section/{section}', [BulkStoreSettingController::class, 'getSection']);
@@ -105,3 +111,7 @@ Route::prefix('settings/bulkstore')->group(function () {
     Route::post('/reset', [BulkStoreSettingController::class, 'reset']);
 });
 
+Route::prefix('v1/bulk-store')->group(function () {
+    Route::post('/add-product', [ProductController::class, 'addProduct']);
+    Route::post('/add/product-as-service', [ProductController::class, 'addService']);
+});

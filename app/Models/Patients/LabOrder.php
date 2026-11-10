@@ -34,7 +34,8 @@ class LabOrder extends Model
         'cancelled_reason',
         'total_amount',
         'invoice_id',
-        'is_admitted'
+        'is_admitted',
+        'ordered_by'
     ];
 
     protected $casts = [
@@ -65,6 +66,10 @@ class LabOrder extends Model
     public function orderedBy()
     {
         return $this->belongsTo(User::class, 'ordered_by');
+    }
+    public function processor()
+    {
+        return $this->belongsTo(User::class, 'processed_by');
     }
 
     public function collectedBy()

@@ -11,19 +11,17 @@ import {
     Receipt,
     CreditCard,
     FileText,
-    Hospital,
     ChevronRight,
     BabyIcon,
     Scissors,
     Eye,
     ScissorsIcon,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import {
     Sidebar,
     SidebarContent,
-    SidebarFooter,
     SidebarHeader,
     SidebarMenu,
     SidebarMenuButton,
@@ -94,8 +92,6 @@ const patientNavItems: PatientNavItem[] = [
         href: (id) => `/patients/radiology/${id}`,
         icon: Scan,
     },
-
-    // ── Grouped: Pharmacy ──
     {
         title: 'Pharmacy',
         href: (id) => `/patients/pharmacy/dispense/${id}`,
@@ -113,8 +109,6 @@ const patientNavItems: PatientNavItem[] = [
             },
         ],
     },
-
-    // ── Grouped: Payment ──
     {
         title: 'Payment',
         href: (id) => `/patients/billing/${id}`,
@@ -132,7 +126,6 @@ const patientNavItems: PatientNavItem[] = [
             },
         ],
     },
-
     { title: 'Martenal', href: (id) => `/patients/mch/${id}`, icon: BabyIcon },
     {
         title: 'Theater',
@@ -148,7 +141,61 @@ const patientNavItems: PatientNavItem[] = [
 ];
 
 /* -------------------------------------------------------------------------- */
-/* Shared class strings — kept in one place so styling stays consistent        */
+/* Role → Allowed nav titles                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Rules derived from the inline comments in the original file:
+ *
+ *  - nurse        → vitals, admissions, procedures, appointments
+ *  - laboratory   → laboratory only
+ *  - pharmacy     → pharmacy (dispensing + prescriptions) only
+ *  - radiology    → radiology only
+ *  - reception    → billing, payments (+ insurance & diagnostics history if added)
+ *  - admin        → all
+ *  - doctor       → all
+ *  - martenal     → everything except dashboard
+ *  - theater      → theater only
+ *  - dental       → dental only
+ *  - opthamology  → opthamology only
+ */
+const ROLE_NAV_MAP: Record<string, string[] | 'all'> = {
+    nurse: ['Vitals', 'Admissions', 'Procedures', 'Appointments', 'Dashboard'],
+    laboratory: ['Laboratory'],
+    lab: ['Laboratory'],
+    pharmacy: ['Pharmacy'],
+    pharmacist: ['Pharmacy'],
+    radiology: ['Radiology'],
+    reception: ['Payment'], // Billing + Payments live under this group
+    receptionist: ['Payment', 'Dashboard'],
+    admin: 'all',
+    administrator: 'all',
+    doctor: 'all',
+    martenal: 'all-except-dashboard',
+    theater: ['Theater'],
+    theatre: ['Theater'],
+    dental: ['Dental'],
+    dentist: ['Dental'],
+    opthamology: ['Opthamology'],
+    ophthalmology: ['Opthamology'],
+};
+
+function filterNavByRole(role: string | null): PatientNavItem[] {
+    if (!role) return []; // no role → show nothing (safe default)
+    const rule = ROLE_NAV_MAP[role.toLowerCase()];
+
+    if (!rule) return []; // unknown role → nothing
+    if (rule === 'all') return patientNavItems;
+
+    if (rule === 'all-except-dashboard') {
+        return patientNavItems.filter((i) => i.title !== 'Dashboard');
+    }
+
+    return patientNavItems.filter((item) => rule.includes(item.title));
+}
+
+/* -------------------------------------------------------------------------- */
+/* Shared class strings                                                        */
 /* -------------------------------------------------------------------------- */
 
 const linkBase =
@@ -232,6 +279,7 @@ function CollapsibleNavItem({
 export function PatientSidebar({ patient }: { patient?: any }) {
     const { props } = usePage();
     const [patientId, setPatientId] = useState<string | null>(null);
+    const [role, setRole] = useState<string | null>(null);
 
     useEffect(() => {
         const p: any = (props as any).patient ?? patient;
@@ -244,10 +292,17 @@ export function PatientSidebar({ patient }: { patient?: any }) {
             const match = pathname.match(/\/(\d+)(\/?$|\/)/);
             if (match) setPatientId(match[1]);
         }
+
+        if (typeof window !== 'undefined') {
+            setRole(localStorage.getItem('userRole'));
+        }
     }, [props, patient]);
 
-    /* ---------- Loading skeleton (same look as AppSidebar) ---------- */
-    if (!patientId) {
+    /* ---------- Filter nav based on role ---------- */
+    const visibleNavItems = useMemo(() => filterNavByRole(role), [role]);
+
+    /* ---------- Loading skeleton ---------- */
+    if (!patientId || role === null) {
         return (
             <Sidebar
                 collapsible="icon"
@@ -295,30 +350,36 @@ export function PatientSidebar({ patient }: { patient?: any }) {
 
             <SidebarContent className="px-2 py-3">
                 <div className="space-y-1 font-semibold">
-                    {patientNavItems.map((item) => {
-                        if (item.children?.length) {
-                            return (
-                                <CollapsibleNavItem
-                                    key={item.title}
-                                    item={item}
-                                    patientId={patientId}
-                                />
-                            );
-                        }
+                    {visibleNavItems.length === 0 ? (
+                        <p className="px-3 py-2 text-xs text-gray-400">
+                            No menu available for your role.
+                        </p>
+                    ) : (
+                        visibleNavItems.map((item) => {
+                            if (item.children?.length) {
+                                return (
+                                    <CollapsibleNavItem
+                                        key={item.title}
+                                        item={item}
+                                        patientId={patientId}
+                                    />
+                                );
+                            }
 
-                        return (
-                            <Link
-                                key={item.title}
-                                href={item.href(patientId)}
-                                className={linkBase}
-                            >
-                                <div className="flex items-center gap-6">
-                                    <item.icon className={iconBase} />
-                                    <span>{item.title}</span>
-                                </div>
-                            </Link>
-                        );
-                    })}
+                            return (
+                                <Link
+                                    key={item.title}
+                                    href={item.href(patientId)}
+                                    className={linkBase}
+                                >
+                                    <div className="flex items-center gap-6">
+                                        <item.icon className={iconBase} />
+                                        <span>{item.title}</span>
+                                    </div>
+                                </Link>
+                            );
+                        })
+                    )}
                 </div>
             </SidebarContent>
         </Sidebar>

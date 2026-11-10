@@ -40,7 +40,7 @@ class AppointmentRepository implements AppointmentInterface
     public function getAppointments(int $patientId)
     {
         return $this->appointment
-            ->with(['patient', 'department', 'doctor'])
+            ->with(['patient', 'department', 'doctor', 'creator'])
             ->where('patient_id', $patientId)
             ->orderByDesc('appointment_date')
             ->orderByDesc('appointment_time')
@@ -57,18 +57,15 @@ class AppointmentRepository implements AppointmentInterface
                 'priority' => $appointment->priority,
                 'reason' => $appointment->reason,
                 'notes' => $appointment->notes,
-
                 'patient_id' => $appointment->patient_id,
                 'patient_name' => $appointment->patient
                     ? trim($appointment->patient->first_name . ' ' . $appointment->patient->last_name)
                     : null,
-
                 'department_id' => $appointment->department_id,
                 'department_name' => $appointment->department?->name,
-
                 'doctor_id' => $appointment->doctor_id,
                 'doctor_name' => $appointment->doctor?->name,
-
+                'created_by'  => $appointment->creator?->name,
                 'room' => $appointment->room,
                 'visit_token' => $appointment->visit_token,
                 'scheduled_at' => $appointment->scheduled_at,
@@ -94,7 +91,7 @@ class AppointmentRepository implements AppointmentInterface
 
     public function getDoctorAppointments(int $doctorId)
     {
-        return Appointment::join('users','users.id','=','appointments.doctor_id')->join('patients','patients.id','=','appointments.patient_id')
-    ->where('doctor_id',26)->get(['users.name as doctor_name','patients.first_name as patient_name','appointments.status','appointment_date as appointmentDate']);
+        return Appointment::join('users', 'users.id', '=', 'appointments.doctor_id')->join('patients', 'patients.id', '=', 'appointments.patient_id')
+            ->where('doctor_id', 26)->get(['users.name as doctor_name', 'patients.first_name as patient_name', 'appointments.status', 'appointment_date as appointmentDate']);
     }
 }

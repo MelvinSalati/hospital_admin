@@ -3,10 +3,10 @@
 namespace App\Http\Controllers\Patients;
 
 use App\Http\Controllers\Controller;
+use App\Models\BulkStores\Product;
 use App\Models\DepartmentStock;
 use App\Models\Patients\Prescription;
 use App\Models\Patients\DispensedItem;
-use App\Models\DrugItem;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -17,15 +17,12 @@ use Inertia\Inertia;
 
 class DispensingController extends Controller
 {
-    /**
-     * Department constants
-     */
-    const DEPARTMENT_BULK_STORE = 1;
-    const DEPARTMENT_PHARMACY = 2;
+    const DEPARTMENT_PHARMACY   = 1;
+    const DEPARTMENT_BULK_STORE = 2; // TODO: confirm real id in `departments`
 
-    /**
-     * Display a listing of the resource.
-     */
+    /* ============================================================
+     |  INDEX
+     ============================================================ */
     public function index(int $patientId)
     {
         $dispensations = Prescription::where('patient_id', $patientId)
@@ -33,558 +30,705 @@ class DispensingController extends Controller
             ->get();
 
         return Inertia::render('patients/dispensing', [
-            'dispensations' => $dispensations
+            'dispensations' => $dispensations,
         ]);
     }
 
+    /* ============================================================
+     |  HELPERS
+     ============================================================ */
+    private function drugName($drug, $fallbackId = null): string
+    {
+        return $drug->drug_name
+            ?? $drug->name
+            ?? $drug->product_name
+            ?? ('ID ' . ($fallbackId ?? $drug->id ?? '?'));
+    }
+
+    /** Units per pack. Null/0 -> 1 (sold singly). */
+    private function packSize($drug): int
+    {
+        return max(1, (int) ($drug->pack_size ?? 1));
+    }
+
+    /** Convert an entered quantity (units or packs) to base units. */
+    private function toBaseUnits($drug, $qty, string $unitType = 'unit'): int
+    {
+        return $unitType === 'pack'
+            ? (int) round((float) $qty * $this->packSize($drug))
+            : (int) $qty;
+    }
+
+    /** ['packs' => 17, 'loose' => 6] */
+    private function splitPacks($drug, int $units): array
+    {
+        $size = $this->packSize($drug);
+        $sign = $units < 0 ? -1 : 1;
+        $abs  = abs($units);
+
+        return [
+            'packs' => $sign * intdiv($abs, $size),
+            'loose' => $abs % $size,
+        ];
+    }
+
+    /** "17 packs + 6 loose", or "14" when the product has no pack size. */
+    private function formatQty($drug, int $units): string
+    {
+        $size = $this->packSize($drug);
+        if ($size <= 1) {
+            return (string) $units;
+        }
+
+        ['packs' => $p, 'loose' => $l] = $this->splitPacks($drug, $units);
+
+        $parts = [];
+        if ($p !== 0) $parts[] = $p . ($p === 1 || $p === -1 ? ' pack' : ' packs');
+        if ($l !== 0) $parts[] = $l . ' loose';
+
+        return $parts ? implode(' + ', $parts) : '0';
+    }
+
+    /** Price is per pack -> cost per base unit. If your prices are already per unit, return $price. */
+    private function unitCost($drug, $price): float
+    {
+        return round(((float) ($price ?? 0)) / $this->packSize($drug), 4);
+    }
+
     /**
-     * Dispense prescription items
+     * Lock the department_stocks row, creating it if missing.
+     * A new row is seeded from the ledger balance (not 0).
      */
+    private function getOrCreateStock(
+        Product $drug,
+        int $departmentId,
+        ?string $batchNumber = null,
+        ?string $expiryDate = null,
+        string $location = 'Pharmacy'
+    ): DepartmentStock {
+        $stock = DepartmentStock::where('product_id', $drug->id)
+            ->where('department_id', $departmentId)
+            ->lockForUpdate()
+            ->first();
+
+        if ($stock) {
+            return $stock;
+        }
+
+        $seed = (int) DB::table('department_stock_ledger_items')
+            ->where('department_id', $departmentId)
+            ->where('drug_id', $drug->id)
+            ->selectRaw('COALESCE(SUM(quantity_in),0) - COALESCE(SUM(quantity_out),0) as bal')
+            ->value('bal');
+
+        $created = DepartmentStock::create([
+            'product_id'    => $drug->id,
+            'department_id' => $departmentId,
+            'stock_balance' => (string) $seed,
+            'reorder_level' => $drug->reorder_level ?? 10,
+            'min_stock'     => $drug->minimum_stock_level ?? 5,
+            'max_stock'     => $drug->maximum_stock_level ?? 100,
+            'location'      => $location,
+            'is_active'     => 1,
+            'batch_number'  => $batchNumber,
+            'expiry_date'   => $expiryDate,
+            'last_updated'  => now(),
+        ]);
+
+        return DepartmentStock::whereKey($created->id)->lockForUpdate()->first();
+    }
+
+    /* ============================================================
+     |  DISPENSE
+     |  quantity_dispensed / quantity_prescribed are in `unit_type`
+     |  ('unit' = tablets/capsules, default; 'pack' = packs).
+     |  Everything stored is in base units.
+     ============================================================ */
     public function dispense(Request $request, string $prescriptionNumber)
     {
         $validator = Validator::make($request->all(), [
-            'items' => 'required|array',
-            'items.*.drug_id' => 'required|exists:services,id',
-            'items.*.drug_name' => 'required|string',
-            'items.*.quantity_dispensed' => 'required|integer|min:0',
-            'items.*.quantity_prescribed' => 'required|integer|min:1',
-            'items.*.dosage' => 'nullable|string',
-            'items.*.frequency' => 'nullable|string',
-            'items.*.route' => 'nullable|string',
-            'items.*.notes' => 'nullable|string',
+            'items'                        => 'required|array|min:1',
+            'items.*.drug_id'              => 'required|exists:products,id',
+            'items.*.drug_name'            => 'required|string',
+            'items.*.unit_type'            => 'nullable|in:unit,pack',
+            'items.*.quantity_dispensed'   => 'required|integer|min:0',
+            'items.*.quantity_prescribed'  => 'required|integer|min:1',
+            'items.*.dosage'               => 'nullable|string',
+            'items.*.frequency'            => 'nullable|string',
+            'items.*.route'                => 'nullable|string',
+            'items.*.notes'                => 'nullable|string',
             'items.*.reason_not_dispensed' => 'nullable|string',
-            'dispensed_at' => 'required|date',
+            'items.*.batch_number'         => 'nullable|string|max:100',
+            'items.*.expiry_date'          => 'nullable|date',
+            'dispensed_at'                 => 'required|date',
         ]);
 
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
-                'errors' => $validator->errors()
+                'errors'  => $validator->errors(),
             ], 422);
         }
 
         try {
-            DB::beginTransaction();
+            return DB::transaction(function () use ($request, $prescriptionNumber) {
 
-            $dispensedAt = Carbon::parse($request->dispensed_at)->format('Y-m-d H:i:s');
+                $dispensedAt = Carbon::parse($request->dispensed_at)
+                    ->setTimezone(config('app.timezone'))
+                    ->format('Y-m-d H:i:s');
 
-            $prescription = Prescription::where('prescription_number', $prescriptionNumber)
-                ->where('status', 'active')
-                ->first();
+                /** @var Prescription|null $prescription */
+                $prescription = Prescription::where('prescription_number', $prescriptionNumber)
+                    ->where('status', 'active')
+                    ->lockForUpdate()
+                    ->first();
 
-            if (!$prescription) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Prescription not found or not active'
-                ], 404);
-            }
-
-            Log::info("Dispensing for prescription", ['prescription_number' => $prescriptionNumber]);
-
-            $pharmacyDepartmentId = self::DEPARTMENT_PHARMACY;
-            $patientId = $prescription->patient_id;
-
-            // ============================================
-            // STEP 1: Gather stock data (no validation)
-            // ============================================
-            $stockData = [];
-
-            foreach ($request->items as $index => $item) {
-                $quantityDispensed = (int) $item['quantity_dispensed'];
-
-                if ($quantityDispensed > 0) {
-                    $drug = DrugItem::find($item['drug_id']);
-
-                    $currentStock = DepartmentStock::where('product_id', $item['drug_id'])
-                        ->where('department_id', $pharmacyDepartmentId)
-                        ->value('stock_balance') ?? 0;
-
-                    $stockData[$item['drug_id']] = [
-                        'drug' => $drug,
-                        'current_stock' => $currentStock,
-                        'requested' => $quantityDispensed,
-                        'allow_negative' => $drug->allow_negative_stock ?? false,
-                    ];
+                if (!$prescription) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Prescription not found or not active',
+                    ], 404);
                 }
-            }
 
-            // ============================================
-            // STEP 2: Process dispensation
-            // ============================================
-            $dispensedItemsData = [];
-            $stockMovements = [];
-            $statusSummary = [
-                'dispensed' => 0,
-                'partially_dispensed' => 0,
-                'not_dispensed' => 0
-            ];
+                $pharmacyId = self::DEPARTMENT_PHARMACY;
+                $patientId  = $prescription->patient_id;
 
-            foreach ($request->items as $item) {
-                $quantityDispensed = (int) $item['quantity_dispensed'];
-                $quantityPrescribed = (int) $item['quantity_prescribed'];
-                $quantityRemaining = $quantityPrescribed - $quantityDispensed;
-
-                $status = $quantityDispensed == 0 ? 'pending'
-                    : ($quantityDispensed < $quantityPrescribed ? 'partially_dispensed' : 'dispensed');
-
-                $statusSummary[$status]++;
-
-                $dispensedItemsData[] = [
+                Log::info('Dispensing started', [
                     'prescription_number' => $prescriptionNumber,
-                    'prescription_id' => $prescription->id,
-                    'drug_id' => $item['drug_id'],
-                    'drug_name' => $item['drug_name'],
-                    'dosage' => $item['dosage'] ?? null,
-                    'frequency' => $item['frequency'] ?? null,
-                    'route' => $item['route'] ?? null,
-                    'quantity_dispensed' => $quantityDispensed,
-                    'quantity_prescribed' => $quantityPrescribed,
-                    'quantity_remaining' => $quantityRemaining,
-                    'status' => $status,
-                    'notes' => $item['notes'] ?? null,
-                    'reason_not_dispensed' => $item['reason_not_dispensed'] ?? null,
-                    'dispensed_by' => auth()->id(),
-                    'dispensed_at' => $dispensedAt,
-                    'created_at' => now(),
-                    'updated_at' => now()
-                ];
+                    'patient_id'          => $patientId,
+                ]);
 
-                // Update pharmacy stock for dispensed items
-                if ($quantityDispensed > 0) {
-                    $stockMovement = $this->updatePharmacyStock(
-                        $item['drug_id'],
-                        $quantityDispensed,
-                        $prescriptionNumber,
-                        $patientId,
-                        $pharmacyDepartmentId,
-                        $stockData[$item['drug_id']]['current_stock'] ?? null
-                    );
-                    if ($stockMovement) {
-                        $stockMovements[] = $stockMovement;
+                $dispensedItemsData = [];
+                $itemsDisplay       = [];
+                $ledgerIds          = [];
+                $statusSummary      = ['dispensed' => 0, 'partially_dispensed' => 0, 'not_dispensed' => 0, 'pending' => 0];
+                $stockData          = [];
+
+                foreach ($request->items as $item) {
+                    $product  = Product::findOrFail($item['drug_id']);
+                    $unitType = $item['unit_type'] ?? 'unit';
+
+                    // Everything below is in BASE UNITS (tablets/capsules)
+                    $qtyDispensed  = $this->toBaseUnits($product, $item['quantity_dispensed'], $unitType);
+                    $qtyPrescribed = $this->toBaseUnits($product, $item['quantity_prescribed'], $unitType);
+                    $qtyRemaining  = max(0, $qtyPrescribed - $qtyDispensed);
+
+                    $status = $qtyDispensed === 0
+                        ? 'pending'
+                        : ($qtyDispensed < $qtyPrescribed ? 'partially_dispensed' : 'dispensed');
+
+                    $statusSummary[$status]++;
+
+                    $ledgerId = null;
+                    if ($qtyDispensed > 0) {
+                        $stockResult = $this->removeFromStock(
+                            drugId: (int) $item['drug_id'],
+                            quantity: $qtyDispensed,
+                            prescriptionNumber: $prescriptionNumber,
+                            prescriptionId: $prescription->id,
+                            patientId: (int) $patientId,
+                            departmentId: $pharmacyId,
+                            batchNumber: $item['batch_number'] ?? null,
+                            expiryDate: $item['expiry_date'] ?? null,
+                            dispensedAt: $dispensedAt,
+                        );
+
+                        $ledgerId    = $stockResult['ledger_id'];
+                        $ledgerIds[] = $ledgerId;
+
+                        $stockData[$item['drug_id']] = [
+                            'drug_name'              => $item['drug_name'],
+                            'pack_size'              => $this->packSize($product),
+                            'balance_before'         => $stockResult['balance_before'],
+                            'balance_after'          => $stockResult['balance_after'],
+                            'balance_before_display' => $this->formatQty($product, $stockResult['balance_before']),
+                            'balance_after_display'  => $this->formatQty($product, $stockResult['balance_after']),
+                            'requested'              => $qtyDispensed,
+                            'requested_display'      => $this->formatQty($product, $qtyDispensed),
+                        ];
                     }
-                }
 
-                Log::info("Dispensing item", [
-                    'drug_id' => $item['drug_id'],
-                    'drug_name' => $item['drug_name'],
-                    'quantity_dispensed' => $quantityDispensed,
-                    'status' => $status
-                ]);
-            }
+                    $dispensedItemsData[] = [
+                        'prescription_number'  => $prescriptionNumber,
+                        'prescription_id'      => $prescription->id,
+                        'drug_id'              => $item['drug_id'],
+                        'drug_name'            => $item['drug_name'],
+                        'dosage'               => $item['dosage'] ?? null,
+                        'frequency'            => $item['frequency'] ?? null,
+                        'route'                => $item['route'] ?? null,
+                        'quantity_dispensed'   => $qtyDispensed,
+                        'quantity_prescribed'  => $qtyPrescribed,
+                        'quantity_remaining'   => $qtyRemaining,
+                        'status'               => $status,
+                        'notes'                => $item['notes'] ?? null,
+                        'reason_not_dispensed' => $item['reason_not_dispensed'] ?? null,
+                        'dispensed_by'         => auth()->id(),
+                        'dispensed_at'         => $dispensedAt,
+                        'created_at'           => now(),
+                        'updated_at'           => now(),
+                    ];
 
-            // Bulk insert dispensed items
-            if (!empty($dispensedItemsData)) {
-                DispensedItem::insert($dispensedItemsData);
-            }
+                    // Display-only (not inserted into the table)
+                    $itemsDisplay[] = [
+                        'drug_id'                    => $item['drug_id'],
+                        'pack_size'                  => $this->packSize($product),
+                        'quantity_dispensed_display' => $this->formatQty($product, $qtyDispensed),
+                        'quantity_prescribed_display'=> $this->formatQty($product, $qtyPrescribed),
+                        'quantity_remaining_display' => $this->formatQty($product, $qtyRemaining),
+                    ];
 
-            // Update prescription status
-            $totalItems = count($request->items);
-            $prescriptionStatus = 'pending';
-
-            if ($statusSummary['dispensed'] == $totalItems) {
-                $prescriptionStatus = 'dispensed';
-            } elseif ($statusSummary['dispensed'] > 0 || $statusSummary['partially_dispensed'] > 0) {
-                $prescriptionStatus = 'partially_dispensed';
-            } elseif ($statusSummary['not_dispensed'] == $totalItems) {
-                $prescriptionStatus = 'not_dispensed';
-            }
-
-            $prescription->update([
-                'status' => $prescriptionStatus,
-                'dispensed_at' => $dispensedAt,
-                'updated_at' => now()
-            ]);
-
-            DB::commit();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Dispensation completed successfully',
-                'data' => [
-                    'prescription_number' => $prescriptionNumber,
-                    'prescription_id' => $prescription->id,
-                    'status' => $prescriptionStatus,
-                    'items' => $dispensedItemsData,
-                    'stock_movements' => $stockMovements,
-                    'stock_data' => $stockData,
-                    'dispensed_at' => $dispensedAt,
-                    'summary' => [
-                        'total_items' => $totalItems,
-                        'fully_dispensed' => $statusSummary['dispensed'],
-                        'partially_dispensed' => $statusSummary['partially_dispensed'],
-                        'not_dispensed' => $statusSummary['not_dispensed']
-                    ]
-                ]
-            ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Dispensation failed: ' . $e->getMessage(), [
-                'prescription_number' => $prescriptionNumber,
-                'trace' => $e->getTraceAsString()
-            ]);
-
-            return response()->json([
-                'success' => false,
-                'message' => 'Dispensation failed: ' . $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Update pharmacy stock when dispensing items
-     */
-    private function updatePharmacyStock($drugId, $quantity, $prescriptionNumber, $patientId, $pharmacyDepartmentId, $currentStock = null)
-    {
-        try {
-            $drug = DrugItem::find($drugId);
-            if (!$drug) {
-                Log::warning("Drug not found for stock update", ['drug_id' => $drugId]);
-                return null;
-            }
-
-            // Get pharmacy stock record
-            $pharmacyStock = DepartmentStock::where('product_id', $drugId)
-                ->where('department_id', $pharmacyDepartmentId)
-                ->first();
-
-            if (!$pharmacyStock) {
-                $pharmacyStock = DepartmentStock::create([
-                    'product_id' => $drugId,
-                    'department_id' => $pharmacyDepartmentId,
-                    'stock_balance' => 0,
-                    'reorder_level' => $drug->reorder_level ?? 10,
-                    'min_stock' => $drug->minimum_stock_level ?? 5,
-                    'max_stock' => $drug->maximum_stock_level ?? 100,
-                    'location' => 'Pharmacy',
-                    'is_active' => 1,
-                ]);
-            }
-
-            $currentBalance = $pharmacyStock->stock_balance ?? 0;
-
-            // Safety check
-            if (!$drug->allow_negative_stock && $currentBalance < $quantity) {
-                throw new \Exception("Insufficient stock for {$drug->drug_name}. Available: {$currentBalance}, Requested: {$quantity}");
-            }
-
-            $newBalance = $currentBalance - $quantity;
-
-            // Update pharmacy stock
-            $pharmacyStock->update([
-                'stock_balance' => $newBalance,
-                'last_updated' => now()
-            ]);
-
-            // Create stock movement in pharmacy movements table
-            $movementId = DB::table('stock_movements_pharmacy')->insertGetId([
-                'movement_uuid' => (string) Str::uuid(),
-                'product_id' => $drugId,
-                'from_department_id' => $pharmacyDepartmentId,
-                'to_department_id' => null,
-                'patient_id' => $patientId,
-                'prescription_number' => $prescriptionNumber,
-                'created_by' => auth()->id(),
-                'type' => 'dispensing',
-                'quantity' => -$quantity,
-                'balance_after' => $newBalance,
-                'reference_number' => 'DISP-' . $prescriptionNumber . '-' . $drugId,
-                'batch_number' => null,
-                'expiry_date' => null,
-                'unit_cost' => $drug->selling_price ?? 0,
-                'total_cost' => ($drug->selling_price ?? 0) * $quantity,
-                'remarks' => "Dispensed via prescription: {$prescriptionNumber}",
-                'moved_at' => now(),
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-
-            Log::info("Pharmacy stock dispensed", [
-                'drug_id' => $drugId,
-                'quantity' => -$quantity,
-                'balance_after' => $newBalance,
-                'prescription_number' => $prescriptionNumber,
-                'patient_id' => $patientId,
-                'movement_id' => $movementId
-            ]);
-
-            return $movementId;
-        } catch (\Exception $e) {
-            Log::error("Failed to update pharmacy stock: " . $e->getMessage(), [
-                'drug_id' => $drugId,
-                'quantity' => $quantity,
-                'prescription_number' => $prescriptionNumber
-            ]);
-            throw $e;
-        }
-    }
-
-    /**
-     * Transfer stock from Bulk Store to Pharmacy
-     */
-    public function transferToPharmacy(Request $request)
-    {
-        $validator = Validator::make($request->all(), [
-            'items' => 'required|array',
-            'items.*.drug_id' => 'required|exists:drug_items,id',
-            'items.*.quantity' => 'required|integer|min:1',
-            'items.*.batch_number' => 'nullable|string',
-            'items.*.expiry_date' => 'nullable|date',
-            'notes' => 'nullable|string',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
-        try {
-            DB::beginTransaction();
-
-            $bulkStoreId = self::DEPARTMENT_BULK_STORE;
-            $pharmacyId = self::DEPARTMENT_PHARMACY;
-            $movements = [];
-            $referenceNumber = 'TRF-' . date('Ymd') . '-' . strtoupper(Str::random(6));
-
-            foreach ($request->items as $item) {
-                // Check bulk store stock
-                $bulkStock = DepartmentStock::where('product_id', $item['drug_id'])
-                    ->where('department_id', $bulkStoreId)
-                    ->first();
-
-                if (!$bulkStock || $bulkStock->stock_balance < $item['quantity']) {
-                    throw new \Exception("Insufficient stock in Bulk Store for drug ID: {$item['drug_id']}");
-                }
-
-                $drug = DrugItem::find($item['drug_id']);
-
-                // Update Bulk Store stock (deduct)
-                $bulkNewBalance = $bulkStock->stock_balance - $item['quantity'];
-                $bulkStock->update([
-                    'stock_balance' => $bulkNewBalance,
-                    'last_updated' => now()
-                ]);
-
-                // Create movement in bulk store movements table
-                $bulkMovementId = DB::table('stock_movements_bulkstore')->insertGetId([
-                    'movement_uuid' => (string) Str::uuid(),
-                    'product_id' => $item['drug_id'],
-                    'from_department_id' => $bulkStoreId,
-                    'to_department_id' => $pharmacyId,
-                    'created_by' => auth()->id(),
-                    'type' => 'transfer',
-                    'quantity' => -$item['quantity'],
-                    'balance_after' => $bulkNewBalance,
-                    'reference_number' => $referenceNumber,
-                    'batch_number' => $item['batch_number'] ?? null,
-                    'expiry_date' => $item['expiry_date'] ?? null,
-                    'unit_cost' => $drug->purchase_price ?? 0,
-                    'remarks' => $request->notes ?? "Transferred to Pharmacy",
-                    'moved_at' => now(),
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
-
-                // Update Pharmacy stock (add)
-                $pharmacyStock = DepartmentStock::where('product_id', $item['drug_id'])
-                    ->where('department_id', $pharmacyId)
-                    ->first();
-
-                if (!$pharmacyStock) {
-                    $pharmacyStock = DepartmentStock::create([
-                        'product_id' => $item['drug_id'],
-                        'department_id' => $pharmacyId,
-                        'stock_balance' => 0,
-                        'reorder_level' => $drug->reorder_level ?? 10,
-                        'min_stock' => $drug->minimum_stock_level ?? 5,
-                        'max_stock' => $drug->maximum_stock_level ?? 100,
-                        'location' => 'Pharmacy',
-                        'is_active' => 1,
+                    Log::info('Dispensing item', [
+                        'drug_id'            => $item['drug_id'],
+                        'drug_name'          => $item['drug_name'],
+                        'unit_type'          => $unitType,
+                        'quantity_dispensed' => $qtyDispensed,
+                        'status'             => $status,
+                        'ledger_id'          => $ledgerId,
                     ]);
                 }
 
-                $pharmacyNewBalance = $pharmacyStock->stock_balance + $item['quantity'];
-                $pharmacyStock->update([
-                    'stock_balance' => $pharmacyNewBalance,
-                    'last_updated' => now()
+                if (!empty($dispensedItemsData)) {
+                    DispensedItem::insert($dispensedItemsData);
+                }
+
+                $totalItems         = count($request->items);
+                $prescriptionStatus = 'pending';
+
+                if ($statusSummary['dispensed'] === $totalItems) {
+                    $prescriptionStatus = 'dispensed';
+                } elseif ($statusSummary['dispensed'] > 0 || $statusSummary['partially_dispensed'] > 0) {
+                    $prescriptionStatus = 'partially_dispensed';
+                } elseif ($statusSummary['not_dispensed'] === $totalItems) {
+                    $prescriptionStatus = 'not_dispensed';
+                }
+
+                $prescription->update([
+                    'status'       => $prescriptionStatus,
+                    'dispensed_at' => $dispensedAt,
+                    'updated_at'   => now(),
                 ]);
 
-                // Create movement in pharmacy movements table
-                $pharmacyMovementId = DB::table('stock_movements_pharmacy')->insertGetId([
-                    'movement_uuid' => (string) Str::uuid(),
-                    'product_id' => $item['drug_id'],
-                    'from_department_id' => $bulkStoreId,
-                    'to_department_id' => $pharmacyId,
-                    'created_by' => auth()->id(),
-                    'type' => 'receiving',
-                    'quantity' => $item['quantity'],
-                    'balance_after' => $pharmacyNewBalance,
-                    'reference_number' => $referenceNumber,
-                    'batch_number' => $item['batch_number'] ?? null,
-                    'expiry_date' => $item['expiry_date'] ?? null,
-                    'unit_cost' => $drug->purchase_price ?? 0,
-                    'total_cost' => ($drug->purchase_price ?? 0) * $item['quantity'],
-                    'remarks' => $request->notes ?? "Received from Bulk Store",
-                    'moved_at' => now(),
-                    'created_at' => now(),
-                    'updated_at' => now(),
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Dispensation completed successfully',
+                    'data'    => [
+                        'prescription_number' => $prescriptionNumber,
+                        'prescription_id'     => $prescription->id,
+                        'status'              => $prescriptionStatus,
+                        'items'               => $dispensedItemsData,
+                        'items_display'       => $itemsDisplay,
+                        'ledger_ids'          => $ledgerIds,
+                        'stock_data'          => $stockData,
+                        'dispensed_at'        => $dispensedAt,
+                        'summary'             => [
+                            'total_items'         => $totalItems,
+                            'fully_dispensed'     => $statusSummary['dispensed'],
+                            'partially_dispensed' => $statusSummary['partially_dispensed'],
+                            'not_dispensed'       => $statusSummary['not_dispensed'],
+                            'pending'             => $statusSummary['pending'],
+                        ],
+                    ],
                 ]);
-
-                $movements[] = [
-                    'bulk_movement_id' => $bulkMovementId,
-                    'pharmacy_movement_id' => $pharmacyMovementId,
-                    'product_id' => $item['drug_id'],
-                    'quantity' => $item['quantity'],
-                ];
-            }
-
-            DB::commit();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Stock transferred successfully',
-                'data' => [
-                    'reference_number' => $referenceNumber,
-                    'movements' => $movements,
-                    'items_transferred' => count($movements)
-                ]
+            });
+        } catch (\Throwable $e) {
+            Log::error('Dispensation failed: ' . $e->getMessage(), [
+                'prescription_number' => $prescriptionNumber,
+                'trace'               => $e->getTraceAsString(),
             ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Transfer failed: ' . $e->getMessage());
+
             return response()->json([
                 'success' => false,
-                'message' => 'Transfer failed: ' . $e->getMessage()
+                'message' => 'Dispensation failed: ' . $e->getMessage(),
             ], 500);
         }
     }
 
-    /**
-     * Check stock availability in pharmacy
-     */
-    public function checkStockAvailability(Request $request)
+    /* ============================================================
+     |  CORE: Remove stock (quantity is in BASE UNITS)
+     ============================================================ */
+    private function removeFromStock(
+        int $drugId,
+        int $quantity,
+        string $prescriptionNumber,
+        int $prescriptionId,
+        int $patientId,
+        int $departmentId,
+        ?string $batchNumber,
+        ?string $expiryDate,
+        string $dispensedAt
+    ): array {
+        if ($quantity <= 0) {
+            throw new \InvalidArgumentException('Quantity to remove must be greater than zero.');
+        }
+
+        $drug = Product::find($drugId);
+        if (!$drug) {
+            throw new \Exception("Drug not found: {$drugId}");
+        }
+
+        $stock = $this->getOrCreateStock($drug, $departmentId, $batchNumber, $expiryDate);
+
+        $balanceBefore = (int) $stock->stock_balance;
+
+        if (!($drug->allow_negative_stock ?? false) && $balanceBefore < $quantity) {
+            throw new \Exception(
+                "Insufficient stock for {$this->drugName($drug, $drugId)}. Available: "
+                . $this->formatQty($drug, $balanceBefore) . " ({$balanceBefore} units), Requested: "
+                . $this->formatQty($drug, $quantity) . " ({$quantity} units)"
+            );
+        }
+
+        $balanceAfter = $balanceBefore - $quantity;
+
+        $stock->update([
+            'stock_balance' => (string) $balanceAfter,
+            'last_updated'  => now(),
+        ]);
+
+        $now         = now();
+        $referenceNo = 'DISP-' . Carbon::parse($dispensedAt)->format('YmdHis')
+                     . '-' . strtoupper(Str::random(4));
+
+        $ledgerId = DB::table('department_stock_ledger')->insertGetId([
+            'reference_no'              => $referenceNo,
+            'department_id'             => $departmentId,
+            'counterpart_department_id' => null,
+            'transaction_type'          => 'dispensation',
+            'transaction_date'          => $dispensedAt,
+            'patient_id'                => $patientId,
+            'prescription_id'           => $prescriptionId,
+            'status'                    => 'posted',
+            'remarks'                   => "Dispensed via prescription: {$prescriptionNumber}",
+            'created_by'                => auth()->id(),
+            'posted_by'                 => auth()->id(),
+            'posted_at'                 => $now,
+            'created_at'                => $now,
+            'updated_at'                => $now,
+        ]);
+
+        DB::table('department_stock_ledger_items')->insert([
+            'ledger_id'        => $ledgerId,
+            'department_id'    => $departmentId,
+            'transaction_type' => 'dispensation',
+            'transaction_date' => $dispensedAt,
+            'drug_id'          => $drugId,
+            'drug_batch_id'    => null,
+            'quantity_in'      => 0,
+            'quantity_out'     => $quantity,
+            'balance_after'    => $balanceAfter,
+            'unit_cost'        => $this->unitCost($drug, $drug->selling_price),
+            'remarks'          => "Dispensed via prescription: {$prescriptionNumber}",
+            'created_at'       => $now,
+            'updated_at'       => $now,
+        ]);
+
+        return [
+            'ledger_id'      => $ledgerId,
+            'balance_before' => $balanceBefore,
+            'balance_after'  => $balanceAfter,
+        ];
+    }
+
+    /* ============================================================
+     |  TRANSFER: Bulk Store -> Pharmacy
+     |  items.*.quantity is in `unit_type` (default 'unit')
+     ============================================================ */
+    public function transferToPharmacy(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'items' => 'required|array',
-            'items.*.drug_id' => 'required|exists:drug_items,id',
-            'items.*.quantity' => 'required|integer|min:1',
+            'items'                => 'required|array|min:1',
+            'items.*.drug_id'      => 'required|exists:products,id',
+            'items.*.quantity'     => 'required|integer|min:1',
+            'items.*.unit_type'    => 'nullable|in:unit,pack',
+            'items.*.batch_number' => 'nullable|string|max:100',
+            'items.*.expiry_date'  => 'nullable|date',
+            'notes'                => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'errors' => $validator->errors()
-            ], 422);
+            return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
         }
 
-        $pharmacyId = self::DEPARTMENT_PHARMACY;
-        $results = [];
+        try {
+            return DB::transaction(function () use ($request) {
+
+                $bulkId  = self::DEPARTMENT_BULK_STORE;
+                $pharmId = self::DEPARTMENT_PHARMACY;
+                $refNo   = 'TRF-' . now()->format('Ymd') . '-' . Str::upper(Str::random(6));
+                $moved   = [];
+
+                foreach ($request->items as $item) {
+                    $drug = Product::findOrFail($item['drug_id']);
+                    $qty  = $this->toBaseUnits($drug, $item['quantity'], $item['unit_type'] ?? 'unit');
+                    $now  = now();
+
+                    // ---- Bulk side ----
+                    $bulkStock  = $this->getOrCreateStock($drug, $bulkId, null, null, 'Bulk Store');
+                    $bulkBefore = (int) $bulkStock->stock_balance;
+
+                    if ($bulkBefore < $qty) {
+                        throw new \Exception(
+                            "Insufficient stock in Bulk Store for {$this->drugName($drug)}. Available: "
+                            . $this->formatQty($drug, $bulkBefore) . " ({$bulkBefore} units), Requested: "
+                            . $this->formatQty($drug, $qty) . " ({$qty} units)"
+                        );
+                    }
+                    $bulkAfter = $bulkBefore - $qty;
+
+                    $bulkStock->update([
+                        'stock_balance' => (string) $bulkAfter,
+                        'last_updated'  => $now,
+                    ]);
+
+                    $bulkLedgerId = DB::table('department_stock_ledger')->insertGetId([
+                        'reference_no'              => $refNo . '-OUT',
+                        'department_id'             => $bulkId,
+                        'counterpart_department_id' => $pharmId,
+                        'transaction_type'          => 'transfer_out',
+                        'transaction_date'          => $now,
+                        'status'                    => 'posted',
+                        'remarks'                   => $request->notes ?? 'Transferred to Pharmacy',
+                        'created_by'                => auth()->id(),
+                        'posted_by'                 => auth()->id(),
+                        'posted_at'                 => $now,
+                        'created_at'                => $now,
+                        'updated_at'                => $now,
+                    ]);
+
+                    DB::table('department_stock_ledger_items')->insert([
+                        'ledger_id'        => $bulkLedgerId,
+                        'department_id'    => $bulkId,
+                        'transaction_type' => 'transfer_out',
+                        'transaction_date' => $now,
+                        'drug_id'          => $drug->id,
+                        'drug_batch_id'    => null,
+                        'quantity_in'      => 0,
+                        'quantity_out'     => $qty,
+                        'balance_after'    => $bulkAfter,
+                        'unit_cost'        => $this->unitCost($drug, $drug->purchase_price),
+                        'remarks'          => 'Transferred to Pharmacy',
+                        'created_at'       => $now,
+                        'updated_at'       => $now,
+                    ]);
+
+                    // ---- Pharmacy side ----
+                    $pharmStock  = $this->getOrCreateStock($drug, $pharmId, $item['batch_number'] ?? null, $item['expiry_date'] ?? null);
+                    $pharmBefore = (int) $pharmStock->stock_balance;
+                    $pharmAfter  = $pharmBefore + $qty;
+
+                    $pharmStock->update([
+                        'stock_balance' => (string) $pharmAfter,
+                        'last_updated'  => $now,
+                    ]);
+
+                    $pharmLedgerId = DB::table('department_stock_ledger')->insertGetId([
+                        'reference_no'              => $refNo . '-IN',
+                        'department_id'             => $pharmId,
+                        'counterpart_department_id' => $bulkId,
+                        'transaction_type'          => 'transfer_in',
+                        'transaction_date'          => $now,
+                        'status'                    => 'posted',
+                        'remarks'                   => $request->notes ?? 'Received from Bulk Store',
+                        'created_by'                => auth()->id(),
+                        'posted_by'                 => auth()->id(),
+                        'posted_at'                 => $now,
+                        'created_at'                => $now,
+                        'updated_at'                => $now,
+                    ]);
+
+                    DB::table('department_stock_ledger_items')->insert([
+                        'ledger_id'        => $pharmLedgerId,
+                        'department_id'    => $pharmId,
+                        'transaction_type' => 'transfer_in',
+                        'transaction_date' => $now,
+                        'drug_id'          => $drug->id,
+                        'drug_batch_id'    => null,
+                        'quantity_in'      => $qty,
+                        'quantity_out'     => 0,
+                        'balance_after'    => $pharmAfter,
+                        'unit_cost'        => $this->unitCost($drug, $drug->purchase_price),
+                        'remarks'          => 'Received from Bulk Store',
+                        'created_at'       => $now,
+                        'updated_at'       => $now,
+                    ]);
+
+                    $moved[] = [
+                        'drug_id'                  => $drug->id,
+                        'pack_size'                => $this->packSize($drug),
+                        'quantity'                 => $qty,
+                        'quantity_display'         => $this->formatQty($drug, $qty),
+                        'bulk_balance'             => $bulkAfter,
+                        'bulk_balance_display'     => $this->formatQty($drug, $bulkAfter),
+                        'pharmacy_balance'         => $pharmAfter,
+                        'pharmacy_balance_display' => $this->formatQty($drug, $pharmAfter),
+                        'bulk_ledger_id'           => $bulkLedgerId,
+                        'pharmacy_ledger_id'       => $pharmLedgerId,
+                    ];
+                }
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Stock transferred successfully',
+                    'data'    => [
+                        'reference_number'  => $refNo,
+                        'items_transferred' => count($moved),
+                        'items'             => $moved,
+                    ],
+                ]);
+            });
+        } catch (\Throwable $e) {
+            Log::error('Transfer failed: ' . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
+            return response()->json(['success' => false, 'message' => 'Transfer failed: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /* ============================================================
+     |  CHECK STOCK  (quantity in `unit_type`, default 'unit')
+     ============================================================ */
+    public function checkStockAvailability(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'items'             => 'required|array',
+            'items.*.drug_id'   => 'required|exists:products,id',
+            'items.*.quantity'  => 'required|integer|min:1',
+            'items.*.unit_type' => 'nullable|in:unit,pack',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
+        }
+
+        $pharmacyId   = self::DEPARTMENT_PHARMACY;
+        $results      = [];
         $allAvailable = true;
 
         foreach ($request->items as $item) {
-            $drug = DrugItem::find($item['drug_id']);
-            $currentStock = DepartmentStock::where('product_id', $item['drug_id'])
-                ->where('department_id', $pharmacyId)
-                ->value('stock_balance') ?? 0;
+            $drug      = Product::find($item['drug_id']);
+            $requested = $this->toBaseUnits($drug, $item['quantity'], $item['unit_type'] ?? 'unit');
 
-            $isAvailable = ($drug->allow_negative_stock ?? false) || $currentStock >= $item['quantity'];
+            $stock = DepartmentStock::where('product_id', $item['drug_id'])
+                ->where('department_id', $pharmacyId)
+                ->value('stock_balance');
+
+            if ($stock === null) {
+                $stock = DB::table('department_stock_ledger_items')
+                    ->where('department_id', $pharmacyId)
+                    ->where('drug_id', $item['drug_id'])
+                    ->selectRaw('COALESCE(SUM(quantity_in),0) - COALESCE(SUM(quantity_out),0) as bal')
+                    ->value('bal');
+            }
+            $stock = (int) $stock;
+
+            $available = ($drug->allow_negative_stock ?? false) || $stock >= $requested;
 
             $results[] = [
-                'drug_id' => $item['drug_id'],
-                'drug_name' => $drug->drug_name ?? 'Unknown',
-                'current_stock' => $currentStock,
-                'requested' => $item['quantity'],
-                'available' => $isAvailable,
-                'allow_negative' => $drug->allow_negative_stock ?? false,
-                'message' => $isAvailable ? 'In stock' : "Insufficient stock. Available: {$currentStock}"
+                'drug_id'           => $item['drug_id'],
+                'drug_name'         => $drug ? $this->drugName($drug, $item['drug_id']) : 'Unknown',
+                'pack_size'         => $this->packSize($drug),
+                'current_stock'     => $stock,
+                'current_display'   => $this->formatQty($drug, $stock),
+                'requested'         => $requested,
+                'requested_display' => $this->formatQty($drug, $requested),
+                'available'         => $available,
+                'allow_negative'    => (bool) ($drug->allow_negative_stock ?? false),
+                'message'           => $available
+                    ? 'In stock'
+                    : 'Insufficient stock. Available: ' . $this->formatQty($drug, $stock) . " ({$stock} units)",
             ];
 
-            if (!$isAvailable) {
-                $allAvailable = false;
-            }
+            if (!$available) $allAvailable = false;
         }
 
         return response()->json([
             'success' => true,
-            'data' => [
-                'all_available' => $allAvailable,
-                'items' => $results
-            ]
+            'data'    => ['all_available' => $allAvailable, 'items' => $results],
         ]);
     }
 
-    /**
-     * Get pharmacy stock movements for a product
-     */
+    /* ============================================================
+     |  MOVEMENTS (read from canonical ledger)
+     |  NOTE: these join `drug_items`. If ledger drug_id holds product ids
+     |  that don't exist in drug_items, change the join to `products`.
+     ============================================================ */
     public function getPharmacyMovements(Request $request)
     {
-        $productId = $request->input('product_id');
-        $patientId = $request->input('patient_id');
-        $prescriptionNumber = $request->input('prescription_number');
-
-        $query = DB::table('stock_movements_pharmacy')
-            ->join('drug_items', 'stock_movements_pharmacy.product_id', '=', 'drug_items.id')
-            ->leftJoin('patients', 'stock_movements_pharmacy.patient_id', '=', 'patients.id')
+        $query = DB::table('department_stock_ledger_items as i')
+            ->join('department_stock_ledger as h', 'h.id', '=', 'i.ledger_id')
+            ->join('drug_items as d', 'd.id', '=', 'i.drug_id')
+            ->leftJoin('patients as p', 'p.id', '=', 'h.patient_id')
+            ->where('i.department_id', self::DEPARTMENT_PHARMACY)
             ->select(
-                'stock_movements_pharmacy.*',
-                'drug_items.drug_name',
-                'drug_items.drug_code',
-                'patients.name as patient_name'
+                'i.id',
+                'i.ledger_id',
+                'i.transaction_type',
+                'i.transaction_date',
+                'i.drug_id',
+                'd.drug_name',
+                'd.drug_code',
+                'i.quantity_in',
+                'i.quantity_out',
+                'i.balance_after',
+                'i.unit_cost',
+                'h.reference_no',
+                'h.patient_id',
+                'p.name as patient_name',
+                'h.prescription_id',
+                'h.remarks',
+                'h.status'
             )
-            ->orderBy('moved_at', 'desc');
+            ->orderByDesc('i.transaction_date');
 
-        if ($productId) {
-            $query->where('stock_movements_pharmacy.product_id', $productId);
+        if ($pid = $request->input('product_id')) {
+            $query->where('i.drug_id', $pid);
+        }
+        if ($pid = $request->input('patient_id')) {
+            $query->where('h.patient_id', $pid);
+        }
+        if ($pn = $request->input('prescription_number')) {
+            $query->whereExists(function ($q) use ($pn) {
+                $q->select(DB::raw(1))->from('prescriptions')
+                    ->whereColumn('prescriptions.id', 'h.prescription_id')
+                    ->where('prescriptions.prescription_number', $pn);
+            });
         }
 
-        if ($patientId) {
-            $query->where('stock_movements_pharmacy.patient_id', $patientId);
-        }
-
-        if ($prescriptionNumber) {
-            $query->where('stock_movements_pharmacy.prescription_number', $prescriptionNumber);
-        }
-
-        $movements = $query->paginate(50);
-
-        return response()->json([
-            'success' => true,
-            'data' => $movements
-        ]);
+        return response()->json(['success' => true, 'data' => $query->paginate(50)]);
     }
 
-    /**
-     * Get bulk store stock movements for a product
-     */
     public function getBulkStoreMovements(Request $request)
     {
-        $productId = $request->input('product_id');
-
-        $query = DB::table('stock_movements_bulkstore')
-            ->join('drug_items', 'stock_movements_bulkstore.product_id', '=', 'drug_items.id')
+        $query = DB::table('department_stock_ledger_items as i')
+            ->join('department_stock_ledger as h', 'h.id', '=', 'i.ledger_id')
+            ->join('drug_items as d', 'd.id', '=', 'i.drug_id')
+            ->where('i.department_id', self::DEPARTMENT_BULK_STORE)
             ->select(
-                'stock_movements_bulkstore.*',
-                'drug_items.drug_name',
-                'drug_items.drug_code'
+                'i.id',
+                'i.ledger_id',
+                'i.transaction_type',
+                'i.transaction_date',
+                'i.drug_id',
+                'd.drug_name',
+                'd.drug_code',
+                'i.quantity_in',
+                'i.quantity_out',
+                'i.balance_after',
+                'i.unit_cost',
+                'h.reference_no',
+                'h.remarks',
+                'h.status'
             )
-            ->orderBy('moved_at', 'desc');
+            ->orderByDesc('i.transaction_date');
 
-        if ($productId) {
-            $query->where('stock_movements_bulkstore.product_id', $productId);
+        if ($pid = $request->input('product_id')) {
+            $query->where('i.drug_id', $pid);
         }
 
-        $movements = $query->paginate(50);
-
-        return response()->json([
-            'success' => true,
-            'data' => $movements
-        ]);
+        return response()->json(['success' => true, 'data' => $query->paginate(50)]);
     }
 
-    /**
-     * Get current pharmacy stock summary
-     */
+    /* ============================================================
+     |  STOCK SUMMARY
+     ============================================================ */
     public function getPharmacyStockSummary()
     {
         $pharmacyId = self::DEPARTMENT_PHARMACY;
@@ -595,193 +739,218 @@ class DispensingController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => [
-                'total_products' => $stock->count(),
-                'total_value' => $stock->sum(function ($s) {
-                    return $s->stock_balance * ($s->product->selling_price ?? 0);
-                }),
-                'low_stock_count' => $stock->filter(function ($s) {
-                    return $s->stock_balance <= $s->reorder_level && $s->stock_balance > 0;
-                })->count(),
-                'out_of_stock_count' => $stock->filter(function ($s) {
-                    return $s->stock_balance <= 0;
-                })->count(),
+            'data'    => [
+                'total_products'     => $stock->count(),
+                'total_value'        => $stock->sum(
+                    fn($s) => (int) $s->stock_balance * $this->unitCost($s->product, $s->product->selling_price ?? 0)
+                ),
+                'low_stock_count'    => $stock->filter(fn($s) => (int) $s->stock_balance <= $s->reorder_level && (int) $s->stock_balance > 0)->count(),
+                'out_of_stock_count' => $stock->filter(fn($s) => (int) $s->stock_balance <= 0)->count(),
                 'items' => $stock->map(function ($s) {
+                    $bal   = (int) $s->stock_balance;
+                    $split = $this->splitPacks($s->product, $bal);
+
                     return [
-                        'product_id' => $s->product_id,
-                        'product_name' => $s->product->drug_name,
-                        'product_code' => $s->product->drug_code,
-                        'stock_balance' => $s->stock_balance,
-                        'reorder_level' => $s->reorder_level,
-                        'status' => $s->stock_balance <= 0 ? 'Out of Stock'
-                            : ($s->stock_balance <= $s->reorder_level ? 'Low Stock' : 'Adequate'),
+                        'product_id'    => $s->product_id,
+                        'product_name'  => $s->product ? $this->drugName($s->product, $s->product_id) : null,
+                        'product_code'  => $s->product->drug_code ?? null,
+                        'pack_size'     => $this->packSize($s->product),
+                        'stock_balance' => $bal,                                   // base units
+                        'stock_display' => $this->formatQty($s->product, $bal),    // "17 packs + 6 loose"
+                        'packs'         => $split['packs'],
+                        'loose'         => $split['loose'],
+                        'reorder_level' => $s->reorder_level,                      // base units
+                        'status'        => $bal <= 0
+                            ? 'Out of Stock'
+                            : ($bal <= $s->reorder_level ? 'Low Stock' : 'Adequate'),
                     ];
-                })
-            ]
+                }),
+            ],
         ]);
     }
 
-    /**
-     * Get dispensation history for a prescription
-     */
+    /* ============================================================
+     |  HISTORY
+     ============================================================ */
     public function getDispensationHistory(int $patientId, string $prescriptionNumber)
     {
-        $dispensedItems = DispensedItem::where('prescription_number', $prescriptionNumber)
-            ->orderBy('dispensed_at', 'desc')
-            ->orderBy('id', 'desc')
+        $items = DispensedItem::where('prescription_number', $prescriptionNumber)
+            ->orderByDesc('dispensed_at')
+            ->orderByDesc('id')
             ->get();
 
-        $groupedBySession = $dispensedItems->groupBy(function ($item) {
-            return $item->dispensed_at->format('Y-m-d H:i:s');
+        // Attach pack-friendly display strings
+        $products = Product::whereIn('id', $items->pluck('drug_id')->unique())->get()->keyBy('id');
+
+        $items->each(function ($i) use ($products) {
+            $p = $products->get($i->drug_id);
+            if ($p) {
+                $i->pack_size                  = $this->packSize($p);
+                $i->quantity_dispensed_display = $this->formatQty($p, (int) $i->quantity_dispensed);
+                $i->quantity_prescribed_display = $this->formatQty($p, (int) $i->quantity_prescribed);
+                $i->quantity_remaining_display = $this->formatQty($p, (int) $i->quantity_remaining);
+            }
         });
 
         return response()->json([
             'success' => true,
-            'data' => [
-                'all_items' => $dispensedItems,
-                'grouped_by_session' => $groupedBySession,
-                'summary' => [
-                    'total_items_dispensed' => $dispensedItems->where('status', 'dispensed')->count(),
-                    'total_items_partially_dispensed' => $dispensedItems->where('status', 'partially_dispensed')->count(),
-                    'total_items_not_dispensed' => $dispensedItems->where('status', 'not_dispensed')->count(),
-                    'total_quantity_dispensed' => $dispensedItems->sum('quantity_dispensed'),
-                    'total_quantity_prescribed' => $dispensedItems->sum('quantity_prescribed')
-                ]
-            ]
+            'data'    => [
+                'all_items'          => $items,
+                'grouped_by_session' => $items->groupBy(fn($i) => $i->dispensed_at->format('Y-m-d H:i:s')),
+                'summary'            => [
+                    'total_items_dispensed'           => $items->where('status', 'dispensed')->count(),
+                    'total_items_partially_dispensed' => $items->where('status', 'partially_dispensed')->count(),
+                    'total_items_not_dispensed'       => $items->where('status', 'not_dispensed')->count(),
+                    'total_quantity_dispensed'        => $items->sum('quantity_dispensed'),
+                    'total_quantity_prescribed'       => $items->sum('quantity_prescribed'),
+                ],
+            ],
         ]);
     }
 
-    /**
-     * Get dispensed items by prescription
-     */
     public function getDispensedItems(int $patientId, string $prescriptionNumber)
     {
-        $dispensedItems = DispensedItem::where('prescription_number', $prescriptionNumber)
-            ->orderBy('created_at', 'desc')
+        $items = DispensedItem::where('prescription_number', $prescriptionNumber)
+            ->orderByDesc('created_at')
             ->get();
 
-        return response()->json([
-            'success' => true,
-            'data' => $dispensedItems
-        ]);
+        $products = Product::whereIn('id', $items->pluck('drug_id')->unique())->get()->keyBy('id');
+
+        $items->each(function ($i) use ($products) {
+            $p = $products->get($i->drug_id);
+            if ($p) {
+                $i->pack_size                  = $this->packSize($p);
+                $i->quantity_dispensed_display = $this->formatQty($p, (int) $i->quantity_dispensed);
+                $i->quantity_remaining_display = $this->formatQty($p, (int) $i->quantity_remaining);
+            }
+        });
+
+        return response()->json(['success' => true, 'data' => $items]);
     }
 
-    /**
-     * Reverse a dispensation (undo dispensing)
-     */
+    /* ============================================================
+     |  REVERSE — compensating ledger entry (base units)
+     ============================================================ */
     public function reverseDispensation(Request $request, string $prescriptionNumber)
     {
         $validator = Validator::make($request->all(), [
             'reason' => 'required|string|max:500',
         ]);
-
         if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'errors' => $validator->errors()
-            ], 422);
+            return response()->json(['success' => false, 'errors' => $validator->errors()], 422);
         }
 
         try {
-            DB::beginTransaction();
+            return DB::transaction(function () use ($request, $prescriptionNumber) {
 
-            $prescription = Prescription::where('prescription_number', $prescriptionNumber)
-                ->whereIn('status', ['dispensed', 'partially_dispensed'])
-                ->first();
+                $prescription = Prescription::where('prescription_number', $prescriptionNumber)
+                    ->whereIn('status', ['dispensed', 'partially_dispensed'])
+                    ->lockForUpdate()
+                    ->first();
 
-            if (!$prescription) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Prescription not found or not dispensed'
-                ], 404);
-            }
-
-            $dispensedItems = DispensedItem::where('prescription_number', $prescriptionNumber)
-                ->where('status', '!=', 'not_dispensed')
-                ->get();
-
-            if ($dispensedItems->isEmpty()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'No dispensed items found to reverse'
-                ], 404);
-            }
-
-            $pharmacyId = self::DEPARTMENT_PHARMACY;
-
-            foreach ($dispensedItems as $item) {
-                if ($item->quantity_dispensed > 0) {
-                    $drug = DrugItem::find($item->drug_id);
-                    if ($drug) {
-                        // Get pharmacy stock
-                        $pharmacyStock = DepartmentStock::where('product_id', $item->drug_id)
-                            ->where('department_id', $pharmacyId)
-                            ->first();
-
-                        if ($pharmacyStock) {
-                            $newBalance = $pharmacyStock->stock_balance + $item->quantity_dispensed;
-                            $pharmacyStock->update([
-                                'stock_balance' => $newBalance,
-                                'last_updated' => now()
-                            ]);
-
-                            // Create reversal movement in pharmacy table
-                            DB::table('stock_movements_pharmacy')->insert([
-                                'movement_uuid' => (string) Str::uuid(),
-                                'product_id' => $item->drug_id,
-                                'from_department_id' => null,
-                                'to_department_id' => $pharmacyId,
-                                'patient_id' => $prescription->patient_id,
-                                'prescription_number' => $prescriptionNumber,
-                                'created_by' => auth()->id(),
-                                'type' => 'adjustment',
-                                'quantity' => $item->quantity_dispensed,
-                                'balance_after' => $newBalance,
-                                'reference_number' => 'REV-' . $prescriptionNumber . '-' . $item->drug_id,
-                                'unit_cost' => $drug->selling_price ?? 0,
-                                'total_cost' => ($drug->selling_price ?? 0) * $item->quantity_dispensed,
-                                'remarks' => "Reversed dispensation: {$request->reason}",
-                                'moved_at' => now(),
-                                'created_at' => now(),
-                                'updated_at' => now(),
-                            ]);
-                        }
-                    }
+                if (!$prescription) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Prescription not found or not dispensed',
+                    ], 404);
                 }
-            }
 
-            DispensedItem::where('prescription_number', $prescriptionNumber)
-                ->update([
-                    'status' => 'reversed',
-                    'notes' => DB::raw("CONCAT(COALESCE(notes, ''), ' | Reversed: {$request->reason}')"),
-                    'updated_at' => now()
+                $dispensedItems = DispensedItem::where('prescription_number', $prescriptionNumber)
+                    ->whereNotIn('status', ['not_dispensed', 'reversed'])
+                    ->get();
+
+                if ($dispensedItems->isEmpty()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'No dispensed items found to reverse',
+                    ], 404);
+                }
+
+                $pharmacyId  = self::DEPARTMENT_PHARMACY;
+                $now         = now();
+                $referenceNo = 'REV-' . $now->format('YmdHis') . '-' . Str::upper(Str::random(4));
+
+                $ledgerId = DB::table('department_stock_ledger')->insertGetId([
+                    'reference_no'              => $referenceNo,
+                    'department_id'             => $pharmacyId,
+                    'counterpart_department_id' => null,
+                    'transaction_type'          => 'adjustment_in',
+                    'transaction_date'          => $now,
+                    'patient_id'                => $prescription->patient_id,
+                    'prescription_id'           => $prescription->id,
+                    'status'                    => 'posted',
+                    'remarks'                   => "Reversed dispensation: {$request->reason}",
+                    'created_by'                => auth()->id(),
+                    'posted_by'                 => auth()->id(),
+                    'posted_at'                 => $now,
+                    'created_at'                => $now,
+                    'updated_at'                => $now,
                 ]);
 
-            $prescription->update([
-                'status' => 'active',
-                'updated_at' => now()
-            ]);
+                foreach ($dispensedItems as $item) {
+                    $qty = (int) $item->quantity_dispensed; // already base units
+                    if ($qty <= 0) continue;
 
-            DB::commit();
+                    $drug = Product::find($item->drug_id);
+                    if (!$drug) {
+                        throw new \Exception("Drug not found for reversal: {$item->drug_id}");
+                    }
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Dispensation reversed successfully',
-                'data' => [
-                    'prescription_number' => $prescriptionNumber,
-                    'prescription_id' => $prescription->id,
-                    'items_reversed' => $dispensedItems->count()
-                ]
-            ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Reverse dispensation failed: ' . $e->getMessage(), [
-                'prescription_number' => $prescriptionNumber
-            ]);
+                    $stock  = $this->getOrCreateStock($drug, $pharmacyId);
+                    $before = (int) $stock->stock_balance;
+                    $after  = $before + $qty;
 
+                    $stock->update([
+                        'stock_balance' => (string) $after,
+                        'last_updated'  => $now,
+                    ]);
+
+                    DB::table('department_stock_ledger_items')->insert([
+                        'ledger_id'        => $ledgerId,
+                        'department_id'    => $pharmacyId,
+                        'transaction_type' => 'adjustment_in',
+                        'transaction_date' => $now,
+                        'drug_id'          => $item->drug_id,
+                        'drug_batch_id'    => null,
+                        'quantity_in'      => $qty,
+                        'quantity_out'     => 0,
+                        'balance_after'    => $after,
+                        'unit_cost'        => $this->unitCost($drug, $drug->selling_price),
+                        'remarks'          => "Reversal: {$request->reason}",
+                        'created_at'       => $now,
+                        'updated_at'       => $now,
+                    ]);
+                }
+
+                DispensedItem::where('prescription_number', $prescriptionNumber)
+                    ->whereNotIn('status', ['not_dispensed', 'reversed'])
+                    ->update([
+                        'status'     => 'reversed',
+                        'notes'      => DB::raw('CONCAT(COALESCE(notes,\'\'), ' . DB::getPdo()->quote(' | Reversed: ' . $request->reason) . ')'),
+                        'updated_at' => $now,
+                    ]);
+
+                $prescription->update(['status' => 'active', 'updated_at' => $now]);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Dispensation reversed successfully',
+                    'data'    => [
+                        'prescription_number' => $prescriptionNumber,
+                        'prescription_id'     => $prescription->id,
+                        'items_reversed'      => $dispensedItems->count(),
+                        'ledger_id'           => $ledgerId,
+                    ],
+                ]);
+            });
+        } catch (\Throwable $e) {
+            Log::error('Reverse failed: ' . $e->getMessage(), [
+                'prescription_number' => $prescriptionNumber,
+                'trace'               => $e->getTraceAsString(),
+            ]);
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to reverse dispensation: ' . $e->getMessage()
+                'message' => 'Failed to reverse dispensation: ' . $e->getMessage(),
             ], 500);
         }
     }

@@ -10,12 +10,14 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 use App\Models\UserProfile;
+use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
 {
 
+
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable, TwoFactorAuthenticatable;
+    use HasFactory, Notifiable, TwoFactorAuthenticatable, HasApiTokens;
 
     /**
      * The attributes that are mass assignable.
@@ -63,11 +65,10 @@ class User extends Authenticatable
     public function profile()
     {
         return $this->hasOne(UserProfile::class, 'user_id');
-    } 
-
-    public function department(){
-        return $this->belongsTo(UserProfile::class,'deaprtment_id');
     }
 
-    
+    public function department()
+    {
+        return $this->belongsTo(UserProfile::class, 'deaprtment_id');
+    }
 }

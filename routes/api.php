@@ -160,7 +160,7 @@ Route::prefix('v1')->group(function () {
         Route::delete('/suppliers/{id}', [SupplierController::class, 'deleteSupplier']);
         Route::patch('/suppliers/{id}/toggle', [SupplierController::class, 'toggleSupplierStatus']);
         Route::post('/receive-stock', [PharmacyController::class, 'receiveStock'])->name('pharmacy.receive-stock');
-        Route::post('/order-products',[OrderController::class,'orderStock']);
+        Route::post('/order-products', [OrderController::class, 'orderStock']);
     });
 
     /*
@@ -355,6 +355,7 @@ Route::prefix('v1/appointments')->group(function () {
 */
 
 require __DIR__ . '/bulk_store_api.php';
+require __DIR__ . '/appointments/api.php';
 require __DIR__ . '/notifications_api.php';
 require __DIR__ . '/prescriptions.php';
 require __DIR__ . '/nurses_api.php';
@@ -363,3 +364,9 @@ require __DIR__ . '/vitals.php';
 require __DIR__ . '/drug.php';
 require __DIR__ . '/lab.php';
 require __DIR__ . '/admin_api.php';
+require __DIR__ . '/radiology_api.php';
+require __DIR__ . '/pharmacy_api.php';
+require __DIR__ . '/maternal_api.php';
+require __DIR__ . '/theatre_api.php';
+require __DIR__ . '/dental_api.php';
+require __DIR__ . '/ophthalmology_api.php';

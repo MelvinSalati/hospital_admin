@@ -1,4 +1,5 @@
 import JsBarcode from 'jsbarcode';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     X,
     Check,
@@ -16,7 +17,7 @@ import {
     Calendar,
     QrCode,
 } from 'lucide-react';
-import React, { useState, useEffect, useRef } from 'react';
+
 
 // ============================================================================
 // Types
@@ -27,7 +28,8 @@ interface AddDrugModalProps {
     onClose: () => void;
     onAddDrug: (drugData: DrugFormData) => void;
     searchQuery?: string;
-}
+} 
+
 
 interface DrugFormData {
     drug_code: string;
@@ -54,6 +56,156 @@ interface DrugFormData {
 // ============================================================================
 // Sub-components
 // ============================================================================
+
+interface Category {
+    id: number;
+    name: string;
+}
+
+const MAX_VISIBLE = 50;
+
+const CategoryCombobox: React.FC<{
+    label: string;
+    categories: Category[];
+    selectedId: number | null;
+    onSelect: (category: Category | null) => void;
+    icon?: React.ReactNode;
+    placeholder?: string;
+}> = ({ label, categories, selectedId, onSelect, icon, placeholder }) => {
+    const [query, setQuery] = useState('');
+    const [debouncedQuery, setDebouncedQuery] = useState('');
+    const [open, setOpen] = useState(false);
+    const [highlight, setHighlight] = useState(0);
+    const wrapperRef = useRef<HTMLDivElement>(null);
+
+    const selected = categories.find((c) => c.id === selectedId) ?? null;
+
+    // Debounce so filtering doesn't run on every keystroke
+    useEffect(() => {
+        const t = setTimeout(() => setDebouncedQuery(query), 150);
+        return () => clearTimeout(t);
+    }, [query]);
+
+    // Filter first, then cap what gets rendered
+    const { visible, totalMatches } = useMemo(() => {
+        const q = debouncedQuery.trim().toLowerCase();
+        const matches = q
+            ? categories.filter((c) => c.name.toLowerCase().includes(q))
+            : categories;
+        return {
+            visible: matches.slice(0, MAX_VISIBLE),
+            totalMatches: matches.length,
+        };
+    }, [categories, debouncedQuery]);
+
+    useEffect(() => setHighlight(0), [debouncedQuery]);
+
+    // Close on outside click
+    useEffect(() => {
+        const handler = (e: MouseEvent) => {
+            if (
+                wrapperRef.current &&
+                !wrapperRef.current.contains(e.target as Node)
+            ) {
+                setOpen(false);
+                setQuery('');
+            }
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
+
+    const choose = (c: Category | null) => {
+        onSelect(c);
+        setOpen(false);
+        setQuery('');
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            setOpen(true);
+            setHighlight((h) => Math.min(h + 1, visible.length - 1));
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setHighlight((h) => Math.max(h - 1, 0));
+        } else if (e.key === 'Enter' && open && visible[highlight]) {
+            e.preventDefault(); // don't submit the form
+            choose(visible[highlight]);
+        } else if (e.key === 'Escape' && open) {
+            e.stopPropagation(); // don't close the whole modal
+            setOpen(false);
+        }
+    };
+
+    return (
+        <div ref={wrapperRef} className="relative space-y-0.5">
+            <label className="flex items-center gap-1.5 text-xs font-medium tracking-wide text-slate-700 dark:text-slate-300">
+                {icon}
+                {label}
+            </label>
+            <div className="relative">
+                <input
+                    type="text"
+                    value={open ? query : (selected?.name ?? '')}
+                    onChange={(e) => {
+                        setQuery(e.target.value);
+                        setOpen(true);
+                    }}
+                    onFocus={() => setOpen(true)}
+                    onKeyDown={handleKeyDown}
+                    placeholder={placeholder ?? 'Search category...'}
+                    autoComplete="off"
+                    className="h-9 w-full rounded-lg border border-slate-200 px-3 pr-8 text-sm focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                />
+                {selected && (
+                    <button
+                        type="button"
+                        onClick={() => choose(null)}
+                        className="absolute top-1/2 right-2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                        aria-label="Clear selection"
+                    >
+                        <X className="h-4 w-4" />
+                    </button>
+                )}
+            </div>
+
+            {open && (
+                <ul className="absolute z-50 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-800">
+                    {visible.length === 0 ? (
+                        <li className="px-3 py-2 text-xs text-slate-500">
+                            No matching categories
+                        </li>
+                    ) : (
+                        visible.map((c, i) => (
+                            <li
+                                key={c.id}
+                                onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    choose(c);
+                                }}
+                                onMouseEnter={() => setHighlight(i)}
+                                className={`cursor-pointer px-3 py-1.5 text-sm text-slate-700 dark:text-slate-200 ${
+                                    i === highlight
+                                        ? 'bg-blue-50 dark:bg-slate-700'
+                                        : ''
+                                } ${c.id === selectedId ? 'font-semibold' : ''}`}
+                            >
+                                {c.name}
+                            </li>
+                        ))
+                    )}
+                    {totalMatches > MAX_VISIBLE && (
+                        <li className="border-t border-slate-100 px-3 py-1.5 text-xs text-slate-400 dark:border-slate-700">
+                            Showing {MAX_VISIBLE} of {totalMatches}. Keep typing
+                            to narrow down.
+                        </li>
+                    )}
+                </ul>
+            )}
+        </div>
+    );
+};
 
 const FormField: React.FC<{
     label: string;
@@ -147,6 +299,7 @@ export default function AddDrugModal({
     onClose,
     onAddDrug,
     searchQuery = '',
+    categories
 }: AddDrugModalProps) {
     const [formData, setFormData] = useState<DrugFormData>({
         drug_code: '',
@@ -474,16 +627,23 @@ export default function AddDrugModal({
                                             Classification
                                         </h4>
                                         <div className="space-y-3">
-                                            <FormField
+                                            <CategoryCombobox
                                                 label="Therapeutic Class"
-                                                name="therapeutic_class"
-                                                value={
-                                                    formData.therapeutic_class
+                                                categories={categories}
+                                                selectedId={
+                                                    formData.category_id
                                                 }
-                                                onChange={handleChange}
-                                                placeholder="e.g., Antibiotic"
                                                 icon={
                                                     <ClipboardList className="h-4 w-4" />
+                                                }
+                                                onSelect={(c) =>
+                                                    setFormData((prev) => ({
+                                                        ...prev,
+                                                        category_id:
+                                                            c?.id ?? null,
+                                                        therapeutic_class:
+                                                            c?.name ?? '',
+                                                    }))
                                                 }
                                             />
                                             <FormField

@@ -1,65 +1,25 @@
 // resources/js/pages/admin/dashboard/AdminDashboard.tsx
 
-import { Head, usePage } from '@inertiajs/react';
+import { usePage } from '@inertiajs/react';
 import {
     RefreshCw,
     Download,
     DollarSign,
     Wallet,
-    TrendingUp,
-    TrendingDown,
     PiggyBank,
-    Package,
-    AlertTriangle,
-    XCircle,
     Clock,
-    ShoppingCart,
     FileText,
-    User,
-    Boxes,
-    Undo,
     Shield,
-    Activity,
-    CheckCircle,
-    Check,
     Users,
     UserPlus,
-    UserCheck,
-    UserMinus,
-    ChevronRight,
-    Send,
+    CreditCard,
+    Search,
 } from 'lucide-react';
-import React, { useState, useEffect, useCallback } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { toast } from 'react-hot-toast';
-import {
-    AreaChart,
-    Area,
-    BarChart,
-    Bar,
-    PieChart as RePieChart,
-    Pie,
-    Cell,
-    XAxis,
-    YAxis,
-    CartesianGrid,
-    Tooltip,
-    Legend,
-    ResponsiveContainer,
-} from 'recharts';
-import Container from '@/components/container';
 import PageHeader from '@/components/PageHeader';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import {
-    Card,
-    CardContent,
-    CardDescription,
-    CardFooter,
-    CardHeader,
-    CardTitle,
-} from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
 import {
     Table,
     TableBody,
@@ -69,86 +29,24 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import AppLayout from '@/layouts/app-layout';
-import Http from '@/utils/Http';
-
 
 // ============================================
 // TYPES
 // ============================================
 
-interface BudgetLine {
-    id: number;
-    code: string;
-    name: string;
-    department: string;
-    allocated: number;
-    utilized: number;
-    remaining: number;
-    percentage_used: number;
-    status: 'on_track' | 'warning' | 'critical' | 'exceeded';
-}
-
-interface UserStats {
-    total: number;
-    active: number;
-    inactive: number;
-    new_this_month: number;
-    by_role: {
-        role: string;
-        count: number;
-    }[];
-    recent_users: {
-        id: number;
-        name: string;
-        email: string;
-        role: string;
-        avatar: string;
-        joined_at: string;
-        status: 'active' | 'inactive';
-    }[];
-}
-
 interface DashboardStats {
     // Financial
     total_budget: number;
-    total_allocated: number;
     total_utilized: number;
     total_remaining: number;
     budget_utilization_percentage: number;
-    monthly_spending: { month: string; amount: number }[];
-    budget_by_department: {
-        department: string;
-        allocated: number;
-        utilized: number;
-        remaining: number;
-    }[];
-    budget_lines: BudgetLine[];
-    top_budget_lines: BudgetLine[];
-
-    // Revenue
-    total_revenue: number;
-    monthly_revenue: { month: string; amount: number }[];
-    revenue_by_source: { source: string; amount: number }[];
-
-    // Inventory
-    total_items: number;
-    low_stock_items: number;
-    out_of_stock_items: number;
-    total_value: number;
-    inventory_by_category: { category: string; count: number }[];
 
     // Approvals
     pending_approvals: number;
     pending_purchase_orders: number;
     pending_requisitions: number;
-    pending_adjustments: number;
-    pending_refunds: number;
-    pending_user_requests: number;
 
-    // Users
-    user_stats: UserStats;
-
-    // Recent Activity
+    // Recent activity
     recent_activities: {
         id: number;
         type: string;
@@ -156,619 +54,1049 @@ interface DashboardStats {
         status: string;
         date: string;
         user: string;
-        user_avatar?: string;
+    }[];
+
+    // Services / payments / staff / claims / registrations
+    top_services: { name: string; count: number }[];
+    payment_methods: { name: string; count: number }[];
+    staff_by_department: { name: string; count: number }[];
+    insurance_claims: {
+        id: number;
+        provider: string;
+        patient: string;
+        amount: number;
+        status: 'accepted' | 'pending' | 'rejected';
+        date: string;
+    }[];
+    new_registrations: {
+        id: number;
+        name: string;
+        patientCode: string;
+        date: string;
+        status: 'active' | 'inactive';
     }[];
 }
 
 // ============================================
-// COMPACT STAT CARD COMPONENT
+// CONSTANTS + HELPERS
 // ============================================
 
-interface CompactStatCardProps {
-    title: string;
-    value: string | number;
-    subtitle?: string;
-    icon: React.ReactNode;
-    color: string;
-    trend?: {
-        value: number;
-        isUp: boolean;
+const CHART_COLORS = [
+    '#2563eb',
+    '#16a34a',
+    '#d97706',
+    '#9333ea',
+    '#dc2626',
+    '#0891b2',
+    '#64748b',
+] as const;
+
+const cx = (...classes: Array<string | false | null | undefined>) =>
+    classes.filter(Boolean).join(' ');
+
+const asArray = <T,>(value: T[] | null | undefined): T[] =>
+    Array.isArray(value) ? value : [];
+
+const formatCurrency = (amount: number) =>
+    new Intl.NumberFormat('en-ZM', {
+        style: 'currency',
+        currency: 'ZMW',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+    }).format(amount ?? 0);
+
+const formatCompactCurrency = (amount: number) =>
+    new Intl.NumberFormat('en-ZM', {
+        style: 'currency',
+        currency: 'ZMW',
+        notation: 'compact',
+        maximumFractionDigits: 1,
+    }).format(amount ?? 0);
+
+const formatRelative = (iso: string) => {
+    const time = new Date(iso).getTime();
+    if (Number.isNaN(time)) return '—';
+    const minutes = Math.max(0, Math.floor((Date.now() - time) / 60_000));
+    if (minutes < 1) return 'now';
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 30) return `${days}d ago`;
+    return new Date(time).toLocaleDateString('en-GB', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+    });
+};
+
+const getInitials = (name: string) =>
+    (name ?? '')
+        .split(' ')
+        .filter(Boolean)
+        .map((n) => n[0])
+        .join('')
+        .toUpperCase()
+        .slice(0, 2);
+
+const getStatusColor = (status: string) => {
+    const colors: Record<string, string> = {
+        approved: 'bg-green-100 text-green-800',
+        accepted: 'bg-green-100 text-green-800',
+        pending: 'bg-yellow-100 text-yellow-800',
+        rejected: 'bg-red-100 text-red-800',
+        completed: 'bg-blue-100 text-blue-800',
+        sent: 'bg-indigo-100 text-indigo-800',
+        active: 'bg-green-100 text-green-800',
+        inactive: 'bg-slate-100 text-slate-600',
     };
-    progress?: number;
-    progressColor?: string;
-    onClick?: () => void;
-    size?: 'sm' | 'xs';
+    return colors[status] || 'bg-slate-100 text-slate-600';
+};
+
+// Shared type scale so every card feels consistent at any viewport
+const T = {
+    cardTitle: 'text-sm font-semibold leading-tight text-slate-800',
+    cardSub: 'text-xs text-slate-500',
+    body: 'text-sm text-slate-700',
+    meta: 'text-xs text-slate-500',
+    badge: 'rounded-full px-2 py-0.5 text-xs font-medium capitalize',
+    count: 'text-lg font-semibold text-slate-900 tabular-nums',
+} as const;
+
+// ============================================
+// DUMMY PROPS
+// ============================================
+
+const ago = (minutes: number) =>
+    new Date(Date.now() - minutes * 60_000).toISOString();
+
+export const DUMMY_PROPS: DashboardStats = {
+    total_budget: 12500000,
+    total_utilized: 8750000,
+    total_remaining: 2500000,
+    budget_utilization_percentage: 77.8,
+    pending_approvals: 28,
+    pending_purchase_orders: 12,
+    pending_requisitions: 8,
+    recent_activities: [
+        {
+            id: 1,
+            type: 'Purchase Order',
+            description: 'PO #PO-2024-0045 approved for Medical Supplies',
+            status: 'approved',
+            date: ago(35),
+            user: 'John Mwansa',
+        },
+        {
+            id: 2,
+            type: 'Requisition',
+            description:
+                'Requisition #REQ-2024-0023 rejected - Budget exceeded',
+            status: 'rejected',
+            date: ago(90),
+            user: 'Sarah Phiri',
+        },
+        {
+            id: 3,
+            type: 'Stock Adjustment',
+            description: 'Stock adjustment completed for Surgical Gloves',
+            status: 'completed',
+            date: ago(180),
+            user: 'David Banda',
+        },
+        {
+            id: 4,
+            type: 'User Request',
+            description: 'New user account requested for IT Department',
+            status: 'pending',
+            date: ago(260),
+            user: 'Grace Mwape',
+        },
+        {
+            id: 5,
+            type: 'Refund',
+            description: 'Refund #REF-2024-0012 processed for damaged items',
+            status: 'approved',
+            date: ago(1300),
+            user: 'Peter Zulu',
+        },
+        {
+            id: 6,
+            type: 'Purchase Order',
+            description: 'PO #PO-2024-0046 sent to supplier',
+            status: 'sent',
+            date: ago(1500),
+            user: 'John Mwansa',
+        },
+        {
+            id: 7,
+            type: 'Requisition',
+            description: 'Requisition #REQ-2024-0024 awaiting approval',
+            status: 'pending',
+            date: ago(1700),
+            user: 'Sarah Phiri',
+        },
+    ],
+    top_services: [
+        { name: 'Outpatient Consultation', count: 412 },
+        { name: 'Laboratory Tests', count: 286 },
+        { name: 'Pharmacy Dispensing', count: 214 },
+        { name: 'Imaging / X-Ray', count: 98 },
+    ],
+    payment_methods: [
+        { name: 'Cash', count: 182 },
+        { name: 'Mobile Money', count: 140 },
+        { name: 'Insurance', count: 98 },
+        { name: 'Card', count: 44 },
+        { name: 'Other', count: 22 },
+    ],
+    staff_by_department: [
+        { name: 'Medical', count: 58 },
+        { name: 'Nursing', count: 42 },
+        { name: 'Pharmacy', count: 18 },
+        { name: 'Finance', count: 14 },
+        { name: 'Admin', count: 12 },
+        { name: 'IT', count: 12 },
+    ],
+    insurance_claims: [
+        {
+            id: 1,
+            provider: 'Madison Health',
+            patient: 'PHA-0412',
+            amount: 4200,
+            status: 'accepted',
+            date: ago(45),
+        },
+        {
+            id: 2,
+            provider: 'NHIMA',
+            patient: 'PHA-0418',
+            amount: 1850,
+            status: 'pending',
+            date: ago(120),
+        },
+        {
+            id: 3,
+            provider: 'ZamLife',
+            patient: 'PHA-0420',
+            amount: 7600,
+            status: 'accepted',
+            date: ago(300),
+        },
+        {
+            id: 4,
+            provider: 'Madison Health',
+            patient: 'PHA-0421',
+            amount: 2100,
+            status: 'rejected',
+            date: ago(1400),
+        },
+        {
+            id: 5,
+            provider: 'NHIMA',
+            patient: 'PHA-0423',
+            amount: 980,
+            status: 'pending',
+            date: ago(1600),
+        },
+    ],
+    new_registrations: [
+        {
+            id: 1,
+            name: 'Chanda Mulenga',
+            patientCode: 'PHA-0501',
+            date: ago(50),
+            status: 'active',
+        },
+        {
+            id: 2,
+            name: 'Mutale Bwalya',
+            patientCode: 'PHA-0502',
+            date: ago(110),
+            status: 'active',
+        },
+        {
+            id: 3,
+            name: 'Thandiwe Nkomo',
+            patientCode: 'PHA-0503',
+            date: ago(1000),
+            status: 'active',
+        },
+        {
+            id: 4,
+            name: 'Kabwe Musonda',
+            patientCode: 'PHA-0504',
+            date: ago(1200),
+            status: 'active',
+        },
+        {
+            id: 5,
+            name: 'Lungile Phiri',
+            patientCode: 'PHA-0505',
+            date: ago(2400),
+            status: 'inactive',
+        },
+    ],
+};
+
+// ============================================
+// STAT CARD
+// ============================================
+
+interface StatCardProps {
+    label: string;
+    value: string | number;
+    fullValue?: string;
+    icon: ReactNode;
+    tone: string;
+    hint?: string;
 }
 
-const CompactStatCard: React.FC<CompactStatCardProps> = ({
-    title,
+function StatCard({
+    label,
     value,
-    subtitle,
+    fullValue,
     icon,
-    color,
-    trend,
-    progress,
-    progressColor,
-    onClick,
-    size = 'sm',
-}) => {
-    const padding = size === 'xs' ? 'p-2' : 'p-3';
-    const valueSize = size === 'xs' ? 'text-base' : 'text-lg';
-    const iconSize = size === 'xs' ? 'h-3.5 w-3.5' : 'h-4 w-4';
-    const iconPadding = size === 'xs' ? 'p-1.5' : 'p-2';
+    tone,
+    hint,
+}: StatCardProps) {
+    return (
+        <div
+            className={cx(
+                'flex min-w-0 items-center justify-between gap-2 rounded-lg px-3 py-3 shadow-sm',
+                tone,
+            )}
+        >
+            <div className="min-w-0">
+                <p className="truncate text-xs font-medium text-slate-600 sm:text-sm">
+                    {label}
+                </p>
+                <p
+                    title={fullValue}
+                    className="truncate text-lg leading-tight font-semibold text-slate-900 tabular-nums sm:text-xl xl:text-2xl"
+                >
+                    {typeof value === 'number' ? value.toLocaleString() : value}
+                </p>
+                {hint && (
+                    <p className="truncate text-xs text-slate-500">{hint}</p>
+                )}
+            </div>
+            <div className="shrink-0 rounded-md bg-white/60 p-1.5 text-slate-700">
+                {icon}
+            </div>
+        </div>
+    );
+}
+
+// ============================================
+// DOUGHNUT (self-contained SVG)
+// ============================================
+
+const DOUGHNUT_RADIUS = 40;
+const DOUGHNUT_CIRCUMFERENCE = 2 * Math.PI * DOUGHNUT_RADIUS;
+
+interface DoughnutDatum {
+    name: string;
+    count: number;
+    color?: string;
+}
+
+interface DoughnutProps {
+    data: DoughnutDatum[];
+    unit?: string;
+    className?: string;
+    activeIndex?: number | null;
+    onActiveChange?: (index: number | null) => void;
+}
+
+function Doughnut({
+    data,
+    unit = 'total',
+    className = 'max-w-[10rem]',
+    activeIndex: activeIndexProp,
+    onActiveChange,
+}: DoughnutProps) {
+    const [innerActive, setInnerActive] = useState<number | null>(null);
+    const activeIndex =
+        activeIndexProp !== undefined ? activeIndexProp : innerActive;
+
+    const setActiveIndex = (index: number | null) => {
+        setInnerActive(index);
+        onActiveChange?.(index);
+    };
+
+    const total = useMemo(
+        () => data.reduce((sum, d) => sum + d.count, 0),
+        [data],
+    );
+
+    const segments = useMemo(() => {
+        let offset = 0;
+        return data.map((d, i) => {
+            const length = total
+                ? (d.count / total) * DOUGHNUT_CIRCUMFERENCE
+                : 0;
+            const segment = {
+                name: d.name,
+                count: d.count,
+                length,
+                offset,
+                color: d.color ?? CHART_COLORS[i % CHART_COLORS.length],
+            };
+            offset += length;
+            return segment;
+        });
+    }, [data, total]);
+
+    const active = activeIndex === null ? null : segments[activeIndex];
+    const caption = active ? active.name : unit;
+    const centerValue = active ? active.count : total;
+    const centerText =
+        centerValue >= 1_000_000
+            ? `${(centerValue / 1_000_000).toFixed(1)}M`
+            : centerValue.toLocaleString();
 
     return (
-        <Card
-            className={`cursor-pointer border border-slate-200 transition-all hover:shadow-md dark:border-slate-700 ${padding}`}
-            onClick={onClick}
-        >
-            <CardContent className="p-0">
-                <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                            <p className="truncate text-[10px] font-medium tracking-wide text-slate-500 uppercase dark:text-slate-400">
-                                {title}
-                            </p>
-                            {trend && (
-                                <div
-                                    className={`flex items-center gap-0.5 text-[9px] font-medium ${trend.isUp ? 'text-emerald-600' : 'text-red-600'}`}
-                                >
-                                    {trend.isUp ? (
-                                        <TrendingUp className="h-2.5 w-2.5" />
-                                    ) : (
-                                        <TrendingDown className="h-2.5 w-2.5" />
-                                    )}
-                                    <span>{Math.abs(trend.value)}%</span>
-                                </div>
-                            )}
-                        </div>
-                        <p
-                            className={`font-bold text-slate-800 dark:text-slate-200 ${valueSize}`}
-                        >
-                            {value}
-                        </p>
-                        {subtitle && (
-                            <p className="truncate text-[9px] text-slate-400 dark:text-slate-500">
-                                {subtitle}
-                            </p>
-                        )}
-                        {progress !== undefined && (
-                            <div className="mt-1">
-                                <Progress
-                                    value={progress}
-                                    className="h-1"
-                                    indicatorClassName={
-                                        progressColor || 'bg-blue-500'
-                                    }
-                                />
-                            </div>
-                        )}
-                    </div>
-                    <div
-                        className={`flex-shrink-0 rounded-full ${color} ${iconPadding}`}
-                    >
-                        <div className={iconSize}>{icon}</div>
-                    </div>
-                </div>
-            </CardContent>
-        </Card>
+        <div className="flex h-full items-center justify-center">
+            <svg
+                viewBox="0 0 100 100"
+                className={cx('aspect-square w-full', className)}
+                role="group"
+                aria-label={`Breakdown, ${total} ${unit} in total`}
+            >
+                <g transform="rotate(-90 50 50)">
+                    <circle
+                        cx="50"
+                        cy="50"
+                        r={DOUGHNUT_RADIUS}
+                        fill="none"
+                        stroke="#e2e8f0"
+                        strokeWidth="14"
+                    />
+                    {segments.map((s, i) => (
+                        <circle
+                            key={s.name}
+                            cx="50"
+                            cy="50"
+                            r={DOUGHNUT_RADIUS}
+                            fill="none"
+                            stroke={s.color}
+                            strokeWidth={activeIndex === i ? 16 : 14}
+                            strokeDasharray={`${s.length} ${DOUGHNUT_CIRCUMFERENCE - s.length}`}
+                            strokeDashoffset={-s.offset}
+                            opacity={
+                                activeIndex === null || activeIndex === i
+                                    ? 1
+                                    : 0.35
+                            }
+                            tabIndex={0}
+                            aria-label={`${s.name}: ${s.count}`}
+                            className="cursor-pointer transition-[opacity,stroke-width] duration-150 outline-none"
+                            onMouseEnter={() => setActiveIndex(i)}
+                            onMouseLeave={() => setActiveIndex(null)}
+                            onFocus={() => setActiveIndex(i)}
+                            onBlur={() => setActiveIndex(null)}
+                            onClick={() =>
+                                setActiveIndex(activeIndex === i ? null : i)
+                            }
+                        />
+                    ))}
+                </g>
+                <text
+                    x="50"
+                    y="49"
+                    textAnchor="middle"
+                    fontSize="13"
+                    fontWeight="600"
+                    className="pointer-events-none fill-slate-900"
+                >
+                    {centerText}
+                </text>
+                <text
+                    x="50"
+                    y="60"
+                    textAnchor="middle"
+                    fontSize={caption.length > 14 ? 5.5 : 7}
+                    className="pointer-events-none fill-slate-500"
+                >
+                    {caption}
+                </text>
+            </svg>
+        </div>
     );
-};
+}
+
+// ============================================
+// SHARED CARD HEADER
+// ============================================
+
+function CardHeader({
+    icon,
+    title,
+    subtitle,
+    count,
+}: {
+    icon: ReactNode;
+    title: string;
+    subtitle?: string;
+    count?: number | string;
+}) {
+    return (
+        <header className="flex items-start justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2.5">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-slate-100 text-slate-600">
+                    {icon}
+                </span>
+                <div className="min-w-0">
+                    <h3 className={cx(T.cardTitle, 'truncate')}>{title}</h3>
+                    {subtitle && <p className={T.cardSub}>{subtitle}</p>}
+                </div>
+            </div>
+            {count !== undefined && <span className={T.count}>{count}</span>}
+        </header>
+    );
+}
+
+// ============================================
+// DOUGHNUT CARD
+// ============================================
+
+function DoughnutCard({
+    title,
+    subtitle,
+    icon,
+    data,
+    unit,
+}: {
+    title: string;
+    subtitle?: string;
+    icon: ReactNode;
+    data: DoughnutDatum[];
+    unit: string;
+}) {
+    const [activeIndex, setActiveIndex] = useState<number | null>(null);
+    const total = data.reduce((sum, d) => sum + d.count, 0);
+
+    return (
+        <section className="flex min-w-0 flex-col rounded-xl bg-white p-4 shadow-sm">
+            <CardHeader
+                icon={icon}
+                title={title}
+                subtitle={subtitle}
+                count={total}
+            />
+
+            <div className="mt-4 flex flex-1 flex-col items-center justify-center gap-4">
+                <div className="w-full max-w-[10rem]">
+                    <Doughnut
+                        data={data}
+                        unit={unit}
+                        className="max-w-[10rem]"
+                        activeIndex={activeIndex}
+                        onActiveChange={setActiveIndex}
+                    />
+                </div>
+                <ul className="w-full space-y-0.5">
+                    {data.map((d, i) => (
+                        <li
+                            key={d.name}
+                            onMouseEnter={() => setActiveIndex(i)}
+                            onMouseLeave={() => setActiveIndex(null)}
+                            className={cx(
+                                'flex items-center justify-between gap-3 rounded-md px-2 py-1 text-sm transition-colors',
+                                activeIndex === i && 'bg-slate-50',
+                            )}
+                        >
+                            <span className="flex min-w-0 items-center gap-2 text-slate-600">
+                                <span
+                                    className="h-2.5 w-2.5 shrink-0 rounded-full"
+                                    style={{
+                                        backgroundColor:
+                                            d.color ??
+                                            CHART_COLORS[
+                                                i % CHART_COLORS.length
+                                            ],
+                                    }}
+                                />
+                                <span className="truncate">{d.name}</span>
+                            </span>
+                            <span className="font-medium text-slate-800 tabular-nums">
+                                {d.count}
+                            </span>
+                        </li>
+                    ))}
+                </ul>
+            </div>
+        </section>
+    );
+}
+
+// ============================================
+// HORIZONTAL PROGRESS LIST
+// ============================================
+
+function ProgressList({ data }: { data: { name: string; count: number }[] }) {
+    const max = Math.max(...data.map((d) => d.count), 1);
+    return (
+        <ul className="flex h-full flex-col justify-center gap-3">
+            {data.map((item, i) => (
+                <li key={item.name}>
+                    <div className="mb-1 flex items-center justify-between gap-2 text-sm">
+                        <span className="truncate font-medium text-slate-700">
+                            {item.name}
+                        </span>
+                        <span className="text-slate-500 tabular-nums">
+                            {item.count}
+                        </span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-slate-200">
+                        <div
+                            className="h-full rounded-full transition-[width] duration-500"
+                            style={{
+                                width: `${(item.count / max) * 100}%`,
+                                backgroundColor:
+                                    CHART_COLORS[i % CHART_COLORS.length],
+                            }}
+                        />
+                    </div>
+                </li>
+            ))}
+        </ul>
+    );
+}
+
+// ============================================
+// RECENT ACTIVITY CARD (with inline filter)
+// ============================================
+
+type ActivityFilter =
+    | 'all'
+    | 'approved'
+    | 'pending'
+    | 'rejected'
+    | 'completed'
+    | 'sent';
+
+const ACTIVITY_FILTERS: Array<{ id: ActivityFilter; label: string }> = [
+    { id: 'all', label: 'All' },
+    { id: 'approved', label: 'Approved' },
+    { id: 'pending', label: 'Pending' },
+    { id: 'rejected', label: 'Rejected' },
+    { id: 'completed', label: 'Completed' },
+    { id: 'sent', label: 'Sent' },
+];
+
+function FilterChip({
+    label,
+    count,
+    active,
+    onClick,
+}: {
+    label: string;
+    count: number;
+    active: boolean;
+    onClick: () => void;
+}) {
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            aria-pressed={active}
+            className={cx(
+                'rounded-full px-3 py-1 text-xs font-medium transition-colors',
+                active
+                    ? 'bg-slate-800 text-white'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200',
+            )}
+        >
+            {label} ({count})
+        </button>
+    );
+}
+
+function RecentActivityCard({
+    activities,
+}: {
+    activities: DashboardStats['recent_activities'];
+}) {
+    const [filter, setFilter] = useState<ActivityFilter>('all');
+    const [query, setQuery] = useState('');
+
+    const all = useMemo(() => asArray(activities), [activities]);
+
+    const countFor = (id: ActivityFilter) =>
+        id === 'all' ? all.length : all.filter((a) => a.status === id).length;
+
+    const visible = useMemo(() => {
+        const q = query.trim().toLowerCase();
+        return all.filter((a) => {
+            const matchesFilter = filter === 'all' || a.status === filter;
+            const matchesQuery =
+                !q ||
+                [a.type, a.description, a.user, a.status].some((text) =>
+                    (text ?? '').toLowerCase().includes(q),
+                );
+            return matchesFilter && matchesQuery;
+        });
+    }, [all, filter, query]);
+
+    return (
+        <section className="min-w-0 rounded-xl bg-white p-4 shadow-sm">
+            <header className="mb-3 flex items-start justify-between gap-2">
+                <h2 className={T.cardTitle}>Recent approvals &amp; activity</h2>
+                <span className={T.count}>{visible.length}</span>
+            </header>
+
+            <div className="mb-3 space-y-2.5">
+                <div className="relative">
+                    <Search
+                        aria-hidden="true"
+                        className="pointer-events-none absolute top-1/2 left-2.5 h-4 w-4 -translate-y-1/2 text-slate-400"
+                    />
+                    <input
+                        type="search"
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        placeholder="Search type, description or user"
+                        aria-label="Search activity"
+                        className="w-full rounded-md bg-slate-100 py-2 pr-2 pl-8 text-sm text-slate-700 placeholder:text-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-200 focus:outline-none"
+                    />
+                </div>
+
+                <div className="flex flex-wrap gap-1.5">
+                    {ACTIVITY_FILTERS.map(({ id, label }) => (
+                        <FilterChip
+                            key={id}
+                            label={label}
+                            count={countFor(id)}
+                            active={filter === id}
+                            onClick={() => setFilter(id)}
+                        />
+                    ))}
+                </div>
+            </div>
+
+            <Table className="text-sm">
+                <TableHeader>
+                    <TableRow>
+                        <TableHead>Type</TableHead>
+                        <TableHead className="hidden md:table-cell">
+                            Description
+                        </TableHead>
+                        <TableHead className="hidden sm:table-cell">
+                            User
+                        </TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">When</TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    {visible.slice(0, 5).map((a) => (
+                        <TableRow key={a.id}>
+                            <TableCell className="font-medium whitespace-nowrap">
+                                {a.type}
+                            </TableCell>
+                            <TableCell className="hidden max-w-xs truncate text-slate-600 md:table-cell">
+                                {a.description}
+                            </TableCell>
+                            <TableCell className="hidden text-slate-600 sm:table-cell">
+                                {a.user}
+                            </TableCell>
+                            <TableCell>
+                                <span
+                                    className={cx(
+                                        T.badge,
+                                        getStatusColor(a.status),
+                                    )}
+                                >
+                                    {a.status}
+                                </span>
+                            </TableCell>
+                            <TableCell className="text-right text-xs whitespace-nowrap text-slate-400 tabular-nums">
+                                {formatRelative(a.date)}
+                            </TableCell>
+                        </TableRow>
+                    ))}
+                    {visible.length === 0 && (
+                        <TableRow>
+                            <TableCell
+                                colSpan={5}
+                                className="py-8 text-center text-sm text-slate-500"
+                            >
+                                {query.trim()
+                                    ? 'No activity matches your search.'
+                                    : 'No activity for this filter.'}
+                            </TableCell>
+                        </TableRow>
+                    )}
+                </TableBody>
+            </Table>
+        </section>
+    );
+}
+
+// ============================================
+// INSURANCE CLAIMS CARD
+// ============================================
+
+function InsuranceClaimsCard({
+    claims,
+}: {
+    claims: DashboardStats['insurance_claims'];
+}) {
+    return (
+        <section className="flex min-w-0 flex-col rounded-xl bg-white p-4 shadow-sm">
+            <CardHeader
+                icon={<FileText className="h-4 w-4" />}
+                title="Insurance claims"
+                subtitle="Accepted & pending"
+                count={claims.length}
+            />
+
+            <ul className="-mx-2 mt-2 max-h-80 space-y-0.5 overflow-y-auto">
+                {claims.map((c) => (
+                    <li
+                        key={c.id}
+                        className="flex items-start gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-slate-50"
+                    >
+                        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500">
+                            <FileText className="h-4 w-4" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                            <div className="flex items-baseline justify-between gap-2">
+                                <p className="truncate text-sm font-medium text-slate-800">
+                                    {c.provider}
+                                </p>
+                                <span className="shrink-0 text-xs text-slate-400 tabular-nums">
+                                    {formatRelative(c.date)}
+                                </span>
+                            </div>
+                            <div className="mt-0.5 flex items-center justify-between gap-2">
+                                <p className={cx(T.meta, 'truncate')}>
+                                    {c.patient} · {formatCurrency(c.amount)}
+                                </p>
+                                <span
+                                    className={cx(
+                                        T.badge,
+                                        'shrink-0',
+                                        getStatusColor(c.status),
+                                    )}
+                                >
+                                    {c.status}
+                                </span>
+                            </div>
+                        </div>
+                    </li>
+                ))}
+                {claims.length === 0 && (
+                    <li className="flex flex-col items-center justify-center py-10 text-center">
+                        <FileText className="mb-1.5 h-6 w-6 text-slate-300" />
+                        <p className="text-sm text-slate-500">
+                            No claims this week.
+                        </p>
+                    </li>
+                )}
+            </ul>
+        </section>
+    );
+}
+
+// ============================================
+// NEW REGISTRATIONS CARD
+// ============================================
+
+function NewRegistrationsCard({
+    registrations,
+}: {
+    registrations: DashboardStats['new_registrations'];
+}) {
+    return (
+        <section className="flex min-w-0 flex-col rounded-xl bg-white p-4 shadow-sm">
+            <CardHeader
+                icon={<UserPlus className="h-4 w-4" />}
+                title="New patient registrations"
+                subtitle="Latest sign-ups"
+                count={registrations.length}
+            />
+
+            <ul className="-mx-2 mt-2 max-h-80 space-y-0.5 overflow-y-auto">
+                {registrations.map((r) => (
+                    <li
+                        key={r.id}
+                        className="flex items-center gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-slate-50"
+                    >
+                        <Avatar className="h-8 w-8 shrink-0">
+                            <AvatarFallback className="bg-slate-100 text-xs text-slate-600">
+                                {getInitials(r.name)}
+                            </AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0 flex-1">
+                            <div className="flex items-baseline justify-between gap-2">
+                                <p className="truncate text-sm font-medium text-slate-800">
+                                    {r.name}
+                                </p>
+                                <span className="shrink-0 text-xs text-slate-400 tabular-nums">
+                                    {formatRelative(r.date)}
+                                </span>
+                            </div>
+                            <p className={cx(T.meta, 'mt-0.5')}>
+                                {r.patientCode}
+                            </p>
+                        </div>
+                        <span
+                            className={cx(
+                                T.badge,
+                                'shrink-0',
+                                getStatusColor(r.status),
+                            )}
+                        >
+                            {r.status}
+                        </span>
+                    </li>
+                ))}
+                {registrations.length === 0 && (
+                    <li className="flex flex-col items-center justify-center py-10 text-center">
+                        <UserPlus className="mb-1.5 h-6 w-6 text-slate-300" />
+                        <p className="text-sm text-slate-500">
+                            No new registrations.
+                        </p>
+                    </li>
+                )}
+            </ul>
+        </section>
+    );
+}
 
 // ============================================
 // MAIN COMPONENT
 // ============================================
 
-export default function AdminDashboard() {
-    const { props } = usePage();
-    const [loading, setLoading] = useState(false);
-    const [selectedTimeRange, setSelectedTimeRange] = useState('month');
+export default function AdminDashboard(props: Partial<DashboardStats> = {}) {
+    const { props: pageProps } = usePage();
+    const [refreshing, setRefreshing] = useState(false);
 
-    // ============================================
-    // DUMMY DATA - Matches expected Inertia props structure
-    // ============================================
+    // Backend may pass data via Inertia props OR directly. Missing/null keys fall back to dummy data.
+    const merged: DashboardStats = useMemo(() => {
+        const incoming = {
+            ...(pageProps as Partial<DashboardStats>),
+            ...props,
+        } as Record<string, unknown>;
+        const cleaned = Object.fromEntries(
+            Object.entries(incoming).filter(
+                ([, v]) => v !== null && v !== undefined,
+            ),
+        );
+        return { ...DUMMY_PROPS, ...cleaned } as DashboardStats;
+    }, [pageProps, props]);
 
-    const dummyStats: DashboardStats = {
-        // Financial
-        total_budget: 12500000,
-        total_allocated: 11250000,
-        total_utilized: 8750000,
-        total_remaining: 2500000,
-        budget_utilization_percentage: 77.8,
-        monthly_spending: [
-            { month: 'Jan', amount: 650000 },
-            { month: 'Feb', amount: 720000 },
-            { month: 'Mar', amount: 890000 },
-            { month: 'Apr', amount: 780000 },
-            { month: 'May', amount: 920000 },
-            { month: 'Jun', amount: 1050000 },
-            { month: 'Jul', amount: 980000 },
-            { month: 'Aug', amount: 1120000 },
-            { month: 'Sep', amount: 860000 },
-            { month: 'Oct', amount: 940000 },
-            { month: 'Nov', amount: 1100000 },
-            { month: 'Dec', amount: 1250000 },
-        ],
-        budget_by_department: [
+    const statCards = useMemo(
+        () => [
             {
-                department: 'Medical',
-                allocated: 4500000,
-                utilized: 3800000,
-                remaining: 700000,
+                label: 'Total budget',
+                value: formatCompactCurrency(merged.total_budget),
+                fullValue: formatCurrency(merged.total_budget),
+                tone: 'bg-blue-100',
+                icon: <Wallet className="h-4 w-4" />,
+                hint: `${merged.budget_utilization_percentage}% utilised`,
             },
             {
-                department: 'Operations',
-                allocated: 3200000,
-                utilized: 2800000,
-                remaining: 400000,
+                label: 'Utilised',
+                value: formatCompactCurrency(merged.total_utilized),
+                fullValue: formatCurrency(merged.total_utilized),
+                tone: 'bg-green-100',
+                icon: <PiggyBank className="h-4 w-4" />,
+                hint: `${merged.budget_utilization_percentage}% of budget`,
             },
             {
-                department: 'Finance',
-                allocated: 1500000,
-                utilized: 1100000,
-                remaining: 400000,
+                label: 'Remaining',
+                value: formatCompactCurrency(merged.total_remaining),
+                fullValue: formatCurrency(merged.total_remaining),
+                tone: 'bg-yellow-100',
+                icon: <DollarSign className="h-4 w-4" />,
+                hint: 'Available balance',
             },
             {
-                department: 'Human Resources',
-                allocated: 1200000,
-                utilized: 950000,
-                remaining: 250000,
-            },
-            {
-                department: 'IT',
-                allocated: 1000000,
-                utilized: 750000,
-                remaining: 250000,
-            },
-            {
-                department: 'Procurement',
-                allocated: 800000,
-                utilized: 620000,
-                remaining: 180000,
-            },
-            {
-                department: 'Logistics',
-                allocated: 300000,
-                utilized: 240000,
-                remaining: 60000,
+                label: 'Pending approvals',
+                value: merged.pending_approvals,
+                tone: 'bg-purple-100',
+                icon: <Clock className="h-4 w-4" />,
+                hint: `${merged.pending_purchase_orders} POs • ${merged.pending_requisitions} reqs`,
             },
         ],
-        budget_lines: [
+        [merged],
+    );
+
+    const paymentMethods = useMemo<DoughnutDatum[]>(
+        () =>
+            asArray(merged.payment_methods).map((p, i) => ({
+                ...p,
+                color: CHART_COLORS[i % CHART_COLORS.length],
+            })),
+        [merged.payment_methods],
+    );
+
+    const staffByDept = useMemo<DoughnutDatum[]>(
+        () =>
+            asArray(merged.staff_by_department).map((d, i) => ({
+                ...d,
+                color: CHART_COLORS[i % CHART_COLORS.length],
+            })),
+        [merged.staff_by_department],
+    );
+
+    const topServices = useMemo(
+        () =>
+            [...asArray(merged.top_services)].sort((a, b) => b.count - a.count),
+        [merged.top_services],
+    );
+
+    const insuranceClaims = useMemo(
+        () =>
+            [...asArray(merged.insurance_claims)]
+                .filter(
+                    (c) => c.status === 'accepted' || c.status === 'pending',
+                )
+                .sort(
+                    (a, b) =>
+                        new Date(b.date).getTime() - new Date(a.date).getTime(),
+                ),
+        [merged.insurance_claims],
+    );
+
+    const newRegistrations = useMemo(
+        () =>
+            [...asArray(merged.new_registrations)].sort(
+                (a, b) =>
+                    new Date(b.date).getTime() - new Date(a.date).getTime(),
+            ),
+        [merged.new_registrations],
+    );
+
+    const budgetDoughnut = useMemo<DoughnutDatum[]>(
+        () => [
             {
-                id: 1,
-                code: 'BUD-MED-001',
-                name: 'Medical Supplies',
-                department: 'Medical',
-                allocated: 2500000,
-                utilized: 2100000,
-                remaining: 400000,
-                percentage_used: 84,
-                status: 'warning',
+                name: 'Utilised',
+                count: merged.total_utilized,
+                color: '#16a34a',
             },
             {
-                id: 2,
-                code: 'BUD-MED-002',
-                name: 'Surgical Equipment',
-                department: 'Medical',
-                allocated: 2000000,
-                utilized: 1700000,
-                remaining: 300000,
-                percentage_used: 85,
-                status: 'warning',
-            },
-            {
-                id: 3,
-                code: 'BUD-OPS-001',
-                name: 'Operational Expenses',
-                department: 'Operations',
-                allocated: 1800000,
-                utilized: 1600000,
-                remaining: 200000,
-                percentage_used: 88.9,
-                status: 'critical',
-            },
-            {
-                id: 4,
-                code: 'BUD-OPS-002',
-                name: 'Facility Maintenance',
-                department: 'Operations',
-                allocated: 1400000,
-                utilized: 1200000,
-                remaining: 200000,
-                percentage_used: 85.7,
-                status: 'warning',
-            },
-            {
-                id: 5,
-                code: 'BUD-FIN-001',
-                name: 'Financial Services',
-                department: 'Finance',
-                allocated: 1500000,
-                utilized: 1100000,
-                remaining: 400000,
-                percentage_used: 73.3,
-                status: 'on_track',
-            },
-            {
-                id: 6,
-                code: 'BUD-HR-001',
-                name: 'Staff Development',
-                department: 'Human Resources',
-                allocated: 800000,
-                utilized: 600000,
-                remaining: 200000,
-                percentage_used: 75,
-                status: 'on_track',
-            },
-            {
-                id: 7,
-                code: 'BUD-HR-002',
-                name: 'Recruitment',
-                department: 'Human Resources',
-                allocated: 400000,
-                utilized: 350000,
-                remaining: 50000,
-                percentage_used: 87.5,
-                status: 'critical',
-            },
-            {
-                id: 8,
-                code: 'BUD-IT-001',
-                name: 'IT Infrastructure',
-                department: 'IT',
-                allocated: 600000,
-                utilized: 450000,
-                remaining: 150000,
-                percentage_used: 75,
-                status: 'on_track',
-            },
-            {
-                id: 9,
-                code: 'BUD-IT-002',
-                name: 'Software Licenses',
-                department: 'IT',
-                allocated: 400000,
-                utilized: 300000,
-                remaining: 100000,
-                percentage_used: 75,
-                status: 'on_track',
-            },
-            {
-                id: 10,
-                code: 'BUD-PROC-001',
-                name: 'Procurement Services',
-                department: 'Procurement',
-                allocated: 800000,
-                utilized: 620000,
-                remaining: 180000,
-                percentage_used: 77.5,
-                status: 'on_track',
+                name: 'Remaining',
+                count: merged.total_remaining,
+                color: '#f59e0b',
             },
         ],
-        top_budget_lines: [
-            {
-                id: 1,
-                code: 'BUD-MED-001',
-                name: 'Medical Supplies',
-                department: 'Medical',
-                allocated: 2500000,
-                utilized: 2100000,
-                remaining: 400000,
-                percentage_used: 84,
-                status: 'warning',
-            },
-            {
-                id: 2,
-                code: 'BUD-MED-002',
-                name: 'Surgical Equipment',
-                department: 'Medical',
-                allocated: 2000000,
-                utilized: 1700000,
-                remaining: 300000,
-                percentage_used: 85,
-                status: 'warning',
-            },
-            {
-                id: 3,
-                code: 'BUD-OPS-001',
-                name: 'Operational Expenses',
-                department: 'Operations',
-                allocated: 1800000,
-                utilized: 1600000,
-                remaining: 200000,
-                percentage_used: 88.9,
-                status: 'critical',
-            },
-            {
-                id: 4,
-                code: 'BUD-OPS-002',
-                name: 'Facility Maintenance',
-                department: 'Operations',
-                allocated: 1400000,
-                utilized: 1200000,
-                remaining: 200000,
-                percentage_used: 85.7,
-                status: 'warning',
-            },
-            {
-                id: 5,
-                code: 'BUD-FIN-001',
-                name: 'Financial Services',
-                department: 'Finance',
-                allocated: 1500000,
-                utilized: 1100000,
-                remaining: 400000,
-                percentage_used: 73.3,
-                status: 'on_track',
-            },
-        ],
+        [merged.total_utilized, merged.total_remaining],
+    );
 
-        // Revenue
-        total_revenue: 3500000,
-        monthly_revenue: [
-            { month: 'Jan', amount: 250000 },
-            { month: 'Feb', amount: 280000 },
-            { month: 'Mar', amount: 310000 },
-            { month: 'Apr', amount: 290000 },
-            { month: 'May', amount: 340000 },
-            { month: 'Jun', amount: 380000 },
-            { month: 'Jul', amount: 360000 },
-            { month: 'Aug', amount: 420000 },
-            { month: 'Sep', amount: 390000 },
-            { month: 'Oct', amount: 410000 },
-            { month: 'Nov', amount: 430000 },
-            { month: 'Dec', amount: 440000 },
-        ],
-        revenue_by_source: [
-            { source: 'Sales', amount: 1500000 },
-            { source: 'Services', amount: 800000 },
-            { source: 'Grants', amount: 600000 },
-            { source: 'Donations', amount: 400000 },
-            { source: 'Other', amount: 200000 },
-        ],
-
-        // Inventory
-        total_items: 2543,
-        low_stock_items: 67,
-        out_of_stock_items: 23,
-        total_value: 4200000,
-        inventory_by_category: [
-            { category: 'Medical Supplies', count: 850 },
-            { category: 'Surgical Equipment', count: 320 },
-            { category: 'Pharmaceuticals', count: 450 },
-            { category: 'IT Equipment', count: 280 },
-            { category: 'Office Supplies', count: 350 },
-            { category: 'Facility Items', count: 293 },
-        ],
-
-        // Approvals
-        pending_approvals: 28,
-        pending_purchase_orders: 12,
-        pending_requisitions: 8,
-        pending_adjustments: 3,
-        pending_refunds: 2,
-        pending_user_requests: 3,
-
-        // Users
-        user_stats: {
-            total: 156,
-            active: 142,
-            inactive: 14,
-            new_this_month: 8,
-            by_role: [
-                { role: 'Admin', count: 5 },
-                { role: 'Supervisor', count: 12 },
-                { role: 'Manager', count: 28 },
-                { role: 'Staff', count: 89 },
-                { role: 'Finance', count: 22 },
-            ],
-            recent_users: [
-                {
-                    id: 1,
-                    name: 'John Mwansa',
-                    email: 'john.mwansa@zms.co.zm',
-                    role: 'Manager',
-                    avatar: '',
-                    joined_at: '2024-11-15T10:30:00Z',
-                    status: 'active',
-                },
-                {
-                    id: 2,
-                    name: 'Sarah Phiri',
-                    email: 'sarah.phiri@zms.co.zm',
-                    role: 'Staff',
-                    avatar: '',
-                    joined_at: '2024-11-20T14:20:00Z',
-                    status: 'active',
-                },
-                {
-                    id: 3,
-                    name: 'David Banda',
-                    email: 'david.banda@zms.co.zm',
-                    role: 'Supervisor',
-                    avatar: '',
-                    joined_at: '2024-11-25T09:15:00Z',
-                    status: 'active',
-                },
-                {
-                    id: 4,
-                    name: 'Grace Mwape',
-                    email: 'grace.mwape@zms.co.zm',
-                    role: 'Finance',
-                    avatar: '',
-                    joined_at: '2024-11-28T16:45:00Z',
-                    status: 'active',
-                },
-                {
-                    id: 5,
-                    name: 'Peter Zulu',
-                    email: 'peter.zulu@zms.co.zm',
-                    role: 'Staff',
-                    avatar: '',
-                    joined_at: '2024-12-01T11:00:00Z',
-                    status: 'inactive',
-                },
-            ],
-        },
-
-        // Recent Activity
-        recent_activities: [
-            {
-                id: 1,
-                type: 'Purchase Order',
-                description: 'PO #PO-2024-0045 approved for Medical Supplies',
-                status: 'approved',
-                date: '2024-12-03T14:30:00Z',
-                user: 'John Mwansa',
-            },
-            {
-                id: 2,
-                type: 'Requisition',
-                description:
-                    'Requisition #REQ-2024-0023 rejected - Budget exceeded',
-                status: 'rejected',
-                date: '2024-12-03T13:20:00Z',
-                user: 'Sarah Phiri',
-            },
-            {
-                id: 3,
-                type: 'Stock Adjustment',
-                description: 'Stock adjustment completed for Surgical Gloves',
-                status: 'completed',
-                date: '2024-12-03T11:45:00Z',
-                user: 'David Banda',
-            },
-            {
-                id: 4,
-                type: 'User Request',
-                description: 'New user account requested for IT Department',
-                status: 'pending',
-                date: '2024-12-03T10:15:00Z',
-                user: 'Grace Mwape',
-            },
-            {
-                id: 5,
-                type: 'Refund',
-                description:
-                    'Refund #REF-2024-0012 processed for damaged items',
-                status: 'approved',
-                date: '2024-12-02T16:00:00Z',
-                user: 'Peter Zulu',
-            },
-            {
-                id: 6,
-                type: 'Purchase Order',
-                description: 'PO #PO-2024-0046 sent to supplier',
-                status: 'sent',
-                date: '2024-12-02T14:30:00Z',
-                user: 'John Mwansa',
-            },
-            {
-                id: 7,
-                type: 'Requisition',
-                description: 'Requisition #REQ-2024-0024 awaiting approval',
-                status: 'pending',
-                date: '2024-12-02T11:20:00Z',
-                user: 'Sarah Phiri',
-            },
-        ],
-    };
-
-    const [stats, setStats] = useState<DashboardStats>(dummyStats);
-
-    const COLORS = [
-        '#3b82f6',
-        '#8b5cf6',
-        '#ec4899',
-        '#f59e0b',
-        '#10b981',
-        '#ef4444',
-        '#6366f1',
-    ];
-
-    // ============================================
-    // FETCH DASHBOARD DATA (using dummy data)
-    // ============================================
-
-    const fetchDashboardData = useCallback(async () => {
-        setLoading(true);
+    const handleRefresh = async () => {
+        setRefreshing(true);
         try {
-            // Simulate API call
-            await new Promise((resolve) => setTimeout(resolve, 800));
-
-            // In production, uncomment this:
-            // const response = await Http.get('/admin/dashboard', {
-            //     params: { time_range: selectedTimeRange },
-            // });
-            // setStats(response.data);
-
-            setStats(dummyStats);
-        } catch (error) {
-            console.error('Failed to fetch dashboard data:', error);
-            toast.error('Failed to load dashboard data');
+            await new Promise((r) => setTimeout(r, 600));
+            toast.success('Dashboard refreshed');
         } finally {
-            setLoading(false);
+            setRefreshing(false);
         }
-    }, [selectedTimeRange]);
-
-    useEffect(() => {
-        fetchDashboardData();
-    }, [fetchDashboardData]);
-
-    const handleRefresh = () => {
-        fetchDashboardData();
-        toast.success('Dashboard refreshed');
     };
-
-    // ============================================
-    // FORMAT HELPERS
-    // ============================================
-
-    const formatCurrency = (amount: number) => {
-        return new Intl.NumberFormat('en-ZM', {
-            style: 'currency',
-            currency: 'ZMW',
-            minimumFractionDigits: 0,
-            maximumFractionDigits: 0,
-        }).format(amount);
-    };
-
-    const formatDate = (date: string) => {
-        return new Date(date).toLocaleDateString('en-ZM', {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-        });
-    };
-
-    const getStatusColor = (status: string) => {
-        const colors = {
-            on_track:
-                'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
-            warning:
-                'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
-            critical:
-                'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400',
-            exceeded:
-                'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
-        };
-        return colors[status as keyof typeof colors] || colors.on_track;
-    };
-
-    const getInitials = (name: string) => {
-        return name
-            .split(' ')
-            .map((n) => n[0])
-            .join('')
-            .toUpperCase()
-            .slice(0, 2);
-    };
-
-    // ============================================
-    // RENDER
-    // ============================================
 
     return (
         <AppLayout
@@ -777,1118 +1105,135 @@ export default function AdminDashboard() {
                 { title: 'Dashboard', href: '/admin/dashboard' },
             ]}
         >
-            <div className="bg-blue-50">
-                <Container>
-                    {/* Header */}
-                    {/* <PageHeader
+            <div className="min-h-screen bg-blue-50">
+                <div className="p-2">
+                    <PageHeader
+                        icon={<Shield className="h-5 w-5" />}
                         title="Admin Dashboard"
-                        subtitle="Complete overview of financial management, inventory, approvals, and user metrics"
-                        actions={[
-                            {
-                                label: 'Refresh',
-                                icon: <RefreshCw className="h-4 w-4" />,
-                                onClick: handleRefresh,
-                                variant: 'outline',
-                                loading: loading,
-                            },
-                            {
-                                label: 'Export Report',
-                                icon: <Download className="h-4 w-4" />,
-                                onClick: () => {
-                                    toast.success('Exporting report...');
-                                },
-                                variant: 'default',
-                            },
-                        ]}
-                    /> */}
-
-                    {/* ========================================== */}
-                    {/* FINANCIAL MANAGEMENT SECTION */}
-                    {/* ========================================== */}
-                    <div className="mt-8">
-                        <div className="mb-3 flex items-center gap-2">
-                            <DollarSign className="h-4 w-4 text-blue-600" />
-                            <h2 className="text-base font-semibold text-slate-800 dark:text-slate-200">
-                                Financial Management
-                            </h2>
-                            <Badge
+                        subtitle="Weekly overview of facility operations"
+                    >
+                        <div className="flex items-center gap-2 self-center">
+                            <Button
                                 variant="outline"
-                                className="px-1.5 py-0 text-[10px]"
+                                size="sm"
+                                onClick={handleRefresh}
+                                disabled={refreshing}
+                                aria-label="Refresh dashboard"
                             >
-                                Budget & Revenue
-                            </Badge>
-                        </div>
-
-                        {/* Financial Management - Compact Cards */}
-                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                            <CompactStatCard
-                                title="Total Budget"
-                                value={formatCurrency(stats.total_budget)}
-                                subtitle="Annual allocation"
-                                icon={<Wallet className="h-3.5 w-3.5" />}
-                                color="bg-blue-500 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                                size="xs"
-                            />
-                            <CompactStatCard
-                                title="Utilized"
-                                value={formatCurrency(stats.total_utilized)}
-                                subtitle={`${stats.budget_utilization_percentage.toFixed(1)}%`}
-                                icon={<TrendingUp className="h-3.5 w-3.5" />}
-                                color="bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400"
-                                progress={stats.budget_utilization_percentage}
-                                progressColor={
-                                    stats.budget_utilization_percentage > 80
-                                        ? 'bg-red-500'
-                                        : stats.budget_utilization_percentage >
-                                            60
-                                          ? 'bg-yellow-500'
-                                          : 'bg-emerald-500'
-                                }
-                                size="xs"
-                            />
-                            <CompactStatCard
-                                title="Remaining"
-                                value={formatCurrency(stats.total_remaining)}
-                                subtitle="Available"
-                                icon={<PiggyBank className="h-3.5 w-3.5" />}
-                                color="bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400"
-                                size="xs"
-                            />
-                            <CompactStatCard
-                                title="Revenue"
-                                value={formatCurrency(stats.total_revenue)}
-                                subtitle="YTD"
-                                icon={<TrendingUp className="h-3.5 w-3.5" />}
-                                color="bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400"
-                                trend={{ value: 12.5, isUp: true }}
-                                size="xs"
-                            />
-                        </div>
-
-                        {/* Charts Row - 3 columns */}
-                        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
-                            {/* Budget Usage Donut Chart */}
-                            <Card>
-                                <CardHeader className="pb-2">
-                                    <CardTitle className="text-sm">
-                                        Budget Usage
-                                    </CardTitle>
-                                    <CardDescription className="text-xs">
-                                        Overall budget utilization
-                                    </CardDescription>
-                                </CardHeader>
-                                <CardContent>
-                                    <div className="h-52">
-                                        <ResponsiveContainer
-                                            width="100%"
-                                            height="100%"
-                                        >
-                                            <RePieChart>
-                                                <Pie
-                                                    data={[
-                                                        {
-                                                            name: 'Utilized',
-                                                            value: stats.total_utilized,
-                                                        },
-                                                        {
-                                                            name: 'Remaining',
-                                                            value: stats.total_remaining,
-                                                        },
-                                                    ]}
-                                                    dataKey="value"
-                                                    nameKey="name"
-                                                    cx="50%"
-                                                    cy="50%"
-                                                    innerRadius={45}
-                                                    outerRadius={70}
-                                                    label={(entry) =>
-                                                        `${entry.name}: ${((entry.value / stats.total_budget) * 100).toFixed(1)}%`
-                                                    }
-                                                    fontSize={10}
-                                                >
-                                                    <Cell fill="#3b82f6" />
-                                                    <Cell fill="#94a3b8" />
-                                                </Pie>
-                                                <Tooltip
-                                                    formatter={(value) =>
-                                                        formatCurrency(
-                                                            value as number,
-                                                        )
-                                                    }
-                                                />
-                                            </RePieChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                    <div className="mt-1 flex justify-center gap-4">
-                                        <div className="flex items-center gap-1.5">
-                                            <div className="h-2.5 w-2.5 rounded-full bg-blue-500" />
-                                            <span className="text-xs">
-                                                Utilized (
-                                                {stats.budget_utilization_percentage.toFixed(
-                                                    1,
-                                                )}
-                                                %)
-                                            </span>
-                                        </div>
-                                        <div className="flex items-center gap-1.5">
-                                            <div className="h-2.5 w-2.5 rounded-full bg-slate-300 dark:bg-slate-600" />
-                                            <span className="text-xs">
-                                                Remaining (
-                                                {(
-                                                    (stats.total_remaining /
-                                                        stats.total_budget) *
-                                                    100
-                                                ).toFixed(1)}
-                                                %)
-                                            </span>
-                                        </div>
-                                    </div>
-                                </CardContent>
-                            </Card>
-
-                            {/* Monthly Spending */}
-                            <Card>
-                                <CardHeader className="pb-2">
-                                    <CardTitle className="text-sm">
-                                        Monthly Spending
-                                    </CardTitle>
-                                    <CardDescription className="text-xs">
-                                        Budget utilization over time
-                                    </CardDescription>
-                                </CardHeader>
-                                <CardContent>
-                                    <div className="h-52">
-                                        <ResponsiveContainer
-                                            width="100%"
-                                            height="100%"
-                                        >
-                                            <AreaChart
-                                                data={stats.monthly_spending}
-                                            >
-                                                <CartesianGrid
-                                                    strokeDasharray="3 3"
-                                                    stroke="#e2e8f0"
-                                                />
-                                                <XAxis
-                                                    dataKey="month"
-                                                    tick={{ fontSize: 10 }}
-                                                />
-                                                <YAxis
-                                                    tickFormatter={(value) =>
-                                                        formatCurrency(value)
-                                                    }
-                                                    tick={{ fontSize: 10 }}
-                                                />
-                                                <Tooltip
-                                                    formatter={(value) =>
-                                                        formatCurrency(
-                                                            value as number,
-                                                        )
-                                                    }
-                                                />
-                                                <Area
-                                                    type="monotone"
-                                                    dataKey="amount"
-                                                    stroke="#3b82f6"
-                                                    fill="#3b82f6"
-                                                    fillOpacity={0.2}
-                                                />
-                                            </AreaChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                </CardContent>
-                            </Card>
-
-                            {/* Revenue by Source */}
-                            <Card>
-                                <CardHeader className="pb-2">
-                                    <CardTitle className="text-sm">
-                                        Revenue by Source
-                                    </CardTitle>
-                                    <CardDescription className="text-xs">
-                                        Breakdown of revenue streams
-                                    </CardDescription>
-                                </CardHeader>
-                                <CardContent>
-                                    <div className="h-52">
-                                        <ResponsiveContainer
-                                            width="100%"
-                                            height="100%"
-                                        >
-                                            <RePieChart>
-                                                <Pie
-                                                    data={
-                                                        stats.revenue_by_source
-                                                    }
-                                                    dataKey="amount"
-                                                    nameKey="source"
-                                                    cx="50%"
-                                                    cy="50%"
-                                                    outerRadius={65}
-                                                    label={(entry) =>
-                                                        entry.source
-                                                    }
-                                                    fontSize={10}
-                                                >
-                                                    {stats.revenue_by_source.map(
-                                                        (_, index) => (
-                                                            <Cell
-                                                                key={`cell-${index}`}
-                                                                fill={
-                                                                    COLORS[
-                                                                        index %
-                                                                            COLORS.length
-                                                                    ]
-                                                                }
-                                                            />
-                                                        ),
-                                                    )}
-                                                </Pie>
-                                                <Tooltip
-                                                    formatter={(value) =>
-                                                        formatCurrency(
-                                                            value as number,
-                                                        )
-                                                    }
-                                                />
-                                                <Legend
-                                                    wrapperStyle={{
-                                                        fontSize: '10px',
-                                                    }}
-                                                />
-                                            </RePieChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        </div>
-
-                        {/* Budget by Department */}
-                        <div className="mt-4">
-                            <Card>
-                                <CardHeader className="pb-2">
-                                    <CardTitle className="text-sm">
-                                        Budget by Department
-                                    </CardTitle>
-                                    <CardDescription className="text-xs">
-                                        Allocation and utilization across
-                                        departments
-                                    </CardDescription>
-                                </CardHeader>
-                                <CardContent>
-                                    <div className="h-56">
-                                        <ResponsiveContainer
-                                            width="100%"
-                                            height="100%"
-                                        >
-                                            <BarChart
-                                                data={
-                                                    stats.budget_by_department
-                                                }
-                                            >
-                                                <CartesianGrid
-                                                    strokeDasharray="3 3"
-                                                    stroke="#e2e8f0"
-                                                />
-                                                <XAxis
-                                                    dataKey="department"
-                                                    tick={{ fontSize: 10 }}
-                                                />
-                                                <YAxis
-                                                    tickFormatter={(value) =>
-                                                        formatCurrency(value)
-                                                    }
-                                                    tick={{ fontSize: 10 }}
-                                                />
-                                                <Tooltip
-                                                    formatter={(value) =>
-                                                        formatCurrency(
-                                                            value as number,
-                                                        )
-                                                    }
-                                                />
-                                                <Legend
-                                                    wrapperStyle={{
-                                                        fontSize: '10px',
-                                                    }}
-                                                />
-                                                <Bar
-                                                    dataKey="allocated"
-                                                    fill="#3b82f6"
-                                                    name="Allocated"
-                                                />
-                                                <Bar
-                                                    dataKey="utilized"
-                                                    fill="#f59e0b"
-                                                    name="Utilized"
-                                                />
-                                            </BarChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        </div>
-
-                        {/* Top 5 Budget Lines */}
-                        <div className="mt-4">
-                            <Card>
-                                <CardHeader className="pb-2">
-                                    <CardTitle className="flex items-center justify-between text-sm">
-                                        <span>Top Budget Lines</span>
-                                        <Badge
-                                            variant="outline"
-                                            className="text-[10px]"
-                                        >
-                                            Highest Remaining
-                                        </Badge>
-                                    </CardTitle>
-                                    <CardDescription className="text-xs">
-                                        Top 5 budget lines with remaining
-                                        balances
-                                    </CardDescription>
-                                </CardHeader>
-                                <CardContent>
-                                    <div className="overflow-x-auto">
-                                        <Table>
-                                            <TableHeader>
-                                                <TableRow className="text-xs">
-                                                    <TableHead className="text-xs">
-                                                        Code
-                                                    </TableHead>
-                                                    <TableHead className="text-xs">
-                                                        Name
-                                                    </TableHead>
-                                                    <TableHead className="text-xs">
-                                                        Dept
-                                                    </TableHead>
-                                                    <TableHead className="text-right text-xs">
-                                                        Allocated
-                                                    </TableHead>
-                                                    <TableHead className="text-right text-xs">
-                                                        Utilized
-                                                    </TableHead>
-                                                    <TableHead className="text-right text-xs">
-                                                        Remaining
-                                                    </TableHead>
-                                                    <TableHead className="text-right text-xs">
-                                                        Usage
-                                                    </TableHead>
-                                                    <TableHead className="text-center text-xs">
-                                                        Status
-                                                    </TableHead>
-                                                </TableRow>
-                                            </TableHeader>
-                                            <TableBody>
-                                                {stats.top_budget_lines.map(
-                                                    (line) => (
-                                                        <TableRow
-                                                            key={line.id}
-                                                            className="text-xs"
-                                                        >
-                                                            <TableCell className="font-mono text-[10px]">
-                                                                {line.code}
-                                                            </TableCell>
-                                                            <TableCell className="text-xs font-medium">
-                                                                {line.name}
-                                                            </TableCell>
-                                                            <TableCell className="text-xs">
-                                                                {
-                                                                    line.department
-                                                                }
-                                                            </TableCell>
-                                                            <TableCell className="text-right text-xs">
-                                                                {formatCurrency(
-                                                                    line.allocated,
-                                                                )}
-                                                            </TableCell>
-                                                            <TableCell className="text-right text-xs">
-                                                                {formatCurrency(
-                                                                    line.utilized,
-                                                                )}
-                                                            </TableCell>
-                                                            <TableCell className="text-right text-xs font-semibold text-green-600">
-                                                                {formatCurrency(
-                                                                    line.remaining,
-                                                                )}
-                                                            </TableCell>
-                                                            <TableCell className="text-right">
-                                                                <div className="flex items-center justify-end gap-1">
-                                                                    <span className="text-[10px]">
-                                                                        {line.percentage_used.toFixed(
-                                                                            1,
-                                                                        )}
-                                                                        %
-                                                                    </span>
-                                                                    <Progress
-                                                                        value={
-                                                                            line.percentage_used
-                                                                        }
-                                                                        className="h-1.5 w-12"
-                                                                    />
-                                                                </div>
-                                                            </TableCell>
-                                                            <TableCell className="text-center">
-                                                                <Badge
-                                                                    className={`${getStatusColor(line.status)} px-1.5 py-0 text-[9px]`}
-                                                                >
-                                                                    {line.status
-                                                                        .replace(
-                                                                            '_',
-                                                                            ' ',
-                                                                        )
-                                                                        .toUpperCase()}
-                                                                </Badge>
-                                                            </TableCell>
-                                                        </TableRow>
-                                                    ),
-                                                )}
-                                            </TableBody>
-                                        </Table>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        </div>
-                    </div>
-
-                    {/* ========================================== */}
-                    {/* INVENTORY OVERSIGHT SECTION */}
-                    {/* ========================================== */}
-                    <div className="mt-8">
-                        <div className="mb-3 flex items-center gap-2">
-                            <Package className="h-4 w-4 text-orange-600" />
-                            <h2 className="text-base font-semibold text-slate-800 dark:text-slate-200">
-                                Inventory Oversight
-                            </h2>
-                            <Badge
+                                <RefreshCw
+                                    className={cx(
+                                        'h-3.5 w-3.5 sm:mr-1.5',
+                                        refreshing && 'animate-spin',
+                                    )}
+                                />
+                                <span className="hidden sm:inline">
+                                    Refresh
+                                </span>
+                            </Button>
+                            <Button
                                 variant="outline"
-                                className="px-1.5 py-0 text-[10px]"
+                                size="sm"
+                                aria-label="Export dashboard"
                             >
-                                Stock Management
-                            </Badge>
+                                <Download className="h-3.5 w-3.5 sm:mr-1.5" />
+                                <span className="hidden sm:inline">Export</span>
+                            </Button>
+                        </div>
+                    </PageHeader>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 p-3 sm:p-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)] lg:items-start">
+                    {/* ================= LEFT COLUMN ================= */}
+                    <div className="flex min-w-0 flex-col gap-4">
+                        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+                            {statCards.map((card) => (
+                                <StatCard key={card.label} {...card} />
+                            ))}
                         </div>
 
-                        {/* Inventory Oversight - Compact Cards */}
-                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                            <CompactStatCard
-                                title="Total Items"
-                                value={stats.total_items}
-                                subtitle="Active"
-                                icon={<Package className="h-3.5 w-3.5" />}
-                                color="bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                                size="xs"
-                            />
-                            <CompactStatCard
-                                title="Low Stock"
-                                value={stats.low_stock_items}
-                                subtitle="Below reorder"
-                                icon={<AlertTriangle className="h-3.5 w-3.5" />}
-                                color="bg-yellow-100 text-yellow-600 dark:bg-yellow-900/30 dark:text-yellow-400"
-                                progress={
-                                    (stats.low_stock_items /
-                                        stats.total_items) *
-                                    100
-                                }
-                                progressColor="bg-yellow-500"
-                                size="xs"
-                            />
-                            <CompactStatCard
-                                title="Out of Stock"
-                                value={stats.out_of_stock_items}
-                                subtitle="Zero qty"
-                                icon={<XCircle className="h-3.5 w-3.5" />}
-                                color="bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400"
-                                size="xs"
-                            />
-                            <CompactStatCard
-                                title="Total Value"
-                                value={formatCurrency(stats.total_value)}
-                                subtitle="Stock value"
-                                icon={<DollarSign className="h-3.5 w-3.5" />}
-                                color="bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400"
-                                size="xs"
-                            />
-                        </div>
-
-                        {/* Inventory Charts */}
-                        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-                            <Card>
-                                <CardHeader className="pb-2">
-                                    <CardTitle className="text-sm">
-                                        Inventory by Category
-                                    </CardTitle>
-                                    <CardDescription className="text-xs">
-                                        Distribution of items across categories
-                                    </CardDescription>
-                                </CardHeader>
-                                <CardContent>
-                                    <div className="h-56">
-                                        <ResponsiveContainer
-                                            width="100%"
-                                            height="100%"
-                                        >
-                                            <BarChart
-                                                data={
-                                                    stats.inventory_by_category
-                                                }
-                                            >
-                                                <CartesianGrid
-                                                    strokeDasharray="3 3"
-                                                    stroke="#e2e8f0"
-                                                />
-                                                <XAxis
-                                                    dataKey="category"
-                                                    tick={{ fontSize: 10 }}
-                                                />
-                                                <YAxis
-                                                    tick={{ fontSize: 10 }}
-                                                />
-                                                <Tooltip />
-                                                <Legend
-                                                    wrapperStyle={{
-                                                        fontSize: '10px',
-                                                    }}
-                                                />
-                                                <Bar
-                                                    dataKey="count"
-                                                    fill="#8b5cf6"
-                                                    name="Items"
-                                                />
-                                            </BarChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                </CardContent>
-                            </Card>
-
-                            <Card>
-                                <CardHeader className="pb-2">
-                                    <CardTitle className="text-sm">
-                                        Inventory Status
-                                    </CardTitle>
-                                    <CardDescription className="text-xs">
-                                        Current stock health overview
-                                    </CardDescription>
-                                </CardHeader>
-                                <CardContent>
-                                    <div className="space-y-3">
-                                        <div>
-                                            <div className="mb-0.5 flex justify-between text-xs">
-                                                <span>In Stock</span>
-                                                <span className="font-medium">
-                                                    {(
-                                                        ((stats.total_items -
-                                                            stats.low_stock_items -
-                                                            stats.out_of_stock_items) /
-                                                            stats.total_items) *
-                                                        100
-                                                    ).toFixed(1)}
-                                                    %
-                                                </span>
-                                            </div>
-                                            <Progress
-                                                value={
-                                                    ((stats.total_items -
-                                                        stats.low_stock_items -
-                                                        stats.out_of_stock_items) /
-                                                        stats.total_items) *
-                                                    100
-                                                }
-                                                className="h-2"
-                                                indicatorClassName="bg-emerald-500"
+                        <section className="min-w-0 rounded-xl bg-white p-4 shadow-sm">
+                            <h2
+                                className={cx(
+                                    T.cardTitle,
+                                    'mb-3 flex items-center gap-2',
+                                )}
+                            >
+                                <CreditCard className="h-4 w-4 text-slate-500" />
+                                Financials
+                            </h2>
+                            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                                <div className="min-w-0">
+                                    <p className={cx(T.cardSub, 'mb-2')}>
+                                        Budget allocation vs utilisation
+                                    </p>
+                                    <div className="flex flex-col items-center gap-3">
+                                        <div className="w-full max-w-[10rem]">
+                                            <Doughnut
+                                                data={budgetDoughnut}
+                                                unit="ZMW"
+                                                className="max-w-[10rem]"
                                             />
                                         </div>
-                                        <div>
-                                            <div className="mb-0.5 flex justify-between text-xs">
-                                                <span>Low Stock</span>
-                                                <span className="font-medium">
-                                                    {(
-                                                        (stats.low_stock_items /
-                                                            stats.total_items) *
-                                                        100
-                                                    ).toFixed(1)}
-                                                    %
-                                                </span>
-                                            </div>
-                                            <Progress
-                                                value={
-                                                    (stats.low_stock_items /
-                                                        stats.total_items) *
-                                                    100
-                                                }
-                                                className="h-2"
-                                                indicatorClassName="bg-yellow-500"
-                                            />
-                                        </div>
-                                        <div>
-                                            <div className="mb-0.5 flex justify-between text-xs">
-                                                <span>Out of Stock</span>
-                                                <span className="font-medium">
-                                                    {(
-                                                        (stats.out_of_stock_items /
-                                                            stats.total_items) *
-                                                        100
-                                                    ).toFixed(1)}
-                                                    %
-                                                </span>
-                                            </div>
-                                            <Progress
-                                                value={
-                                                    (stats.out_of_stock_items /
-                                                        stats.total_items) *
-                                                    100
-                                                }
-                                                className="h-2"
-                                                indicatorClassName="bg-red-500"
-                                            />
-                                        </div>
-                                        <div className="mt-3 border-t border-slate-200 pt-3 dark:border-slate-700">
-                                            <div className="flex justify-between text-sm">
-                                                <span className="text-slate-500">
-                                                    Health Score
-                                                </span>
-                                                <span className="font-bold text-emerald-600">
-                                                    {(
-                                                        ((stats.total_items -
-                                                            stats.low_stock_items -
-                                                            stats.out_of_stock_items) /
-                                                            stats.total_items) *
-                                                        100
-                                                    ).toFixed(0)}
-                                                    %
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        </div>
-                    </div>
-
-                    {/* ========================================== */}
-                    {/* APPROVALS SECTION */}
-                    {/* ========================================== */}
-                    <div className="mt-8">
-                        <div className="mb-3 flex items-center gap-2">
-                            <Shield className="h-4 w-4 text-purple-600" />
-                            <h2 className="text-base font-semibold text-slate-800 dark:text-slate-200">
-                                Approvals
-                            </h2>
-                            <Badge
-                                variant="outline"
-                                className="px-1.5 py-0 text-[10px]"
-                            >
-                                Pending Actions
-                            </Badge>
-                        </div>
-
-                        {/* Approvals - Compact Cards */}
-                        <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
-                            <CompactStatCard
-                                title="Pending"
-                                value={stats.pending_approvals}
-                                subtitle="Total"
-                                icon={<Clock className="h-3.5 w-3.5" />}
-                                color="bg-yellow-100 text-yellow-600 dark:bg-yellow-900/30 dark:text-yellow-400"
-                                size="xs"
-                            />
-                            <CompactStatCard
-                                title="PO"
-                                value={stats.pending_purchase_orders}
-                                subtitle="Orders"
-                                icon={<ShoppingCart className="h-3.5 w-3.5" />}
-                                color="bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                                size="xs"
-                            />
-                            <CompactStatCard
-                                title="Req"
-                                value={stats.pending_requisitions}
-                                subtitle="Requisitions"
-                                icon={<FileText className="h-3.5 w-3.5" />}
-                                color="bg-cyan-100 text-cyan-600 dark:bg-cyan-900/30 dark:text-cyan-400"
-                                size="xs"
-                            />
-                            <CompactStatCard
-                                title="Adj"
-                                value={stats.pending_adjustments}
-                                subtitle="Adjustments"
-                                icon={<Boxes className="h-3.5 w-3.5" />}
-                                color="bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400"
-                                size="xs"
-                            />
-                            <CompactStatCard
-                                title="Ref"
-                                value={stats.pending_refunds}
-                                subtitle="Refunds"
-                                icon={<Undo className="h-3.5 w-3.5" />}
-                                color="bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400"
-                                size="xs"
-                            />
-                            <CompactStatCard
-                                title="Users"
-                                value={stats.pending_user_requests}
-                                subtitle="Requests"
-                                icon={<User className="h-3.5 w-3.5" />}
-                                color="bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400"
-                                size="xs"
-                            />
-                        </div>
-
-                        {/* Quick Action Buttons */}
-                        <div className="mt-4 flex flex-wrap gap-2">
-                            <Button
-                                variant="default"
-                                size="sm"
-                                className="h-8 gap-1.5 text-xs"
-                            >
-                                <Check className="h-3.5 w-3.5" />
-                                Review POs
-                                <Badge className="ml-1 bg-white/20 px-1.5 text-[9px] text-white">
-                                    12
-                                </Badge>
-                            </Button>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-8 gap-1.5 text-xs"
-                            >
-                                <FileText className="h-3.5 w-3.5" />
-                                Review Reqs
-                                <Badge className="ml-1 px-1.5 text-[9px]">
-                                    8
-                                </Badge>
-                            </Button>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-8 gap-1.5 text-xs"
-                            >
-                                <Boxes className="h-3.5 w-3.5" />
-                                Review Adj
-                                <Badge className="ml-1 px-1.5 text-[9px]">
-                                    3
-                                </Badge>
-                            </Button>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-8 gap-1.5 text-xs"
-                            >
-                                <Undo className="h-3.5 w-3.5" />
-                                Review Ref
-                                <Badge className="ml-1 px-1.5 text-[9px]">
-                                    2
-                                </Badge>
-                            </Button>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-8 gap-1.5 text-xs"
-                            >
-                                <User className="h-3.5 w-3.5" />
-                                Review Users
-                                <Badge className="ml-1 px-1.5 text-[9px]">
-                                    3
-                                </Badge>
-                            </Button>
-                        </div>
-                    </div>
-
-                    {/* ========================================== */}
-                    {/* USER STATISTICS SECTION */}
-                    {/* ========================================== */}
-                    <div className="mt-8">
-                        <div className="mb-3 flex items-center gap-2">
-                            <Users className="h-4 w-4 text-indigo-600" />
-                            <h2 className="text-base font-semibold text-slate-800 dark:text-slate-200">
-                                User Statistics
-                            </h2>
-                            <Badge
-                                variant="outline"
-                                className="px-1.5 py-0 text-[10px]"
-                            >
-                                System Users
-                            </Badge>
-                        </div>
-
-                        {/* User Statistics - Compact Cards */}
-                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                            <CompactStatCard
-                                title="Total Users"
-                                value={stats.user_stats.total}
-                                subtitle={`${stats.user_stats.active} active`}
-                                icon={<Users className="h-3.5 w-3.5" />}
-                                color="bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400"
-                                size="xs"
-                            />
-                            <CompactStatCard
-                                title="New"
-                                value={stats.user_stats.new_this_month}
-                                subtitle="This month"
-                                icon={<UserPlus className="h-3.5 w-3.5" />}
-                                color="bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400"
-                                trend={{ value: 15, isUp: true }}
-                                size="xs"
-                            />
-                            <CompactStatCard
-                                title="Active"
-                                value={stats.user_stats.active}
-                                subtitle={`${((stats.user_stats.active / stats.user_stats.total) * 100).toFixed(0)}%`}
-                                icon={<UserCheck className="h-3.5 w-3.5" />}
-                                color="bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400"
-                                progress={
-                                    (stats.user_stats.active /
-                                        stats.user_stats.total) *
-                                    100
-                                }
-                                progressColor="bg-green-500"
-                                size="xs"
-                            />
-                            <CompactStatCard
-                                title="Inactive"
-                                value={stats.user_stats.inactive}
-                                subtitle="Need attention"
-                                icon={<UserMinus className="h-3.5 w-3.5" />}
-                                color="bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400"
-                                size="xs"
-                            />
-                        </div>
-
-                        {/* User Charts */}
-                        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-                            {/* Users by Role */}
-                            <Card>
-                                <CardHeader className="pb-2">
-                                    <CardTitle className="text-sm">
-                                        Users by Role
-                                    </CardTitle>
-                                    <CardDescription className="text-xs">
-                                        Distribution of users across roles
-                                    </CardDescription>
-                                </CardHeader>
-                                <CardContent>
-                                    <div className="h-52">
-                                        <ResponsiveContainer
-                                            width="100%"
-                                            height="100%"
-                                        >
-                                            <RePieChart>
-                                                <Pie
-                                                    data={
-                                                        stats.user_stats.by_role
-                                                    }
-                                                    dataKey="count"
-                                                    nameKey="role"
-                                                    cx="50%"
-                                                    cy="50%"
-                                                    outerRadius={65}
-                                                    label={(entry) =>
-                                                        `${entry.role} (${entry.count})`
-                                                    }
-                                                    fontSize={10}
+                                        <ul className="flex flex-wrap justify-center gap-x-4 gap-y-1 text-sm text-slate-600">
+                                            {budgetDoughnut.map((d) => (
+                                                <li
+                                                    key={d.name}
+                                                    className="flex items-center gap-1.5"
                                                 >
-                                                    {stats.user_stats.by_role.map(
-                                                        (_, index) => (
-                                                            <Cell
-                                                                key={`cell-${index}`}
-                                                                fill={
-                                                                    COLORS[
-                                                                        index %
-                                                                            COLORS.length
-                                                                    ]
-                                                                }
-                                                            />
-                                                        ),
-                                                    )}
-                                                </Pie>
-                                                <Tooltip />
-                                                <Legend
-                                                    wrapperStyle={{
-                                                        fontSize: '10px',
-                                                    }}
-                                                />
-                                            </RePieChart>
-                                        </ResponsiveContainer>
+                                                    <span
+                                                        className="h-2.5 w-2.5 rounded-full"
+                                                        style={{
+                                                            backgroundColor:
+                                                                d.color,
+                                                        }}
+                                                    />
+                                                    {d.name}
+                                                    <span className="font-medium text-slate-800 tabular-nums">
+                                                        {formatCompactCurrency(
+                                                            d.count,
+                                                        )}
+                                                    </span>
+                                                </li>
+                                            ))}
+                                        </ul>
                                     </div>
-                                </CardContent>
-                            </Card>
-
-                            {/* Recent Users */}
-                            <Card>
-                                <CardHeader className="pb-2">
-                                    <CardTitle className="flex items-center justify-between text-sm">
-                                        <span>Recent Users</span>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className="h-7 gap-0.5 text-xs"
-                                        >
-                                            View All{' '}
-                                            <ChevronRight className="h-3.5 w-3.5" />
-                                        </Button>
-                                    </CardTitle>
-                                    <CardDescription className="text-xs">
-                                        Latest user registrations
-                                    </CardDescription>
-                                </CardHeader>
-                                <CardContent>
-                                    <div className="space-y-2">
-                                        {stats.user_stats.recent_users.map(
-                                            (user) => (
-                                                <div
-                                                    key={user.id}
-                                                    className="flex items-center justify-between"
-                                                >
-                                                    <div className="flex items-center gap-2">
-                                                        <Avatar className="h-7 w-7">
-                                                            <AvatarFallback className="bg-blue-100 text-[10px] text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
-                                                                {getInitials(
-                                                                    user.name,
-                                                                )}
-                                                            </AvatarFallback>
-                                                        </Avatar>
-                                                        <div>
-                                                            <p className="text-xs font-medium text-slate-800 dark:text-slate-200">
-                                                                {user.name}
-                                                            </p>
-                                                            <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                                                                {user.email}
-                                                            </p>
-                                                        </div>
-                                                    </div>
-                                                    <div className="text-right">
-                                                        <Badge
-                                                            variant="outline"
-                                                            className="px-1.5 py-0 text-[9px]"
-                                                        >
-                                                            {user.role}
-                                                        </Badge>
-                                                        <p className="mt-0.5 text-[9px] text-slate-400">
-                                                            {formatDate(
-                                                                user.joined_at,
-                                                            )}
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                            ),
-                                        )}
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        </div>
-                    </div>
-
-                    {/* ========================================== */}
-                    {/* RECENT ACTIVITY */}
-                    {/* ========================================== */}
-                    <div className="mt-8">
-                        <div className="mb-3 flex items-center gap-2">
-                            <Activity className="h-4 w-4 text-slate-600" />
-                            <h2 className="text-base font-semibold text-slate-800 dark:text-slate-200">
-                                Recent Activity
-                            </h2>
-                            <Badge
-                                variant="outline"
-                                className="px-1.5 py-0 text-[10px]"
-                            >
-                                Latest Updates
-                            </Badge>
-                        </div>
-
-                        <Card>
-                            <CardContent className="p-0">
-                                <div className="divide-y divide-slate-200 dark:divide-slate-700">
-                                    {stats.recent_activities.map((activity) => (
-                                        <div
-                                            key={activity.id}
-                                            className="flex items-center justify-between px-3 py-2 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
-                                        >
-                                            <div className="flex min-w-0 flex-1 items-center gap-2">
-                                                {activity.status ===
-                                                    'approved' && (
-                                                    <CheckCircle className="h-4 w-4 flex-shrink-0 text-green-500" />
-                                                )}
-                                                {activity.status ===
-                                                    'rejected' && (
-                                                    <XCircle className="h-4 w-4 flex-shrink-0 text-red-500" />
-                                                )}
-                                                {activity.status ===
-                                                    'pending' && (
-                                                    <Clock className="h-4 w-4 flex-shrink-0 text-yellow-500" />
-                                                )}
-                                                {activity.status === 'sent' && (
-                                                    <Send className="h-4 w-4 flex-shrink-0 text-purple-500" />
-                                                )}
-                                                {activity.status ===
-                                                    'completed' && (
-                                                    <CheckCircle className="h-4 w-4 flex-shrink-0 text-emerald-500" />
-                                                )}
-                                                {![
-                                                    'approved',
-                                                    'rejected',
-                                                    'pending',
-                                                    'sent',
-                                                    'completed',
-                                                ].includes(activity.status) && (
-                                                    <Activity className="h-4 w-4 flex-shrink-0 text-blue-500" />
-                                                )}
-                                                <div className="min-w-0 flex-1">
-                                                    <p className="truncate text-xs font-medium text-slate-800 dark:text-slate-200">
-                                                        {activity.description}
-                                                    </p>
-                                                    <div className="flex flex-wrap items-center gap-1.5">
-                                                        <Badge
-                                                            variant="outline"
-                                                            className="px-1.5 py-0 text-[9px]"
-                                                        >
-                                                            {activity.type}
-                                                        </Badge>
-                                                        <Badge
-                                                            variant={
-                                                                activity.status ===
-                                                                    'approved' ||
-                                                                activity.status ===
-                                                                    'completed'
-                                                                    ? 'success'
-                                                                    : activity.status ===
-                                                                        'rejected'
-                                                                      ? 'destructive'
-                                                                      : activity.status ===
-                                                                          'pending'
-                                                                        ? 'warning'
-                                                                        : 'default'
-                                                            }
-                                                            className="px-1.5 py-0 text-[9px]"
-                                                        >
-                                                            {activity.status}
-                                                        </Badge>
-                                                        <span className="text-[9px] text-slate-400">
-                                                            •
-                                                        </span>
-                                                        <span className="text-[9px] text-slate-500 dark:text-slate-400">
-                                                            {activity.user}
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <span className="ml-2 flex-shrink-0 text-[9px] text-slate-500 dark:text-slate-400">
-                                                {formatDate(activity.date)}
-                                            </span>
-                                        </div>
-                                    ))}
                                 </div>
-                            </CardContent>
-                            <CardFooter className="border-t border-slate-200 px-3 py-2 dark:border-slate-700">
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="ml-auto h-7 gap-0.5 text-xs"
-                                >
-                                    View All Activity{' '}
-                                    <ChevronRight className="h-3.5 w-3.5" />
-                                </Button>
-                            </CardFooter>
-                        </Card>
+                                <div className="min-w-0">
+                                    <p className={cx(T.cardSub, 'mb-2')}>
+                                        Top services this week
+                                    </p>
+                                    <ProgressList data={topServices} />
+                                </div>
+                            </div>
+                        </section>
+
+                        <RecentActivityCard
+                            activities={merged.recent_activities}
+                        />
                     </div>
-                </Container>
+
+                    {/* ================= RIGHT RAIL ================= */}
+                    <div className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2">
+                        <DoughnutCard
+                            title="Payment methods"
+                            subtitle="This week"
+                            icon={<CreditCard className="h-4 w-4" />}
+                            data={paymentMethods}
+                            unit="payments"
+                        />
+                        <DoughnutCard
+                            title="Staff by department"
+                            subtitle="Active users"
+                            icon={<Users className="h-4 w-4" />}
+                            data={staffByDept}
+                            unit="staff"
+                        />
+                        <InsuranceClaimsCard claims={insuranceClaims} />
+                        <NewRegistrationsCard
+                            registrations={newRegistrations}
+                        />
+                    </div>
+                </div>
             </div>
         </AppLayout>
     );

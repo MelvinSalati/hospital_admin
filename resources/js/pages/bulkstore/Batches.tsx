@@ -2,7 +2,6 @@
 
 import { Dialog, Transition } from '@headlessui/react';
 import { Head, usePage } from '@inertiajs/react';
-import axios from 'axios';
 import { format } from 'date-fns';
 import {
     Package,
@@ -37,6 +36,7 @@ import type { Column, Action } from '@/components/ReusableTable';
 import { ReusableTable } from '@/components/ReusableTable';
 import AppLayout from '@/layouts/app-layout';
 import type { BreadcrumbItem } from '@/types';
+import Http from '@/utils/Http';
 
 // ============================================
 // TYPES
@@ -148,7 +148,7 @@ function BatchModal({
 
     const loadProducts = async () => {
         try {
-            const response = await axios.get('/api/products/list');
+            const response = await Http.get('products/list');
             if (response.data.success) {
                 setProducts(response.data.data);
             }
@@ -159,7 +159,7 @@ function BatchModal({
 
     const loadSuppliers = async () => {
         try {
-            const response = await axios.get('/api/suppliers/list');
+            const response = await axios.get('suppliers/list');
             if (response.data.success) {
                 setSuppliers(response.data.data);
             }

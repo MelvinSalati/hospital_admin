@@ -14,13 +14,15 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Auth;
 use App\Helpers\UserSessionHelper;
+use App\Notifications\PurchaseRequisitionAwaitingApproval;
+
 class RequisitionController extends Controller
 {
     protected BudgetService $budgetRequisitionService;
     protected PurchaseService $purchaseRequistionService;
 
     public function __construct(
-        BudgetService $budgetRequisitionService, 
+        BudgetService $budgetRequisitionService,
         PurchaseService $purchaseRequisitionService
     ) {
         $this->budgetRequisitionService = $budgetRequisitionService;
@@ -67,78 +69,16 @@ class RequisitionController extends Controller
     }
 
     /**
-     * Create a new purchase requisition
+     * Create a new purchase requisition.
      */
     public function createRequisition(Request $request)
     {
-             // ✅ With 'auth:web' middleware, user is automatically authenticated
-        // Get the authenticated user
-        $user = Auth::user();
-        
-        // ✅ For 'auth:web', you can also use:
-        // $user = $request->user();
-        // $user = auth()->user();
-
-
-if (!function_exists('user')) {
-    function user() { 
-        return UserSessionHelper::user(); 
-    }
-}
-
-if (!function_exists('userId')) {
-    function userId() { 
-        return UserSessionHelper::id(); 
-    }
-}
-
-if (!function_exists('isAuth')) {
-    function isAuth() { 
-        return UserSessionHelper::check(); 
-    }
-}
-
-if (!function_exists('isAdmin')) {
-    function isAdmin() { 
-        return UserSessionHelper::isAdmin(); 
-    }
-}
-
-if (!function_exists('isSupervisor')) {
-    function isSupervisor() { 
-        return UserSessionHelper::isSupervisor(); 
-    }
-}
-
-if (!function_exists('canApprove')) {
-    function canApprove() { 
-        return UserSessionHelper::canApprove(); 
-    }
-}
-
-if (!function_exists('canReleaseFunds')) {
-    function canReleaseFunds() { 
-        return UserSessionHelper::canReleaseFunds(); 
-    }
-}
-
-if (!function_exists('userRole')) {
-    function userRole() { 
-        return UserSessionHelper::role(); 
-    }
-}
-
-if (!function_exists('userDetails')) {
-    function userDetails() { 
-        return UserSessionHelper::details(); 
-    }
-}
-    
         $validator = Validator::make($request->all(), [
             'department_id' => 'required|integer|exists:departments,id',
             'budget_code' => 'required|string|exists:budget_allocations,budget_code',
             'required_date' => 'required|date|after_or_equal:today',
             'priority' => 'required|in:low,medium,high,urgent',
+            'requested_by' => 'required|exists:users,id',
             'justification' => 'required|string|min:10',
             'supplier_id' => 'nullable|integer|exists:suppliers,id',
             'delivery_required' => 'boolean',
@@ -158,42 +98,84 @@ if (!function_exists('userDetails')) {
             return response()->json([
                 'success' => false,
                 'message' => 'Validation failed',
-                'errors' => $validator->errors(),
+                'errors'  => $validator->errors(),
             ], 422);
         }
 
         try {
             $validated = $validator->validated();
-            $requisition = $this->purchaseRequistionService->createPurchaseRequisition($validated);
+            $requisition = $this->purchaseRequistionService
+                ->createPurchaseRequisition($validated);
 
-            // ✅ Send notification to supervisor
-            $supervisor = User::where('is_supervisor', true)->first();
-            
-            if ($supervisor) {
-                $supervisor->notify(new PurchaseRequestApproval(
-                    $requisition,
-                    'supervisor_approval',
-                    $supervisor->name
-                ));
-                
-                Log::info('Supervisor notification sent', [
+            // Load relations we need for the notification payload
+            $requisition->loadMissing(['department', 'items']);
+
+            // --- Dispatch notifications (never let this break the response) ---
+            try {
+                $actor = Auth::user();
+
+                // 1) Supervisor
+                $supervisor = User::where('is_supervisor', true)->first();
+                if ($supervisor) {
+                    $supervisor->notify(new PurchaseRequestApproval(
+                        $requisition,
+                        'supervisor_approval',
+                        $supervisor->name,
+                    ));
+
+                    Log::info('Supervisor notification sent', [
+                        'requisition_id' => $requisition->id,
+                        'supervisor_id'  => $supervisor->id,
+                    ]);
+                }
+
+                // 2) All admins (is_admin = 1)
+                $admins = User::where('is_admin', true)
+                    ->where('id', '!=', $actor?->id)  // don't notify the requester if they're also admin
+                    ->get();
+
+                if ($admins->isNotEmpty()) {
+                    $notification = new PurchaseRequisitionAwaitingApproval(
+                        requisitionId: $requisition->id,
+                        requisitionNo: $requisition->pr_number ?? "PR-{$requisition->id}",
+                        departmentId: (int) $requisition->department_id,
+                        departmentName: $requisition->department->name ?? 'N/A',
+                        priority: $requisition->priority ?? 'medium',
+                        totalAmount: (float) ($requisition->estimated_total ?? $validated['total_amount']),
+                        budgetCode: $requisition->budget_code ?? $validated['budget_code'],
+                        itemCount: $requisition->items->count(),
+                        requestedBy: (int) ($actor?->id ?? 0),
+                        requestedByName: $actor?->name ?? 'System',
+                        requiredDate: $requisition->required_date,
+                    );
+
+                    // Notification::send($admins, $notification);
+
+                    // Log::info('Admin approval notifications sent', [
+                    //     'requisition_id' => $requisition->id,
+                    //     'admin_count'    => $admins->count(),
+                    //     'admin_ids'      => $admins->pluck('id')->all(),
+                    // ]);
+                }
+            } catch (\Throwable $notifyError) {
+                // Never fail the request because a notification failed
+                Log::warning('Failed to dispatch requisition notifications', [
                     'requisition_id' => $requisition->id,
-                    'supervisor_id' => $supervisor->id,
+                    'error'          => $notifyError->getMessage(),
                 ]);
             }
 
             return response()->json([
                 'success' => true,
                 'message' => 'Purchase requisition created successfully',
-                'data' => $requisition,
+                'data'    => $requisition,
             ], 201);
-            
         } catch (\Exception $e) {
             Log::error('Failed to create requisition:', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
-            
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to create requisition: ' . $e->getMessage(),
@@ -211,7 +193,7 @@ if (!function_exists('userDetails')) {
             $user = User::findOrFail(49);
 
 
-         
+
             // Check if user can approve
             if (!$user->is_admin || !$user->is_supervisor) {
                 return response()->json([
@@ -240,12 +222,12 @@ if (!function_exists('userDetails')) {
             $requisition->status = $user->is_admin ? 'approved' : 'pending_admin';
             $requisition->approved_by = $user->id;
             $requisition->approved_at = now();
-            
+
             if ($user->is_admin && $request->release_funds) {
                 $requisition->funds_released_at = now();
                 $requisition->funds_released_by = $user->id;
             }
-            
+
             $requisition->save();
 
             // ==========================================
@@ -253,13 +235,13 @@ if (!function_exists('userDetails')) {
             // ==========================================
             if ($requisition->requester) {
                 $action = $user->is_admin ? 'admin_approved' : 'supervisor_approved';
-                
+
                 $requisition->requester->notify(new PurchaseRequestApproval(
                     $requisition,
                     $action,
                     $user->name
                 ));
-                
+
                 Log::info('Requester notification sent for approval', [
                     'requisition_id' => $requisition->id,
                     'requester_id' => $requisition->requester->id,
@@ -276,7 +258,7 @@ if (!function_exists('userDetails')) {
                         'admin_approved',
                         $user->name
                     ));
-                    
+
                     Log::info('Supervisor notification sent for admin approval', [
                         'requisition_id' => $requisition->id,
                         'supervisor_id' => $supervisor->id,
@@ -296,13 +278,12 @@ if (!function_exists('userDetails')) {
                 'message' => $user->is_admin ? 'Requisition approved and funds released!' : 'Requisition approved by supervisor. Awaiting admin approval.',
                 'data' => $requisition,
             ]);
-
         } catch (\Exception $e) {
             Log::error('Failed to approve requisition:', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-            
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to approve requisition: ' . $e->getMessage(),
@@ -321,9 +302,9 @@ if (!function_exists('userDetails')) {
             $reason = $request->input('reason', 'No reason provided');
 
             // Check permission
-            $isAuthorized = $user->is_admin || 
-                           ($user->is_supervisor && $user->department_id === $requisition->department_id);
-            
+            $isAuthorized = $user->is_admin ||
+                ($user->is_supervisor && $user->department_id === $requisition->department_id);
+
             if (!$isAuthorized) {
                 return response()->json([
                     'success' => false,
@@ -347,7 +328,7 @@ if (!function_exists('userDetails')) {
                     'rejected',
                     $user->name
                 ));
-                
+
                 Log::info('Requester notified of rejection', [
                     'requisition_id' => $requisition->id,
                     'requester_id' => $requisition->requester->id,
@@ -372,13 +353,12 @@ if (!function_exists('userDetails')) {
                 'message' => 'Requisition rejected successfully',
                 'data' => $requisition,
             ]);
-
         } catch (\Exception $e) {
             Log::error('Failed to reject requisition:', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-            
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to reject requisition: ' . $e->getMessage(),
@@ -426,7 +406,7 @@ if (!function_exists('userDetails')) {
                     'funds_released',
                     $user->name
                 ));
-                
+
                 Log::info('Requester notified of funds release', [
                     'requisition_id' => $requisition->id,
                     'requester_id' => $requisition->requester->id,
@@ -450,13 +430,12 @@ if (!function_exists('userDetails')) {
                 'message' => 'Funds released successfully',
                 'data' => $requisition,
             ]);
-
         } catch (\Exception $e) {
             Log::error('Failed to release funds:', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-            
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to release funds: ' . $e->getMessage(),
