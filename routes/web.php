@@ -52,33 +52,33 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/dashboard', function () {
         $user = auth()->user();
         $roles = $user->profile?->roles ?? [];
+        $departmentId = $user->profile?->department_id; // adjust to your schema
 
-        // Keep adding roles here
+        if (in_array('receptionist', $roles)) {
+            abort_if(! $departmentId, 403, 'No department assigned to this user.');
+            return redirect("/reception/dashboard/{$departmentId}");
+        }
+        if (in_array('lab_technician', $roles)) {
+            abort_if(! $departmentId, 403, 'No department assigned to this user.');
+            return redirect("/laboratory/dashboard/{$departmentId}");
+        }
         if (in_array('bulkstore', $roles)) {
             return redirect('/bulkstore/dashboard');
         }
-        if (in_array('receptionist', $roles)) {
-            return redirect('/reception/dashboard');
-        }
-        if (in_array('laboratory/dashoard', $roles)) {
-            return redirect('/laboratory/dashboard/{deaprtementId}');
-        }
-
         if (in_array('pharmacy', $roles)) {
             return redirect('/pharmacy/dashboard/1');
         }
-
+        if (in_array('radiology', $roles)) {
+            return redirect('/radiology/dashboard/1');
+        }
         if (in_array('nurses', $roles)) {
             return redirect('/nurses/dashboard');
         }
-
         if (in_array('admin', $roles)) {
-            return redirect('/bulkstore/dashboard');
+            return redirect('/admin/dashboard');
         }
 
-        // Existing logic
-        return app(\App\Http\Controllers\Dashboard\MetricsController::class)
-            ->dashboard();
+        return app(MetricsController::class)->dashboard();
     })->name('dashboard');
     Route::get('/patients', function () {
         return Inertia::render('patients/registry');
@@ -306,4 +306,5 @@ require __DIR__ . '/pharmacy_web.php';
 require __DIR__ . '/maternal_web.php';
 require __DIR__ . '/theatre_web.php';
 require __DIR__ . '/dental_web.php';
-require __DIR__ . '/ophthalmology_web.php';
+require __DIR__ . '/opthamology_web.php';
+require __DIR__ . '/service_web.php';

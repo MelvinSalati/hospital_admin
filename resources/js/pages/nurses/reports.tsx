@@ -15,7 +15,8 @@ import ReusableTable from '@/components/ReusableTable';
 import type { Column, Action } from '@/components/ReusableTable';
 import AppLayout from '@/layouts/app-layout';
 import type { BreadcrumbItem } from '@/types';
-
+import { generateNursesReportPdf } from '@/utils/generateNursesReportPdf';
+import Http from '@/utils/Http';
 // ============================================
 // TYPES
 // ============================================
@@ -225,14 +226,39 @@ export default function Reports() {
 
     const openReport = (report: Report) => setSelectedReport(report);
     const closeModal = () => setSelectedReport(null);
-
-    const handleRunReport = () => {
+    const handleRunReport = async () => {
         if (!selectedReport) return;
-        console.log('Run report:', selectedReport.id, { from, to, mode });
-        // router.post(`/nurses/reports/${selectedReport.id}`, { from, to, mode });
-        closeModal();
-    };
 
+        const routeMap: Record<string, string> = {
+            'patients-seen-department':
+                '/nurses/reports/patients-seen-department',
+            'patients-cash': '/nurses/reports/patients-cash',
+            'patients-insurance': '/nurses/reports/patients-insurance',
+        };
+
+        const url = routeMap[selectedReport.id];
+        if (!url) return;
+
+        try {
+            const { data: json } = await Http.post(url, { from, to });
+
+            if (!json.success) {
+                throw new Error(json.message || 'Report failed');
+            }
+
+            await generateNursesReportPdf(
+                selectedReport.id,
+                json,
+                `${selectedReport.id}-${from}-to-${to}.pdf`,
+                { department: 'Nursing', generatedBy: 'Current User' },
+            );
+
+            closeModal();
+        } catch (e) {
+            console.error(e);
+            // toast error
+        }
+    };
     const columns: Column<Report>[] = [
         {
             id: 'name',

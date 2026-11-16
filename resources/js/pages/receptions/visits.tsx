@@ -1079,7 +1079,7 @@ export default function Queues() {
             <div className="h-full bg-blue-50 p-4">
                 <PageHeader
                     icon={<Users className="h-6 w-6" />}
-                    title="Patient Queues"
+                    title="Clients In  Queue"
                     subtitle="View and manage patients in the queue with invoice tracking"
                 />
 

@@ -7,15 +7,30 @@ use App\Http\Controllers\Reports\DentalReportController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('dental')->group(function () {
+    // Optional: keep a catch-all if you still need it
     Route::get('/', [DentalController::class, 'index']);
 
-    Route::get('/dashboard/{departmentId}', [DentalDashboardController::class, 'index']);
+    // Dashboard
+    Route::get('/dashboard/{departmentId?}', [DentalController::class, 'dashboard'])
+        ->name('dental.dashboard');
 
-    Route::get('appointments', [DentalController::class, 'appointments']);
-    Route::get('queue',        [DentalController::class, 'queue']);
-    Route::get('procedures',   [DentalController::class, 'procedures']);
-    Route::get('processed',    [DentalController::class, 'processed']);
+    // Core clinical routes – now accept optional departmentId
+    Route::get('appointments/{departmentId?}', [DentalController::class, 'appointments'])
+        ->name('dental.appointments');
 
-    Route::get('bulk-orders/{departmentId}', [DentalBulkStoreController::class, 'index']);
-    Route::get('reports/{departmentId}',     [DentalReportController::class, 'index'])->name('dental.reports');
+    Route::get('queue/{departmentId?}', [DentalController::class, 'queue'])
+        ->name('dental.queue');
+
+    Route::get('billables/{departmentId?}', [DentalController::class, 'procedures'])
+        ->name('dental.procedures');
+
+    Route::get('processed/{departmentId?}', [DentalController::class, 'processed'])
+        ->name('dental.processed');
+
+    // Bulk store & reports
+    Route::get('bulk-orders/{departmentId?}', [DentalController::class, 'bulkOrders'])
+        ->name('dental.bulk-orders');
+
+    Route::get('reports/{departmentId?}', [DentalReportController::class, 'index'])
+        ->name('dental.reports');
 });

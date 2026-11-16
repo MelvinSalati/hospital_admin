@@ -1101,7 +1101,8 @@ export default function AdminDashboard(props: Partial<DashboardStats> = {}) {
     return (
         <AppLayout
             breadcrumbs={[
-                { title: 'Home', href: '/' },
+                { title: 'Altaf Memorial Hospital', href: '/' },
+                { title: 'Admin', href: '/admin/dashboard' },
                 { title: 'Dashboard', href: '/admin/dashboard' },
             ]}
         >

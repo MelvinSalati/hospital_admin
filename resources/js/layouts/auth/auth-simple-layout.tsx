@@ -2,7 +2,7 @@ import { Link } from '@inertiajs/react';
 import AppLogoIcon from '@/components/app-logo-icon';
 import { home } from '@/routes';
 import type { AuthLayoutProps } from '@/types';
-import Img from '../../../assets/img/IMG-20260318-WA0017.jpg'
+import Img from '../../../assets/img/logo.jpg'
 import bg from './19373.jpg'
 export default function AuthSimpleLayout({
     children,

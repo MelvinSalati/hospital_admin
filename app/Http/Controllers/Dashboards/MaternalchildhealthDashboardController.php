@@ -32,7 +32,7 @@ class MaternalchildhealthDashboardController extends Controller
             $data = $data->getData(true);
         }
 
-        return Inertia::render('maternal-child-health/dashboard', array_merge(
+        return Inertia::render('martenal/dashboard', array_merge(
             [
                 'userName' => $request->user()?->name ?? 'Maternal Child Health User',
             ],

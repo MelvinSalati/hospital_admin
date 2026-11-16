@@ -3,19 +3,22 @@ import ReusableTable from '@/components/ReusableTable';
 import type { Column, Action } from '@/components/ReusableTable';
 import AppLayout from '@/layouts/app/app-header-layout';
 import {
+    AlertTriangle,
     Barcode,
     BarcodeIcon,
-    Eye,
-    Package,
-    X,
-    Calendar,
-    User,
     Building2,
-    Hash,
-    Boxes,
+    CalendarClock,
+    CalendarDays,
+    Eye,
+    FileText,
+    Package,
+    User,
+    X,
+    ClipboardList,
 } from 'lucide-react';
 import { usePage, router } from '@inertiajs/react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import OrderItemsModal from '@/components/OrderItemsModal';
 import { cn } from '@/lib/utils';
 
@@ -55,6 +58,17 @@ interface OrderedItem {
 // ─── Shared helpers ─────────────────────────────────────────
 const formatMoney = (value: number | null | undefined) =>
     value != null ? `$${Number(value).toFixed(2)}` : '—';
+
+const num = (v: number | null | undefined) => Number(v ?? 0);
+
+const formatDate = (value: string | null | undefined) =>
+    value
+        ? new Date(value).toLocaleDateString(undefined, {
+              day: '2-digit',
+              month: 'short',
+              year: 'numeric',
+          })
+        : '—';
 
 const priorityClasses: Record<string, string> = {
     low: 'bg-slate-100 text-slate-600 border-slate-200',
@@ -181,16 +195,7 @@ export default function BulkStore() {
                 </span>
             ),
         },
-        {
-            id: 'estimated_total',
-            label: 'Total',
-            sortable: true,
-            format: (value) => (
-                <span className="text-sm font-medium text-slate-800 tabular-nums">
-                    {formatMoney(value)}
-                </span>
-            ),
-        },
+     
         {
             id: 'priority',
             label: 'Priority',
@@ -314,7 +319,7 @@ export default function BulkStore() {
 }
 
 /* ============================================================
- * Right-side sliding drawer (narrow, professional)
+ * Right-side drawer
  * ============================================================ */
 function OrderDrawer({
     order,
@@ -326,225 +331,432 @@ function OrderDrawer({
     const open = !!order;
     const items = order?.items ?? [];
 
+    // Close on Escape
+    useEffect(() => {
+        if (!open) return;
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') onClose();
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [open, onClose]);
+
+    // Totals across all line items
+    const totalRequested = items.reduce(
+        (s, i) => s + num(i.quantity_requested),
+        0,
+    );
+    const totalApproved = items.reduce(
+        (s, i) => s + num(i.quantity_approved),
+        0,
+    );
+    const totalFulfilled = items.reduce(
+        (s, i) => s + num(i.quantity_fulfilled),
+        0,
+    );
+    const overallPct =
+        totalRequested > 0
+            ? Math.min(100, Math.round((totalFulfilled / totalRequested) * 100))
+            : 0;
+
     return (
         <>
             {/* Backdrop */}
             <div
                 className={cn(
-                    'fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-[1px] transition-opacity',
+                    'fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-[2px] transition-opacity duration-300',
                     open ? 'opacity-100' : 'pointer-events-none opacity-0',
                 )}
                 onClick={onClose}
                 aria-hidden={!open}
             />
 
-            {/* Drawer panel */}
+            {/* Panel */}
             <aside
                 role="dialog"
                 aria-modal="true"
-                aria-label="Order items"
+                aria-label="Requisition details"
                 className={cn(
-                    'fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col bg-white shadow-2xl transition-transform duration-300 ease-out',
+                    'fixed inset-y-0 right-0 z-50 flex w-full max-w-[480px] flex-col bg-slate-50 shadow-2xl transition-transform duration-300 ease-out',
                     open ? 'translate-x-0' : 'translate-x-full',
                 )}
             >
-                {/* Header */}
-                <header className="flex items-start justify-between gap-4 bg-blue-200 px-4 py-3">
-                    <div className="flex min-w-0 items-center gap-2">
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-blue-600">
-                            <Boxes size={15} className="text-white" />
+                {/* ─── Header ─── */}
+                <header className="border-b border-slate-200 bg-white px-5 pt-4 pb-4">
+                    <div className="flex items-start justify-between gap-3">
+                        <div className="flex min-w-0 items-center gap-3">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-white">
+                                <ClipboardList size={18} />
+                            </div>
+                            <div className="min-w-0">
+                                <p className="text-[10px] font-semibold tracking-[0.12em] text-slate-400 uppercase">
+                                    Requisition
+                                </p>
+                                <h2 className="truncate font-mono text-base font-semibold text-slate-900">
+                                    {order?.requisition_number ?? '—'}
+                                </h2>
+                            </div>
                         </div>
-                        <div className="min-w-0">
-                            <h2 className="truncate text-sm font-semibold text-white">
-                                {order?.requisition_number ?? 'Requisition'}
-                            </h2>
-                            <p className="font-mono text-[10px] text-slate-400">
-                                {order?.requisition_uuid?.slice(0, 12)}
-                            </p>
-                        </div>
+                        <button
+                            onClick={onClose}
+                            className="shrink-0 rounded-md p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+                            aria-label="Close drawer"
+                        >
+                            <X size={18} />
+                        </button>
                     </div>
-                    <button
-                        onClick={onClose}
-                        className="shrink-0 rounded-md p-1.5 text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-700"
-                        aria-label="Close drawer"
-                    >
-                        <X size={18} />
-                    </button>
+
+                    {order && (
+                        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                            <StatusBadge value={order.status} />
+                            <span
+                                className={cn(
+                                    'inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-medium capitalize',
+                                    priorityClasses[order.priority ?? ''] ??
+                                        priorityClasses.normal,
+                                )}
+                            >
+                                {order.priority ?? 'Normal'} priority
+                            </span>
+                            <span className="font-mono text-[10px] text-slate-400">
+                                #{order.requisition_uuid?.slice(0, 8)}
+                            </span>
+                        </div>
+                    )}
                 </header>
 
-                {/* Meta strip — requested_by appears ONCE here */}
-                {order && (
-                    <div className="grid grid-cols-2 gap-2.5 border-b border-slate-200 bg-white px-4 py-3 text-xs">
-                        <Meta
-                            icon={<User size={12} />}
-                            label="Requested by"
-                            value={order.requested_by ?? '—'}
-                        />
-                        <Meta
-                            icon={<Building2 size={12} />}
-                            label="Department"
-                            value={order.department ?? '—'}
-                        />
-                        <Meta
-                            icon={<Calendar size={12} />}
-                            label="Requested"
-                            value={
-                                order.requested_at
-                                    ? new Date(
-                                          order.requested_at,
-                                      ).toLocaleDateString()
-                                    : '—'
-                            }
-                        />
-                        <Meta
-                            icon={<Hash size={12} />}
-                            label="Items"
-                            value={`${order.items_count ?? items.length}`}
-                        />
-                        {order.justification && (
-                            <div className="col-span-2 rounded-md border border-slate-200 bg-slate-50 p-2 text-[11px] text-slate-600">
-                                <span className="font-medium text-slate-500">
-                                    Justification:{' '}
-                                </span>
-                                {order.justification}
-                            </div>
-                        )}
-                    </div>
-                )}
+                {/* ─── Scrollable body ─── */}
+                <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
+                    {order && (
+                        <>
+                            {/* Details card */}
+                            <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                                <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+                                    <Meta
+                                        icon={<User size={12} />}
+                                        label="Requested by"
+                                        value={order.requested_by ?? '—'}
+                                    />
+                                    <Meta
+                                        icon={<Building2 size={12} />}
+                                        label="Department"
+                                        value={order.department ?? '—'}
+                                    />
+                                    <Meta
+                                        icon={<CalendarDays size={12} />}
+                                        label="Requested on"
+                                        value={formatDate(order.requested_at)}
+                                    />
+                                    <Meta
+                                        icon={<CalendarClock size={12} />}
+                                        label="Required by"
+                                        value={formatDate(
+                                            order.required_by_date,
+                                        )}
+                                    />
+                                </div>
 
-                {/* Item list */}
-                <div className="flex-1 overflow-y-auto px-4 py-3">
-                    {items.length === 0 ? (
-                        <div className="flex h-full flex-col items-center justify-center text-center text-slate-400">
-                            <Package size={32} className="mb-2 opacity-50" />
-                            <p className="text-sm">
-                                No items on this requisition.
-                            </p>
-                        </div>
-                    ) : (
-                        <ul className="space-y-2">
-                            {items.map((item, idx) => (
-                                <li
-                                    key={item.id}
-                                    className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm"
-                                >
-                                    {/* Top row: index + name (left) · qty (right) */}
-                                    <div className="flex items-start justify-between gap-3">
-                                        <div className="flex min-w-0 items-start gap-2">
-                                            <span className="mt-0.5 flex h-5 min-w-[20px] shrink-0 items-center justify-center rounded bg-slate-100 px-1.5 text-[10px] font-semibold text-slate-500">
-                                                {idx + 1}
-                                            </span>
-                                            <div className="min-w-0">
-                                                <p className="truncate text-sm font-semibold text-slate-800">
-                                                    {item.product_name}
-                                                </p>
-                                                <p className="font-mono text-[10px] text-slate-400">
-                                                    {item.product_code ??
-                                                        `PID ${item.product_id}`}
-                                                    {item.unit
-                                                        ? ` · ${item.unit}`
-                                                        : ''}
-                                                </p>
-                                            </div>
-                                        </div>
-
-                                        <div className="shrink-0 text-right">
-                                            <p className="text-[9px] tracking-wide text-slate-400 uppercase">
-                                                Qty
-                                            </p>
-                                            <p className="text-base font-semibold text-slate-800 tabular-nums">
-                                                {item.quantity_requested ?? 0}
-                                            </p>
-                                        </div>
+                                {order.justification && (
+                                    <div className="mt-3 flex gap-2 rounded-lg bg-slate-50 p-2.5 text-xs text-slate-600">
+                                        <FileText
+                                            size={13}
+                                            className="mt-0.5 shrink-0 text-slate-400"
+                                        />
+                                        <p className="leading-relaxed">
+                                            {order.justification}
+                                        </p>
                                     </div>
+                                )}
+                            </section>
 
-                                    {/* Status + batch / expiry / notes */}
-                                    {(item.status ||
-                                        item.batch_number ||
-                                        item.expiry_date ||
-                                        item.notes) && (
-                                        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-100 pt-2 text-[10px] text-slate-500">
-                                            {item.status && (
-                                                <StatusBadge
-                                                    value={item.status}
-                                                />
-                                            )}
-                                            {item.batch_number && (
-                                                <span>
-                                                    Batch:{' '}
-                                                    <span className="font-mono text-slate-700">
-                                                        {item.batch_number}
-                                                    </span>
-                                                </span>
-                                            )}
-                                            {item.expiry_date && (
-                                                <span>
-                                                    Expiry:{' '}
-                                                    <span className="text-slate-700">
-                                                        {new Date(
-                                                            item.expiry_date,
-                                                        ).toLocaleDateString()}
-                                                    </span>
-                                                </span>
-                                            )}
-                                            {item.notes && (
-                                                <span className="basis-full text-slate-600">
-                                                    <span className="font-medium text-slate-500">
-                                                        Notes:{' '}
-                                                    </span>
-                                                    {item.notes}
-                                                </span>
-                                            )}
-                                        </div>
-                                    )}
-                                </li>
-                            ))}
-                        </ul>
+                            {/* Fulfilment summary */}
+                            <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                                <div className="mb-3 flex items-center justify-between">
+                                    <h3 className="text-xs font-semibold tracking-wide text-slate-700 uppercase">
+                                        Fulfilment
+                                    </h3>
+                                    <span className="text-xs font-semibold text-slate-700 tabular-nums">
+                                        {overallPct}%
+                                    </span>
+                                </div>
+
+                                <ProgressBar
+                                    pct={overallPct}
+                                    className="mb-4 h-2"
+                                />
+
+                                <div className="grid grid-cols-3 divide-x divide-slate-100">
+                                    <SummaryStat
+                                        label="Requested"
+                                        value={totalRequested}
+                                    />
+                                    <SummaryStat
+                                        label="Approved"
+                                        value={totalApproved}
+                                    />
+                                    <SummaryStat
+                                        label="Fulfilled"
+                                        value={totalFulfilled}
+                                        accent
+                                    />
+                                </div>
+                            </section>
+
+                            {/* Line items */}
+                            <section>
+                                <div className="mb-2 flex items-center justify-between px-1">
+                                    <h3 className="text-xs font-semibold tracking-wide text-slate-700 uppercase">
+                                        Line items
+                                    </h3>
+                                    <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-600 tabular-nums">
+                                        {items.length}
+                                    </span>
+                                </div>
+
+                                {items.length === 0 ? (
+                                    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white py-12 text-center">
+                                        <Package
+                                            size={28}
+                                            className="mb-2 text-slate-300"
+                                        />
+                                        <p className="text-sm font-medium text-slate-600">
+                                            No line items
+                                        </p>
+                                        <p className="mt-0.5 text-xs text-slate-400">
+                                            This requisition has no products
+                                            attached.
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <ul className="space-y-3">
+                                        {items.map((item, idx) => (
+                                            <ItemCard
+                                                key={item.id}
+                                                item={item}
+                                                index={idx + 1}
+                                            />
+                                        ))}
+                                    </ul>
+                                )}
+                            </section>
+                        </>
                     )}
                 </div>
 
-                {/* ─── Professional footer with badges ─── */}
-                {order && (
-                    <footer className="relative border-t border-slate-200 bg-gradient-to-r from-slate-50 via-white to-slate-50 px-4 py-3">
-                        <span className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-blue-500 via-indigo-500 to-emerald-500" />
-
-                        <div className="flex items-center justify-between gap-3">
-                            <div className="flex flex-wrap items-center gap-1.5">
-                                <StatusBadge value={order.status} />
-                                <span
-                                    className={cn(
-                                        'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold capitalize',
-                                        priorityClasses[order.priority ?? ''] ??
-                                            priorityClasses.normal,
-                                    )}
-                                >
-                                    {order.priority ?? 'Normal'}
-                                </span>
-                            </div>
-
-                            <div className="text-right">
-                                <p className="text-[9px] tracking-wide text-slate-400 uppercase">
-                                    Estimated total
-                                </p>
-                                <p className="text-lg font-bold text-slate-900 tabular-nums">
-                                    {formatMoney(order.estimated_total)}
-                                </p>
-                            </div>
-                        </div>
-                    </footer>
-                )}
+                {/* ─── Footer ─── */}
+                <footer className="flex items-center justify-between gap-3 border-t border-slate-200 bg-white px-5 py-3">
+                    <p className="text-[11px] text-slate-400">
+                        {items.length} {items.length === 1 ? 'item' : 'items'} ·{' '}
+                        {totalRequested} units requested
+                    </p>
+                    <button
+                        onClick={onClose}
+                        className="rounded-lg bg-slate-900 px-4 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-slate-700"
+                    >
+                        Close
+                    </button>
+                </footer>
             </aside>
         </>
     );
 }
 
-/* ─── Small presentational helper ─────────────────────────── */
+/* ─── Line item card ──────────────────────────────────────── */
+function ItemCard({
+    item,
+    index,
+}: {
+    item: RequisitionItem;
+    index: number;
+}) {
+    const requested = num(item.quantity_requested);
+    const approved = num(item.quantity_approved);
+    const fulfilled = num(item.quantity_fulfilled);
+    const pct =
+        requested > 0
+            ? Math.min(100, Math.round((fulfilled / requested) * 100))
+            : 0;
+    const expiry = getExpiryState(item.expiry_date);
+
+    return (
+        <li className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+            {/* Title row */}
+            <div className="flex items-start justify-between gap-3 px-4 pt-3 pb-3">
+                <div className="flex min-w-0 items-start gap-2.5">
+                    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-slate-100 text-[10px] font-semibold text-slate-500">
+                        {index}
+                    </span>
+                    <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-slate-900">
+                            {item.product_name}
+                        </p>
+                        <p className="mt-0.5 font-mono text-[10px] text-slate-400">
+                            {item.product_code ?? `PID ${item.product_id}`}
+                            {item.unit ? ` · ${item.unit}` : ''}
+                        </p>
+                    </div>
+                </div>
+                {item.status && <StatusBadge value={item.status} />}
+            </div>
+
+            {/* Quantities */}
+            <div className="grid grid-cols-3 divide-x divide-slate-100 border-y border-slate-100 bg-slate-50/60">
+                <QtyCell label="Requested" value={requested} />
+                <QtyCell label="Approved" value={approved} />
+                <QtyCell label="Fulfilled" value={fulfilled} accent />
+            </div>
+
+            {/* Progress */}
+            <div className="flex items-center gap-3 px-4 py-2.5">
+                <ProgressBar pct={pct} className="h-1.5 flex-1" />
+                <span className="w-9 text-right text-[10px] font-semibold text-slate-500 tabular-nums">
+                    {pct}%
+                </span>
+            </div>
+
+            {/* Batch / expiry / notes */}
+            {(item.batch_number || item.expiry_date || item.notes) && (
+                <div className="space-y-2 border-t border-slate-100 px-4 py-2.5 text-[11px]">
+                    {(item.batch_number || item.expiry_date) && (
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                            {item.batch_number && (
+                                <span className="text-slate-500">
+                                    Batch{' '}
+                                    <span className="font-mono font-medium text-slate-800">
+                                        {item.batch_number}
+                                    </span>
+                                </span>
+                            )}
+                            {item.expiry_date && (
+                                <span
+                                    className={cn(
+                                        'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium',
+                                        expiry === 'expired' &&
+                                            'bg-red-50 text-red-700',
+                                        expiry === 'soon' &&
+                                            'bg-amber-50 text-amber-700',
+                                        expiry === 'ok' && 'text-slate-600',
+                                    )}
+                                >
+                                    {expiry !== 'ok' && (
+                                        <AlertTriangle size={11} />
+                                    )}
+                                    {expiry === 'expired'
+                                        ? 'Expired'
+                                        : 'Expires'}{' '}
+                                    {formatDate(item.expiry_date)}
+                                </span>
+                            )}
+                        </div>
+                    )}
+                    {item.notes && (
+                        <p className="leading-relaxed text-slate-600">
+                            <span className="font-medium text-slate-500">
+                                Note:{' '}
+                            </span>
+                            {item.notes}
+                        </p>
+                    )}
+                </div>
+            )}
+        </li>
+    );
+}
+
+/* ─── Helpers / small components ──────────────────────────── */
+function getExpiryState(date: string | null): 'ok' | 'soon' | 'expired' {
+    if (!date) return 'ok';
+    const days = Math.ceil(
+        (new Date(date).getTime() - Date.now()) / (1000 * 60 * 60 * 24),
+    );
+    if (days < 0) return 'expired';
+    if (days <= 90) return 'soon';
+    return 'ok';
+}
+
+function ProgressBar({
+    pct,
+    className,
+}: {
+    pct: number;
+    className?: string;
+}) {
+    return (
+        <div
+            className={cn(
+                'w-full overflow-hidden rounded-full bg-slate-100',
+                className,
+            )}
+        >
+            <div
+                className={cn(
+                    'h-full rounded-full transition-all duration-500',
+                    pct >= 100 ? 'bg-emerald-500' : 'bg-blue-500',
+                )}
+                style={{ width: `${pct}%` }}
+            />
+        </div>
+    );
+}
+
+function SummaryStat({
+    label,
+    value,
+    accent,
+}: {
+    label: string;
+    value: number;
+    accent?: boolean;
+}) {
+    return (
+        <div className="px-3 text-center first:pl-0 last:pr-0">
+            <p className="text-[10px] tracking-wide text-slate-400 uppercase">
+                {label}
+            </p>
+            <p
+                className={cn(
+                    'mt-0.5 text-xl font-semibold tabular-nums',
+                    accent ? 'text-emerald-600' : 'text-slate-900',
+                )}
+            >
+                {value}
+            </p>
+        </div>
+    );
+}
+
+function QtyCell({
+    label,
+    value,
+    accent,
+}: {
+    label: string;
+    value: number;
+    accent?: boolean;
+}) {
+    return (
+        <div className="px-3 py-2 text-center">
+            <p className="text-[9px] tracking-wide text-slate-400 uppercase">
+                {label}
+            </p>
+            <p
+                className={cn(
+                    'text-sm font-semibold tabular-nums',
+                    accent ? 'text-emerald-600' : 'text-slate-800',
+                )}
+            >
+                {value}
+            </p>
+        </div>
+    );
+}
+
 function Meta({
     icon,
     label,
     value,
 }: {
-    icon: React.ReactNode;
+    icon: ReactNode;
     label: string;
     value: string;
 }) {
@@ -554,7 +766,7 @@ function Meta({
                 {icon}
                 {label}
             </p>
-            <p className="truncate text-xs font-medium text-slate-700">
+            <p className="mt-0.5 truncate text-xs font-medium text-slate-800">
                 {value}
             </p>
         </div>

@@ -1,5 +1,3 @@
-// components/dashboard/imaging-dashboard.tsx
-
 import { useMemo, useState, useEffect, useRef } from 'react';
 import {
     Bell,

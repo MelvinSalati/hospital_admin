@@ -3,18 +3,24 @@ import { format } from 'date-fns';
 import {
     ActivityIcon,
     AlertTriangle,
+    ClipboardList,
+    LogOut,
     Plus,
-    Scan,
-    Stethoscope,
     StethoscopeIcon,
-    ToggleRightIcon,
-    X,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import PageHeader from '@/components/PageHeader';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
 import {
     Table,
     TableBody,
@@ -31,10 +37,14 @@ import NursingDiagnosis from './components/NursingDiagnosis';
 import RecentInteractions from './components/RecentInteractions';
 import VitalSignsTab from './components/VitalSignsTab';
 
+/* -------------------------------------------------------------------------- */
+/* Types & helpers                                                             */
+/* -------------------------------------------------------------------------- */
+
 interface Admission {
     id: number;
     admission_number: string;
-    admission_date: string;
+    admission_date?: string;
     date_of_admission?: string;
     department?: string;
     bed?: string;
@@ -43,120 +53,339 @@ interface Admission {
     uuid?: string;
 }
 
-export default function Admissions() {
-    const [activeTabItem, setActiveTabItem] = useState('admissions');
-    const [activeConsultationTab, setActiveConsultationTab] = useState(
-        'recent-interactions',
+type TabValue = 'admissions' | 'firm' | 'vitals';
+type ConsultationTabValue =
+    | 'recent-interactions'
+    | 'add-interactions'
+    | 'nursing';
+
+const isDischarged = (a: Admission) =>
+    Boolean(a.discharge_date) || a.status === 'discharged';
+
+const formatAdmissionDate = (a: Admission) => {
+    const raw = a.date_of_admission ?? a.admission_date;
+    if (!raw) return '–';
+    const date = new Date(raw);
+    return Number.isNaN(date.getTime()) ? '–' : format(date, 'PPP');
+};
+
+function getPatientIdFromUrl(): number | undefined {
+    if (typeof window === 'undefined') return undefined;
+    const [section, page, id] = window.location.pathname
+        .split('/')
+        .filter(Boolean);
+    if (section !== 'patients' || page !== 'admissions') return undefined;
+    const parsed = parseInt(id, 10);
+    return Number.isNaN(parsed) ? undefined : parsed;
+}
+
+const TABS: { value: TabValue; label: string; icon: typeof ActivityIcon }[] = [
+    { value: 'admissions', label: 'Admissions', icon: StethoscopeIcon },
+    { value: 'firm', label: 'Review patient', icon: ClipboardList },
+    { value: 'vitals', label: 'Vitals', icon: ActivityIcon },
+];
+
+const CONSULTATION_TABS: {
+    value: ConsultationTabValue;
+    label: string;
+    icon: typeof ActivityIcon;
+}[] = [
+    {
+        value: 'recent-interactions',
+        label: 'Recent interactions',
+        icon: ActivityIcon,
+    },
+    { value: 'add-interactions', label: 'Add interaction', icon: Plus },
+    { value: 'nursing', label: 'Nursing', icon: ActivityIcon },
+];
+
+/* -------------------------------------------------------------------------- */
+/* Admissions table + empty state                                              */
+/* -------------------------------------------------------------------------- */
+
+function AdmissionsTable({
+    admissions,
+    onDischarge,
+}: {
+    admissions: Admission[];
+    onDischarge: (admission: Admission) => void;
+}) {
+    return (
+        <div className="overflow-x-auto rounded-lg bg-white shadow">
+            <Table>
+                <TableHeader>
+                    <TableRow>
+                        <TableHead>Admission number</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Department</TableHead>
+                        <TableHead>Bed</TableHead>
+                        <TableHead>
+                            <span className="sr-only">Actions</span>
+                        </TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    {admissions.map((admission) => {
+                        const discharged = isDischarged(admission);
+                        return (
+                            <TableRow key={admission.id}>
+                                <TableCell className="font-medium">
+                                    {admission.admission_number}
+                                </TableCell>
+                                <TableCell>
+                                    {formatAdmissionDate(admission)}
+                                </TableCell>
+                                <TableCell>
+                                    {discharged ? (
+                                        <Badge className="bg-gray-100 text-gray-700">
+                                            Discharged
+                                        </Badge>
+                                    ) : (
+                                        <Badge className="bg-green-50 text-green-700">
+                                            Active
+                                        </Badge>
+                                    )}
+                                </TableCell>
+                                <TableCell>
+                                    {admission.department ?? '–'}
+                                </TableCell>
+                                <TableCell>{admission.bed ?? '–'}</TableCell>
+                                <TableCell className="text-right">
+                                    {!discharged && (
+                                        <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            className="text-blue-700"
+                                            onClick={() =>
+                                                onDischarge(admission)
+                                            }
+                                        >
+                                            <LogOut
+                                                className="mr-1 h-4 w-4"
+                                                aria-hidden="true"
+                                            />
+                                            Discharge
+                                        </Button>
+                                    )}
+                                </TableCell>
+                            </TableRow>
+                        );
+                    })}
+                </TableBody>
+            </Table>
+        </div>
     );
-    const [showDischargeModal, setShowDischargeModal] = useState(false);
-    const [selectedAdmission, setSelectedAdmission] =
-        useState<Admission | null>(null);
+}
+
+function NoAdmissions({ onAdmit }: { onAdmit: () => void }) {
+    return (
+        <div className="rounded-lg bg-gradient-to-r from-blue-50 to-blue-100 py-10 text-center">
+            <h2 className="text-lg font-medium text-gray-800">
+                No admissions yet
+            </h2>
+            <p className="mx-auto mt-1 mb-4 max-w-sm text-sm text-gray-600">
+                Admit this patient to start recording interactions and vitals.
+            </p>
+            <Button onClick={onAdmit}>
+                <Plus className="mr-1 h-4 w-4" aria-hidden="true" />
+                Admit patient
+            </Button>
+        </div>
+    );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Discharge dialog                                                            */
+/* -------------------------------------------------------------------------- */
+
+function DischargeDialog({
+    admission,
+    isSubmitting,
+    error,
+    notes,
+    onNotesChange,
+    onConfirm,
+    onClose,
+}: {
+    admission: Admission | null;
+    isSubmitting: boolean;
+    error: string | null;
+    notes: string;
+    onNotesChange: (value: string) => void;
+    onConfirm: () => void;
+    onClose: () => void;
+}) {
+    return (
+        <Dialog
+            open={admission !== null}
+            onOpenChange={(open) => {
+                if (!open && !isSubmitting) onClose();
+            }}
+        >
+            <DialogContent className="max-w-md">
+                <DialogHeader>
+                    <div className="flex items-center gap-3">
+                        <div className="rounded-full bg-yellow-100 p-2">
+                            <AlertTriangle
+                                className="h-5 w-5 text-yellow-700"
+                                aria-hidden="true"
+                            />
+                        </div>
+                        <DialogTitle>Discharge patient?</DialogTitle>
+                    </div>
+                    <DialogDescription>
+                        This marks the patient as discharged and frees the bed.
+                        It can’t be undone.
+                    </DialogDescription>
+                </DialogHeader>
+
+                {admission && (
+                    <dl className="space-y-2 rounded-lg bg-gray-50 p-4 text-sm">
+                        {[
+                            ['Admission number', admission.admission_number],
+                            ['Department', admission.department ?? '–'],
+                            ['Bed', admission.bed ?? '–'],
+                        ].map(([label, value]) => (
+                            <div key={label} className="flex justify-between">
+                                <dt className="text-gray-600">{label}</dt>
+                                <dd className="font-medium text-gray-900">
+                                    {value}
+                                </dd>
+                            </div>
+                        ))}
+                    </dl>
+                )}
+
+                <div>
+                    <label
+                        htmlFor="discharge-notes"
+                        className="mb-1 block text-sm font-medium text-gray-700"
+                    >
+                        Discharge notes (optional)
+                    </label>
+                    <textarea
+                        id="discharge-notes"
+                        value={notes}
+                        onChange={(e) => onNotesChange(e.target.value)}
+                        rows={3}
+                        disabled={isSubmitting}
+                        className="w-full resize-y rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20 focus:outline-none"
+                    />
+                </div>
+
+                {error && (
+                    <p
+                        role="alert"
+                        className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"
+                    >
+                        {error}
+                    </p>
+                )}
+
+                <DialogFooter>
+                    <Button
+                        variant="outline"
+                        onClick={onClose}
+                        disabled={isSubmitting}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={onConfirm}
+                        disabled={isSubmitting}
+                        className="bg-red-600 text-white hover:bg-red-700"
+                    >
+                        {isSubmitting ? (
+                            <>
+                                <span
+                                    className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
+                                    aria-hidden="true"
+                                />
+                                Discharging…
+                            </>
+                        ) : (
+                            'Discharge patient'
+                        )}
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Page                                                                        */
+/* -------------------------------------------------------------------------- */
+
+export default function Admissions() {
+    const {
+        admissions: admissionsProp,
+        auth,
+        nursing_diagnosis: nursingDx,
+        doctors: doctorsList,
+        interactions: recent,
+        admission_number,
+    } = usePage().props as any;
+
+    const admissions: Admission[] = admissionsProp ?? [];
+    const patientId = useMemo(getPatientIdFromUrl, []);
+    const doctorId = auth.user.id;
+    const hasActiveAdmission = admissions.some((a) => !isDischarged(a));
+
+    const [activeTab, setActiveTab] = useState<TabValue>('admissions');
+    const [activeConsultationTab, setActiveConsultationTab] =
+        useState<ConsultationTabValue>('recent-interactions');
+    const [showAdmissionModal, setShowAdmissionModal] = useState(false);
+
+    const [dischargeTarget, setDischargeTarget] = useState<Admission | null>(
+        null,
+    );
+    const [dischargeNotes, setDischargeNotes] = useState('');
     const [isDischarging, setIsDischarging] = useState(false);
     const [dischargeError, setDischargeError] = useState<string | null>(null);
 
-    // 👇 Single source of truth for the admission modal
-    const [showAdmissionModal, setShowAdmissionModal] = useState(false);
-
-    const {
-        admissions: initialAdmissions,
-        auth,
-        nursing_diagnosis: nursingDx,
-        doctors: ListOfDoctors,
-        interactions: recent,
-        admission_number,
-    } = usePage().props;
-
-    const doctorId = auth.user.id;
-
-    // Extract patientId from URL
-    const pathSegments = window.location.pathname.split('/').filter(Boolean);
-    const patientId =
-        pathSegments[0] === 'patients' && pathSegments[1] === 'admissions'
-            ? parseInt(pathSegments[2])
-            : undefined;
-
-    const hasActiveAdmission =
-        !!initialAdmissions?.length &&
-        initialAdmissions.some(
-            (a: Admission) => !a.discharge_date && a.status !== 'discharged',
-        );
-
-    const handleDiagnosisAdded = () => {
-        router.reload({ only: ['interactions'] });
-    };
-
-    const handleDischargeClick = (admission: Admission) => {
-        setSelectedAdmission(admission);
-        setShowDischargeModal(true);
+    const openDischarge = (admission: Admission) => {
+        setDischargeTarget(admission);
+        setDischargeNotes('');
         setDischargeError(null);
     };
 
-    const handleConfirmDischarge = async () => {
-        if (!selectedAdmission) return;
+    const closeDischarge = () => {
+        setDischargeTarget(null);
+        setDischargeError(null);
+    };
+
+    const confirmDischarge = async () => {
+        if (!dischargeTarget) return;
         setIsDischarging(true);
         setDischargeError(null);
 
         try {
             await admissionAPI.discharge(
-                selectedAdmission.uuid || String(selectedAdmission.id),
+                dischargeTarget.uuid || String(dischargeTarget.id),
                 {
                     discharge_date: new Date().toISOString(),
                     discharged_by: auth.user.id,
                     discharged_by_name: auth.user.name,
                     diagnosis_on_discharge: '',
-                    discharge_notes: 'Patient discharged',
+                    discharge_notes:
+                        dischargeNotes.trim() || 'Patient discharged',
                 },
             );
-
-            setShowDischargeModal(false);
-            setSelectedAdmission(null);
+            closeDischarge();
             router.reload();
         } catch (error: any) {
             setDischargeError(
-                error.message || 'An error occurred while discharging',
+                error?.message ||
+                    'Couldn’t discharge the patient. Check your connection and try again.',
             );
         } finally {
             setIsDischarging(false);
         }
     };
 
-    const tabs = [
-        {
-            value: 'admissions',
-            label: 'Admissions',
-            icon: <Stethoscope className="mr-1 h-4 w-4" />,
-        },
-        {
-            value: 'firm',
-            label: 'Review Patient',
-            icon: <Stethoscope className="mr-1 h-4 w-4" />,
-        },
-        {
-            value: 'vitals',
-            label: 'Vitals',
-            icon: <ActivityIcon className="mr-1 h-4 w-4" />,
-        },
-    ];
-
-    const consultationTabs = [
-        {
-            value: 'recent-interactions',
-            label: 'Recent Interactions',
-            icon: <ActivityIcon className="mr-1 h-4 w-4" />,
-        },
-        {
-            value: 'add-interactions',
-            label: 'Add Interactions',
-            icon: <Plus className="mr-1 h-4 w-4" />,
-        },
-        {
-            value: 'nursing',
-            label: 'Nursing',
-            icon: <ActivityIcon className="mr-1 h-4 w-4" />,
-        },
-    ];
-
-    const renderConsultationTabItems = () => {
+    const renderConsultationTab = () => {
         switch (activeConsultationTab) {
             case 'recent-interactions':
                 return (
@@ -164,7 +393,9 @@ export default function Admissions() {
                         admissionNumber={admission_number}
                         data={recent}
                         patientId={patientId}
-                        onDiagnosisAdded={handleDiagnosisAdded}
+                        onDiagnosisAdded={() =>
+                            router.reload({ only: ['interactions'] })
+                        }
                     />
                 );
             case 'add-interactions':
@@ -184,149 +415,8 @@ export default function Admissions() {
                         initialData={nursingDx}
                     />
                 );
-            default:
-                return null;
         }
     };
-
-    const renderTabItems = () => (
-        <>
-            {activeTabItem === 'admissions' && (
-                <div className="mt-6 w-full">
-                    {initialAdmissions?.length > 0 ? (
-                        <div className="rounded-lg bg-white shadow">
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Admission Number</TableHead>
-                                        <TableHead>Date</TableHead>
-                                        <TableHead>Status</TableHead>
-                                        <TableHead>Department</TableHead>
-                                        <TableHead>Bed</TableHead>
-                                        <TableHead>Actions</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {initialAdmissions.map(
-                                        (admission: Admission) => {
-                                            const isDischarged =
-                                                admission.discharge_date ||
-                                                admission.status ===
-                                                    'discharged';
-                                            return (
-                                                <TableRow key={admission.id}>
-                                                    <TableCell>
-                                                        {
-                                                            admission.admission_number
-                                                        }
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        {admission.date_of_admission
-                                                            ? format(
-                                                                  new Date(
-                                                                      admission.date_of_admission,
-                                                                  ),
-                                                                  'PPP',
-                                                              )
-                                                            : '-'}
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        {isDischarged ? (
-                                                            <Badge className="bg-gray-50 text-gray-600">
-                                                                Discharged
-                                                            </Badge>
-                                                        ) : (
-                                                            <Badge className="bg-green-50 text-green-600">
-                                                                Active
-                                                            </Badge>
-                                                        )}
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        {admission.department ??
-                                                            '-'}
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        {admission.bed ?? '-'}
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        {!isDischarged && (
-                                                            <Button
-                                                                size="sm"
-                                                                variant="ghost"
-                                                                onClick={() =>
-                                                                    handleDischargeClick(
-                                                                        admission,
-                                                                    )
-                                                                }
-                                                            >
-                                                                <ToggleRightIcon className="h-8 w-8 text-blue-600" />
-                                                                Discharge
-                                                            </Button>
-                                                        )}
-                                                    </TableCell>
-                                                </TableRow>
-                                            );
-                                        },
-                                    )}
-                                </TableBody>
-                            </Table>
-                        </div>
-                    ) : (
-                        <div className="mt-8 flex w-full justify-center rounded-lg bg-gradient-to-r from-blue-50 to-blue-100">
-                            <div className="w-full py-10 text-center">
-                                <h1 className="mb-4 text-gray-600">
-                                    No Admissions Found
-                                </h1>
-                                {/* 👇 Same state, same modal */}
-                                <Button
-                                    onClick={() => setShowAdmissionModal(true)}
-                                >
-                                    <Plus className="mr-1 h-4 w-4" />
-                                    Admit Patient
-                                </Button>
-                            </div>
-                        </div>
-                    )}
-                </div>
-            )}
-
-            {activeTabItem === 'firm' && (
-                <>
-                    <div className="flex gap-2">
-                        {consultationTabs.map((tab) => (
-                            <Button
-                                key={tab.value}
-                                size="sm"
-                                variant="ghost"
-                                onClick={() =>
-                                    setActiveConsultationTab(tab.value)
-                                }
-                                className={`flex items-center gap-1 rounded-none border-b-2 transition-all ${
-                                    activeConsultationTab === tab.value
-                                        ? 'border-gray-600 bg-transparent text-gray-900'
-                                        : 'border-transparent text-gray-400 hover:text-gray-700'
-                                }`}
-                            >
-                                {tab.icon}
-                                {tab.label}
-                            </Button>
-                        ))}
-                    </div>
-
-                    <div className="mt-6 w-full">
-                        {renderConsultationTabItems()}
-                    </div>
-                </>
-            )}
-
-            {activeTabItem === 'vitals' && (
-                <VitalSignsTab
-                    admissionNumber={admission_number}
-                    patientId={patientId}
-                />
-            )}
-        </>
-    );
 
     return (
         <PatientLayout
@@ -336,54 +426,116 @@ export default function Admissions() {
             ]}
         >
             <div className="h-full bg-blue-100 p-2">
-                {/* Header */}
-                <div className="flex gap-2">
-                    <PageHeader
-                        icon={<StethoscopeIcon />}
-                        title="Admission"
-                        subtitle="View current active admission"
-                        actions={
-                            hasActiveAdmission
-                                ? []
-                                : [
-                                      {
-                                          label: 'Admit Patient',
-                                          onClick: () =>
-                                              setShowAdmissionModal(true),
-                                      },
-                                  ]
-                        }
-                    />
-                </div>
+                <PageHeader
+                    icon={<StethoscopeIcon />}
+                    title="Admission"
+                    subtitle="View current active admission"
+                    actions={
+                        hasActiveAdmission
+                            ? []
+                            : [
+                                  {
+                                      label: 'Admit patient',
+                                      onClick: () =>
+                                          setShowAdmissionModal(true),
+                                  },
+                              ]
+                    }
+                />
 
-                {/* Tabs */}
-                <div className="mb-6 flex gap-3">
-                    {tabs.map((tab) => (
+                <div
+                    role="tablist"
+                    aria-label="Admission sections"
+                    className="mb-6 flex gap-3"
+                >
+                    {TABS.map(({ value, label, icon: Icon }) => (
                         <Button
-                            key={tab.value}
+                            key={value}
+                            role="tab"
+                            aria-selected={activeTab === value}
                             variant={
-                                activeTabItem === tab.value
-                                    ? 'default'
-                                    : 'outline'
+                                activeTab === value ? 'default' : 'outline'
                             }
                             size="sm"
-                            onClick={() => setActiveTabItem(tab.value)}
+                            onClick={() => setActiveTab(value)}
                         >
-                            {tab.icon}
-                            {tab.label}
+                            <Icon className="mr-1 h-4 w-4" aria-hidden="true" />
+                            {label}
                         </Button>
                     ))}
                 </div>
 
-                {renderTabItems()}
+                {activeTab === 'admissions' && (
+                    <div className="mt-6 w-full">
+                        {admissions.length > 0 ? (
+                            <AdmissionsTable
+                                admissions={admissions}
+                                onDischarge={openDischarge}
+                            />
+                        ) : (
+                            <NoAdmissions
+                                onAdmit={() => setShowAdmissionModal(true)}
+                            />
+                        )}
+                    </div>
+                )}
+
+                {activeTab === 'firm' && (
+                    <>
+                        <div
+                            role="tablist"
+                            aria-label="Review sections"
+                            className="flex gap-2"
+                        >
+                            {CONSULTATION_TABS.map(
+                                ({ value, label, icon: Icon }) => {
+                                    const selected =
+                                        activeConsultationTab === value;
+                                    return (
+                                        <Button
+                                            key={value}
+                                            role="tab"
+                                            aria-selected={selected}
+                                            size="sm"
+                                            variant="ghost"
+                                            onClick={() =>
+                                                setActiveConsultationTab(value)
+                                            }
+                                            className={`flex items-center gap-1 rounded-none border-b-2 transition-colors ${
+                                                selected
+                                                    ? 'border-gray-700 bg-transparent text-gray-900'
+                                                    : 'border-transparent text-gray-500 hover:text-gray-800'
+                                            }`}
+                                        >
+                                            <Icon
+                                                className="mr-1 h-4 w-4"
+                                                aria-hidden="true"
+                                            />
+                                            {label}
+                                        </Button>
+                                    );
+                                },
+                            )}
+                        </div>
+                        <div className="mt-6 w-full">
+                            {renderConsultationTab()}
+                        </div>
+                    </>
+                )}
+
+                {activeTab === 'vitals' && (
+                    <VitalSignsTab
+                        admissionNumber={admission_number}
+                        patientId={patientId}
+                    />
+                )}
             </div>
 
-            {/* 👇 SINGLE controlled AdmissionModal — no internal trigger */}
             <AdmissionModal
                 open={showAdmissionModal}
                 onOpenChange={setShowAdmissionModal}
                 admittedById={auth.user.id}
-                doctorsList={ListOfDoctors}
+                doctorsList={doctorsList}
                 patientId={patientId}
                 onSuccess={() => {
                     setShowAdmissionModal(false);
@@ -391,121 +543,15 @@ export default function Admissions() {
                 }}
             />
 
-            {/* Discharge confirmation modal */}
-            {showDischargeModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center">
-                    <div
-                        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-                        onClick={() =>
-                            !isDischarging && setShowDischargeModal(false)
-                        }
-                    />
-
-                    <div className="relative z-10 mx-4 w-full max-w-md animate-in rounded-lg bg-white shadow-xl duration-200 fade-in zoom-in">
-                        <div className="flex items-center justify-between border-b p-6">
-                            <div className="flex items-center gap-3">
-                                <div className="rounded-full bg-yellow-100 p-2">
-                                    <AlertTriangle className="h-6 w-6 text-yellow-600" />
-                                </div>
-                                <h2 className="text-xl font-semibold text-gray-900">
-                                    Confirm Discharge
-                                </h2>
-                            </div>
-                            <button
-                                onClick={() =>
-                                    !isDischarging &&
-                                    setShowDischargeModal(false)
-                                }
-                                className="text-gray-400 transition-colors hover:text-gray-600"
-                                disabled={isDischarging}
-                            >
-                                <X className="h-5 w-5" />
-                            </button>
-                        </div>
-
-                        <div className="p-6">
-                            <p className="mb-4 text-gray-700">
-                                Are you sure you want to discharge this patient?
-                            </p>
-
-                            {selectedAdmission && (
-                                <div className="mb-4 rounded-lg bg-gray-50 p-4">
-                                    <div className="space-y-2 text-sm">
-                                        <div className="flex justify-between">
-                                            <span className="text-gray-600">
-                                                Admission Number:
-                                            </span>
-                                            <span className="font-medium text-gray-900">
-                                                {
-                                                    selectedAdmission.admission_number
-                                                }
-                                            </span>
-                                        </div>
-                                        <div className="flex justify-between">
-                                            <span className="text-gray-600">
-                                                Department:
-                                            </span>
-                                            <span className="font-medium text-gray-900">
-                                                {selectedAdmission.department ??
-                                                    '-'}
-                                            </span>
-                                        </div>
-                                        <div className="flex justify-between">
-                                            <span className="text-gray-600">
-                                                Bed:
-                                            </span>
-                                            <span className="font-medium text-gray-900">
-                                                {selectedAdmission.bed ?? '-'}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            <div className="mb-4 rounded-lg border border-yellow-200 bg-yellow-50 p-3">
-                                <p className="text-sm text-yellow-800">
-                                    <strong>Note:</strong> This action will mark
-                                    the patient as discharged and free up the
-                                    bed for other patients. This process cannot
-                                    be undone.
-                                </p>
-                            </div>
-
-                            {dischargeError && (
-                                <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3">
-                                    <p className="text-sm text-red-800">
-                                        {dischargeError}
-                                    </p>
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="flex justify-end gap-3 rounded-b-lg border-t bg-gray-50 p-6">
-                            <Button
-                                variant="outline"
-                                onClick={() => setShowDischargeModal(false)}
-                                disabled={isDischarging}
-                            >
-                                Cancel
-                            </Button>
-                            <Button
-                                onClick={handleConfirmDischarge}
-                                disabled={isDischarging}
-                                className="bg-red-600 text-white hover:bg-red-700"
-                            >
-                                {isDischarging ? (
-                                    <>
-                                        <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                                        Discharging...
-                                    </>
-                                ) : (
-                                    'Confirm Discharge'
-                                )}
-                            </Button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <DischargeDialog
+                admission={dischargeTarget}
+                isSubmitting={isDischarging}
+                error={dischargeError}
+                notes={dischargeNotes}
+                onNotesChange={setDischargeNotes}
+                onConfirm={confirmDischarge}
+                onClose={closeDischarge}
+            />
         </PatientLayout>
     );
 }

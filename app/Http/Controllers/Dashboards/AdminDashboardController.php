@@ -62,20 +62,19 @@ class AdminDashboardController extends Controller
             ->where('status', BudgetAllocation::STATUS_ACTIVE)
             ->selectRaw('
                 COALESCE(SUM(allocated_amount), 0) AS allocated,
-                COALESCE(SUM(reserved_amount),  0) AS reserved,
-                COALESCE(SUM(committed_amount), 0) AS committed,
-                COALESCE(SUM(actual_spent),     0) AS spent
+                COALESCE(SUM(available_amount), 0) AS available
             ')
             ->first();
 
         $allocated = (float) $t->allocated;
-        $used      = (float) $t->reserved + (float) $t->committed + (float) $t->spent;
+        $remaining = (float) $t->available;
+        $used      = max(0, $allocated - $remaining);
 
         return [
-            'total_budget'                  => $allocated,
+            'total_budget'                  => round($allocated, 2),
             'total_utilized'                => round($used, 2),
-            'total_remaining'               => round(max(0, $allocated - $used), 2),
-            'budget_utilization_percentage' => $allocated > 0 ? round($used / $allocated * 100, 1) : 0,
+            'total_remaining'               => round($remaining, 2),
+            'budget_utilization_percentage' => $allocated > 0 ? round(($used / $allocated) * 100, 1) : 0,
         ];
     }
 

@@ -1,10 +1,10 @@
 // resources/js/components/Notifications.tsx
 
 import { usePage, router } from '@inertiajs/react';
-import { 
-    Bell, 
-    Package, 
-    AlertCircle, 
+import {
+    Bell,
+    Package,
+    AlertCircle,
     CheckCircle2,
     Calendar,
     MessageCircle,
@@ -15,7 +15,7 @@ import {
     Users,
     DollarSign,
     Clock,
-    ArrowRight
+    ArrowRight,
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
@@ -25,7 +25,7 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useEcho } from './EchoProvider';
-
+import Http from '@/utils/Http';
 // Types
 interface Notification {
     id: string;
@@ -33,7 +33,17 @@ interface Notification {
     message: string;
     time: string;
     read: boolean;
-    type: 'message' | 'success' | 'calendar' | 'info' | 'adjustment' | 'warning' | 'purchase_request' | 'purchase_order' | 'user' | 'payment';
+    type:
+        | 'message'
+        | 'success'
+        | 'calendar'
+        | 'info'
+        | 'adjustment'
+        | 'warning'
+        | 'purchase_request'
+        | 'purchase_order'
+        | 'user'
+        | 'payment';
     url?: string;
     adjustment_number?: string;
     adjustment_id?: number;
@@ -42,67 +52,70 @@ interface Notification {
 }
 
 // Icon mapping with health blue accents
-const iconMap: Record<string, { icon: React.ReactNode; bg: string; color: string }> = {
-    purchase_request: { 
-        icon: <FileText className="h-3.5 w-3.5" />, 
-        bg: 'bg-blue-50 dark:bg-blue-950/30', 
-        color: 'text-blue-600 dark:text-blue-400' 
+const iconMap: Record<
+    string,
+    { icon: React.ReactNode; bg: string; color: string }
+> = {
+    purchase_request: {
+        icon: <FileText className="h-3.5 w-3.5" />,
+        bg: 'bg-blue-50 dark:bg-blue-950/30',
+        color: 'text-blue-600 dark:text-blue-400',
     },
-    purchase_order: { 
-        icon: <ShoppingBag className="h-3.5 w-3.5" />, 
-        bg: 'bg-blue-50 dark:bg-blue-950/30', 
-        color: 'text-blue-600 dark:text-blue-400' 
+    purchase_order: {
+        icon: <ShoppingBag className="h-3.5 w-3.5" />,
+        bg: 'bg-blue-50 dark:bg-blue-950/30',
+        color: 'text-blue-600 dark:text-blue-400',
     },
-    adjustment: { 
-        icon: <Package className="h-3.5 w-3.5" />, 
-        bg: 'bg-blue-50 dark:bg-blue-950/30', 
-        color: 'text-blue-600 dark:text-blue-400' 
+    adjustment: {
+        icon: <Package className="h-3.5 w-3.5" />,
+        bg: 'bg-blue-50 dark:bg-blue-950/30',
+        color: 'text-blue-600 dark:text-blue-400',
     },
-    success: { 
-        icon: <CheckCircle2 className="h-3.5 w-3.5" />, 
-        bg: 'bg-emerald-50 dark:bg-emerald-950/30', 
-        color: 'text-emerald-600 dark:text-emerald-400' 
+    success: {
+        icon: <CheckCircle2 className="h-3.5 w-3.5" />,
+        bg: 'bg-emerald-50 dark:bg-emerald-950/30',
+        color: 'text-emerald-600 dark:text-emerald-400',
     },
-    calendar: { 
-        icon: <Calendar className="h-3.5 w-3.5" />, 
-        bg: 'bg-blue-50 dark:bg-blue-950/30', 
-        color: 'text-blue-600 dark:text-blue-400' 
+    calendar: {
+        icon: <Calendar className="h-3.5 w-3.5" />,
+        bg: 'bg-blue-50 dark:bg-blue-950/30',
+        color: 'text-blue-600 dark:text-blue-400',
     },
-    message: { 
-        icon: <MessageCircle className="h-3.5 w-3.5" />, 
-        bg: 'bg-blue-50 dark:bg-blue-950/30', 
-        color: 'text-blue-600 dark:text-blue-400' 
+    message: {
+        icon: <MessageCircle className="h-3.5 w-3.5" />,
+        bg: 'bg-blue-50 dark:bg-blue-950/30',
+        color: 'text-blue-600 dark:text-blue-400',
     },
-    warning: { 
-        icon: <AlertCircle className="h-3.5 w-3.5" />, 
-        bg: 'bg-amber-50 dark:bg-amber-950/30', 
-        color: 'text-amber-600 dark:text-amber-400' 
+    warning: {
+        icon: <AlertCircle className="h-3.5 w-3.5" />,
+        bg: 'bg-amber-50 dark:bg-amber-950/30',
+        color: 'text-amber-600 dark:text-amber-400',
     },
-    user: { 
-        icon: <Users className="h-3.5 w-3.5" />, 
-        bg: 'bg-blue-50 dark:bg-blue-950/30', 
-        color: 'text-blue-600 dark:text-blue-400' 
+    user: {
+        icon: <Users className="h-3.5 w-3.5" />,
+        bg: 'bg-blue-50 dark:bg-blue-950/30',
+        color: 'text-blue-600 dark:text-blue-400',
     },
-    payment: { 
-        icon: <DollarSign className="h-3.5 w-3.5" />, 
-        bg: 'bg-emerald-50 dark:bg-emerald-950/30', 
-        color: 'text-emerald-600 dark:text-emerald-400' 
+    payment: {
+        icon: <DollarSign className="h-3.5 w-3.5" />,
+        bg: 'bg-emerald-50 dark:bg-emerald-950/30',
+        color: 'text-emerald-600 dark:text-emerald-400',
     },
-    info: { 
-        icon: <Bell className="h-3.5 w-3.5" />, 
-        bg: 'bg-blue-50 dark:bg-blue-950/30', 
-        color: 'text-blue-600 dark:text-blue-400' 
+    info: {
+        icon: <Bell className="h-3.5 w-3.5" />,
+        bg: 'bg-blue-50 dark:bg-blue-950/30',
+        color: 'text-blue-600 dark:text-blue-400',
     },
 };
 
 export function Notifications() {
     const { props } = usePage();
     const userId = props.auth?.user?.id;
-    
+
     // Safely use Echo with try/catch
     let echo = null;
     let isConnected = false;
-    
+
     try {
         const echoContext = useEcho();
         echo = echoContext.echo;
@@ -110,11 +123,11 @@ export function Notifications() {
     } catch (error) {
         console.warn('⚠️ Echo not available, notifications will use polling');
     }
-    
+
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [showDropdown, setShowDropdown] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
-    const unreadCount = notifications.filter(n => !n.read).length;
+    const unreadCount = notifications.filter((n) => !n.read).length;
     const soundRef = useRef<HTMLAudioElement | null>(null);
     const notificationSoundUrl = '/notification.mp3';
 
@@ -161,10 +174,10 @@ export function Notifications() {
 
         try {
             const channel = echo.private(`App.Models.User.${userId}`);
-            
+
             channel.notification((notification: any) => {
                 console.log('📨 New notification received:', notification);
-                
+
                 const newNotif: Notification = {
                     id: notification.id || Date.now().toString(),
                     title: notification.title || 'New Notification',
@@ -178,25 +191,28 @@ export function Notifications() {
                     pr_number: notification.pr_number,
                     total_amount: notification.total_amount,
                 };
-                
-                setNotifications(prev => [newNotif, ...prev]);
-                
+
+                setNotifications((prev) => [newNotif, ...prev]);
+
                 try {
                     soundRef.current?.play().catch(() => {});
                 } catch (error) {
                     // Ignore sound errors
                 }
-                
-                if ('Notification' in window && Notification.permission === 'granted') {
+
+                if (
+                    'Notification' in window &&
+                    Notification.permission === 'granted'
+                ) {
                     try {
                         const browserNotif = new Notification(
                             notification.title || 'New Notification',
                             {
                                 body: notification.message || '',
                                 icon: '/favicon.ico',
-                            }
+                            },
                         );
-                        
+
                         browserNotif.onclick = () => {
                             window.focus();
                             if (notification.url) {
@@ -204,11 +220,14 @@ export function Notifications() {
                             }
                         };
                     } catch (error) {
-                        console.warn('⚠️ Could not show browser notification:', error);
+                        console.warn(
+                            '⚠️ Could not show browser notification:',
+                            error,
+                        );
                     }
                 }
             });
-            
+
             return () => {
                 try {
                     echo.leaveChannel(`App.Models.User.${userId}`);
@@ -224,31 +243,25 @@ export function Notifications() {
     // Mark notification as read
     const markAsRead = async (id: string) => {
         try {
-            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
-            
-            const response = await fetch(`/notifications/${id}/mark-as-read`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': csrfToken,
-                },
+            await Http.post(`/notifications/${id}/mark-as-read`,{
+                userId:props.auth.user.id
             });
 
-            if (!response.ok) throw new Error('Failed to mark as read');
-
-            setNotifications(prev => 
-                prev.map(n => n.id === id ? { ...n, read: true } : n)
+            setNotifications((prev) =>
+                prev.map((n) => (n.id === id ? { ...n, read: true } : n)),
             );
         } catch (error) {
             console.error('❌ Failed to mark as read:', error);
         }
     };
-
     // Mark all as read
     const markAllAsRead = async () => {
         try {
-            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
-            
+            const csrfToken =
+                document
+                    .querySelector('meta[name="csrf-token"]')
+                    ?.getAttribute('content') || '';
+
             const response = await fetch('/notifications/mark-all-as-read', {
                 method: 'POST',
                 headers: {
@@ -259,9 +272,7 @@ export function Notifications() {
 
             if (!response.ok) throw new Error('Failed to mark all as read');
 
-            setNotifications(prev => 
-                prev.map(n => ({ ...n, read: true }))
-            );
+            setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
         } catch (error) {
             console.error('❌ Failed to mark all as read:', error);
         }
@@ -270,10 +281,13 @@ export function Notifications() {
     // Delete notification
     const deleteNotification = async (id: string, e: React.MouseEvent) => {
         e.stopPropagation();
-        
+
         try {
-            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
-            
+            const csrfToken =
+                document
+                    .querySelector('meta[name="csrf-token"]')
+                    ?.getAttribute('content') || '';
+
             const response = await fetch(`/notifications/${id}`, {
                 method: 'DELETE',
                 headers: {
@@ -284,7 +298,7 @@ export function Notifications() {
 
             if (!response.ok) throw new Error('Failed to delete notification');
 
-            setNotifications(prev => prev.filter(n => n.id !== id));
+            setNotifications((prev) => prev.filter((n) => n.id !== id));
         } catch (error) {
             console.error('❌ Failed to delete notification:', error);
         }
@@ -295,13 +309,13 @@ export function Notifications() {
         if (!notification.read) {
             markAsRead(notification.id);
         }
-        
+
         if (notification.url) {
             router.visit(notification.url);
         } else if (notification.adjustment_id) {
             router.visit(`/adjustments/${notification.adjustment_id}`);
         }
-        
+
         setShowDropdown(false);
     };
 
@@ -314,7 +328,7 @@ export function Notifications() {
     // Request notification permission
     useEffect(() => {
         if ('Notification' in window && Notification.permission === 'default') {
-            Notification.requestPermission().then(permission => {
+            Notification.requestPermission().then((permission) => {
                 console.log('🔔 Notification permission:', permission);
             });
         }
@@ -333,9 +347,9 @@ export function Notifications() {
     return (
         <DropdownMenu open={showDropdown} onOpenChange={setShowDropdown}>
             <DropdownMenuTrigger asChild>
-                <Button 
-                    variant="ghost" 
-                    size="icon" 
+                <Button
+                    variant="ghost"
+                    size="icon"
                     className="relative h-9 w-9 rounded-lg transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
                 >
                     <Bell className="h-[18px] w-[18px] text-slate-600 dark:text-slate-400" />
@@ -346,9 +360,9 @@ export function Notifications() {
                     )}
                 </Button>
             </DropdownMenuTrigger>
-            
-            <DropdownMenuContent 
-                align="end" 
+
+            <DropdownMenuContent
+                align="end"
                 className="w-[380px] overflow-hidden rounded-lg border border-slate-200 bg-white p-0 shadow-lg dark:border-slate-700 dark:bg-slate-900"
             >
                 {/* Header */}
@@ -369,7 +383,7 @@ export function Notifications() {
                         </div>
                     </div>
                     {unreadCount > 0 && (
-                        <button 
+                        <button
                             onClick={markAllAsRead}
                             className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-blue-600 transition-colors hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/30"
                         >
@@ -378,7 +392,7 @@ export function Notifications() {
                         </button>
                     )}
                 </div>
-                
+
                 {/* Notification List */}
                 <div className="max-h-[340px] overflow-y-auto">
                     {isLoading ? (
@@ -395,40 +409,49 @@ export function Notifications() {
                             </p>
                         </div>
                     ) : (
-                        notifications.map(notification => {
-                            const icon = iconMap[notification.type] || iconMap.info;
+                        notifications.map((notification) => {
+                            const icon =
+                                iconMap[notification.type] || iconMap.info;
                             return (
                                 <div
                                     key={notification.id}
-                                    onClick={() => handleNotificationClick(notification)}
+                                    onClick={() =>
+                                        handleNotificationClick(notification)
+                                    }
                                     className={`group relative flex cursor-pointer items-start gap-3 border-b border-slate-100 px-4 py-3 transition-colors last:border-0 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50 ${
-                                        !notification.read ? 'bg-blue-50/30 dark:bg-blue-950/10' : ''
+                                        !notification.read
+                                            ? 'bg-blue-50/30 dark:bg-blue-950/10'
+                                            : ''
                                     }`}
                                 >
                                     {/* ✅ Green dot - visible and contained */}
                                     {!notification.read && (
-                                        <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center justify-center">
-                                            <div className="h-2 w-2 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50 ring-2 ring-emerald-500/20 dark:ring-emerald-400/20"></div>
+                                        <div className="absolute top-1/2 left-3 flex -translate-y-1/2 items-center justify-center">
+                                            <div className="h-2 w-2 rounded-full bg-emerald-500 shadow-sm ring-2 shadow-emerald-500/50 ring-emerald-500/20 dark:ring-emerald-400/20"></div>
                                         </div>
                                     )}
-                                    
+
                                     {/* Content - with padding to accommodate dot */}
-                                    <div className="flex-1 min-w-0 pl-5">
+                                    <div className="min-w-0 flex-1 pl-5">
                                         <div className="flex items-start justify-between gap-2">
                                             <div className="flex items-start gap-3">
                                                 {/* Icon */}
-                                                <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${icon.bg} ${icon.color}`}>
+                                                <div
+                                                    className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${icon.bg} ${icon.color}`}
+                                                >
                                                     {icon.icon}
                                                 </div>
-                                                
+
                                                 {/* Text Content */}
                                                 <div className="min-w-0 flex-1">
                                                     <div className="flex items-start justify-between gap-2">
-                                                        <p className={`text-sm leading-snug ${
-                                                            !notification.read 
-                                                                ? 'font-medium text-slate-900 dark:text-slate-100' 
-                                                                : 'text-slate-700 dark:text-slate-300'
-                                                        }`}>
+                                                        <p
+                                                            className={`text-sm leading-snug ${
+                                                                !notification.read
+                                                                    ? 'font-medium text-slate-900 dark:text-slate-100'
+                                                                    : 'text-slate-700 dark:text-slate-300'
+                                                            }`}
+                                                        >
                                                             {notification.title}
                                                         </p>
                                                         <span className="mt-0.5 shrink-0 text-[11px] text-slate-400 dark:text-slate-500">
@@ -437,16 +460,28 @@ export function Notifications() {
                                                     </div>
                                                     {notification.message && (
                                                         <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                                                            {notification.message}
+                                                            {
+                                                                notification.message
+                                                            }
                                                         </p>
                                                     )}
-                                                    {(notification.pr_number || notification.adjustment_number) && (
-                                                        <div className="mt-1 flex items-center gap-2 text-xs font-mono text-blue-600 dark:text-blue-400">
-                                                            <span>{notification.pr_number || notification.adjustment_number}</span>
+                                                    {(notification.pr_number ||
+                                                        notification.adjustment_number) && (
+                                                        <div className="mt-1 flex items-center gap-2 font-mono text-xs text-blue-600 dark:text-blue-400">
+                                                            <span>
+                                                                {notification.pr_number ||
+                                                                    notification.adjustment_number}
+                                                            </span>
                                                             {notification.total_amount && (
                                                                 <>
-                                                                    <span className="text-slate-300 dark:text-slate-600">•</span>
-                                                                    <span>{formatCurrency(notification.total_amount)}</span>
+                                                                    <span className="text-slate-300 dark:text-slate-600">
+                                                                        •
+                                                                    </span>
+                                                                    <span>
+                                                                        {formatCurrency(
+                                                                            notification.total_amount,
+                                                                        )}
+                                                                    </span>
                                                                 </>
                                                             )}
                                                         </div>
@@ -455,11 +490,16 @@ export function Notifications() {
                                             </div>
                                         </div>
                                     </div>
-                                    
+
                                     {/* Delete button */}
                                     <button
-                                        onClick={(e) => deleteNotification(notification.id, e)}
-                                        className="absolute right-2 top-2 rounded p-1 opacity-0 transition-opacity hover:bg-slate-100 group-hover:opacity-100 dark:hover:bg-slate-800"
+                                        onClick={(e) =>
+                                            deleteNotification(
+                                                notification.id,
+                                                e,
+                                            )
+                                        }
+                                        className="absolute top-2 right-2 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-slate-100 dark:hover:bg-slate-800"
                                     >
                                         <X className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500" />
                                     </button>
@@ -468,7 +508,7 @@ export function Notifications() {
                         })
                     )}
                 </div>
-                
+
                 {/* Footer - View All */}
                 <div className="border-t border-slate-100 dark:border-slate-800">
                     <button

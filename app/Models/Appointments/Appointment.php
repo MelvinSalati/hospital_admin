@@ -59,7 +59,7 @@ class Appointment extends Model
 
     public function department()
     {
-        return $this->belongsTo(\App\Models\Departments\Department::class, 'department_id');
+        return $this->belongsTo(\App\Models\Departments\Department::class, 'department');
     }
 
     /**
@@ -70,7 +70,7 @@ class Appointment extends Model
 
     public function patient()
     {
-        return $this->belongsTo(\App\Models\Patients\Patient::class,'patient_id');
+        return $this->belongsTo(\App\Models\Patients\Patient::class, 'patient_id');
     }
 
     public function doctor()

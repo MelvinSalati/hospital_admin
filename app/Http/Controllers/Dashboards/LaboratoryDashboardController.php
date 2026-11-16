@@ -15,7 +15,7 @@ class LaboratoryDashboardController extends Controller
         $this->dashboard = $dashboard;
     }
 
-    public function index(Request $request, int $departmentId)
+    public function dashboard(Request $request, int $departmentId)
     {
         $departmentId = (int) $departmentId;
 

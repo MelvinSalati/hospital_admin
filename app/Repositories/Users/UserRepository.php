@@ -12,6 +12,7 @@ class UserRepository
             ->whereNotNull('department_id')
             ->leftJoin('departments', 'departments.id', '=', 'user_profiles.department_id')
             ->select([
+                'users.id',
                 'users.name',
                 'users.email',
                 'user_profiles.first_name',

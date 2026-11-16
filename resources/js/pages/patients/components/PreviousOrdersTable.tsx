@@ -1,5 +1,6 @@
 // pages/patients/components/PreviousOrdersTable.tsx
 import { EyeIcon } from '@heroicons/react/24/outline';
+import { router } from '@inertiajs/react';
 import { Plus, ClipboardList, Calendar, Package } from 'lucide-react';
 import Notiflix from 'notiflix';
 import React, { useState, useMemo } from 'react';
@@ -13,6 +14,7 @@ import {
 } from '@/components/ui/dialog';
 import type { Column } from '@/components/ReusableTable';
 import ReusableTable from '@/components/ReusableTable';
+import OperativeNoteModal from './OperativeNoteModal';
 import { ServiceModal } from './ServiceModal';
 
 export interface CartItem {
@@ -56,6 +58,8 @@ interface PreviousOrdersTableProps {
         modality?: string;
         body_part?: string;
         created_at: string;
+        /** Operative note state for this order (theater only). */
+        note_status?: 'draft' | 'signed' | null;
     }> | null;
     onSaveOrder: (items: CartItem[], identifier: string) => Promise<void>;
     orderLabel?: string;
@@ -65,6 +69,13 @@ interface PreviousOrdersTableProps {
     onOrderModalClose?: () => void;
     /** Set false to hide unit price / total columns (e.g. Dispensation contexts) */
     showPricing?: boolean;
+    /**
+     * Theater: clicking an order opens the operative note modal
+     * (instead of the read-only order details) and a note-status column is shown.
+     */
+    operativeNotes?: boolean;
+    /** Called after an operative note is saved or signed. Defaults to reloading `previousOrders`. */
+    onOperativeNoteSaved?: () => void;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -124,6 +135,8 @@ export default function PreviousOrdersTable({
     isOrderModalOpen,
     onOrderModalClose,
     showPricing = true,
+    operativeNotes = false,
+    onOperativeNoteSaved,
 }: PreviousOrdersTableProps) {
     // Controlled / uncontrolled modal
     const [internalOpen, setInternalOpen] = useState(false);
@@ -132,6 +145,9 @@ export default function PreviousOrdersTable({
 
     const [selectedOrder, setSelectedOrder] = useState<any>(null);
     const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+
+    // Operative note modal: the clicked order row (theater_order_items)
+    const [noteOrder, setNoteOrder] = useState<any>(null);
 
     // Transform services to match CartItem structure
     const mappedServices = useMemo(
@@ -184,6 +200,22 @@ export default function PreviousOrdersTable({
     const handleViewDetails = (order: any) => {
         setSelectedOrder(order);
         setIsViewModalOpen(true);
+    };
+
+    // Theater opens the operative note; everything else keeps the details view.
+    const handleRowClick = (order: any) => {
+        if (operativeNotes) {
+            if (order.status === 'cancelled') {
+                Notiflix.Notify.warning(
+                    'This procedure was cancelled, so no operative note can be added.',
+                );
+                return;
+            }
+            setNoteOrder(order);
+            return;
+        }
+
+        handleViewDetails(order);
     };
 
     const handleSave = async (items: CartItem[], identifier: string) => {
@@ -312,6 +344,28 @@ export default function PreviousOrdersTable({
             });
         }
 
+        if (operativeNotes) {
+            base.push({
+                id: 'note_status',
+                label: 'Operative note',
+                sortable: true,
+                format: (value) =>
+                    value === 'signed' ? (
+                        <Badge className="bg-green-100 text-green-800">
+                            Signed
+                        </Badge>
+                    ) : value === 'draft' ? (
+                        <Badge className="bg-gray-100 text-gray-800">
+                            Draft
+                        </Badge>
+                    ) : (
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                            Click to add
+                        </span>
+                    ),
+            });
+        }
+
         base.push(
             {
                 id: 'status',
@@ -341,7 +395,7 @@ export default function PreviousOrdersTable({
         );
 
         return base;
-    }, [showPricing, hasModality, hasBodyPart]);
+    }, [showPricing, hasModality, hasBodyPart, operativeNotes]);
 
     // ─── Render ──────────────────────────────────────────────────────────────
 
@@ -414,7 +468,7 @@ export default function PreviousOrdersTable({
                     defaultRowsPerPage={5}
                     defaultOrderBy="created_at"
                     emptyMessage={`No previous ${orderLabel.toLowerCase()} orders found`}
-                    onRowClick={handleViewDetails}
+                    onRowClick={handleRowClick}
                     className="border-0 shadow-none"
                 />
             )}
@@ -445,6 +499,21 @@ export default function PreviousOrdersTable({
                     title={`Order ${orderLabel}`}
                     emptyMessage={`No ${orderLabel.toLowerCase()} services found`}
                     customFields={customFields}
+                />
+            )}
+
+            {/* Operative Note Modal (theater) */}
+            {operativeNotes && (
+                <OperativeNoteModal
+                    open={noteOrder !== null}
+                    orderId={noteOrder ? Number(noteOrder.id) : null}
+                    order={noteOrder}
+                    onClose={() => setNoteOrder(null)}
+                    onSaved={() =>
+                        onOperativeNoteSaved
+                            ? onOperativeNoteSaved()
+                            : router.reload({ only: ['previousOrders'] })
+                    }
                 />
             )}
 

@@ -11,79 +11,23 @@ use App\Models\User;
 use App\Models\UserProfile;
 use Illuminate\Support\Facades\Log;
 use App\Models\Nurses\Admission;
-// use App\Models\Patients\PatientVisit;
+use App\Services\Nurses\NursesDashboardService;
+
+
 
 class NursesController extends Controller
 {
-    public function dashboard()
+    protected NursesDashboardService $service;
+
+    public function __construct(NursesDashboardService $service)
     {
-        $trendRangeDays = 7;
-        $departmentId   = 6;
-
-        $department = Department::findOrFail($departmentId);
-
-        // ── Today's snapshot for department 6 ───────────────────
-        $base = PatientVisit::query()
-            ->where('patient_visits.department_id', $departmentId)
-            ->whereDate('patient_visits.created_at', today());
-
-        $seenQuery = (clone $base)->where('patient_visits.status', 0);
-
-        $males = (clone $seenQuery)
-            ->join('patients', 'patients.id', '=', 'patient_visits.patient_id')
-            ->where('patients.gender', 'Male')
-            ->count();
-
-        $females = (clone $seenQuery)
-            ->join('patients', 'patients.id', '=', 'patient_visits.patient_id')
-            ->where('patients.gender', 'Female')
-            ->count();
-
-        $departmentStats = collect([[
-            'department_name'      => $department->name,
-            'seen_today'           => (clone $seenQuery)->count(),
-            'males'                => $males,
-            'females'              => $females,
-            'in_queue'             => (clone $base)->where('patient_visits.status', 1)->count(),
-            'average_wait_minutes' => null,
-            'completed_today'      => (clone $base)->where('patient_visits.status', 1)->count(),
-        ]]);
-
-        // ── Last N days for department 6 ────────────────────────
-        $departmentTrend = collect(range($trendRangeDays - 1, 0))
-            ->map(function (int $offset) use ($departmentId, $department) {
-                $date = now()->subDays($offset);
-
-                return [
-                    'date'            => $date->format('D'),
-                    $department->name => PatientVisit::where('patient_visits.department_id', $departmentId)
-                        ->whereDate('patient_visits.created_at', $date)
-                        ->count(),
-                ];
-            })
-            ->values();
-
-        // ── Totals ──────────────────────────────────────────────
-        $totals = [
-            'seen_today' => $departmentStats->sum('seen_today'),
-            'males'      => $departmentStats->sum('males'),
-            'females'    => $departmentStats->sum('females'),
-            'in_queue'   => $departmentStats->sum('in_queue'),
-        ];
-
-        return Inertia::render('nurses/dashboard', [
-            'departmentStats' => $departmentStats,
-            'departmentTrend' => $departmentTrend,
-            'totals'          => $totals,
-            'trendRangeDays'  => $trendRangeDays,
-            'currentUser'     => [
-                'name'        => $department->name,
-                'role'        => null,
-                'departments' => [$department->name],
-            ],
-        ]);
+        $this->service  = $service;
     }
 
+    public function dashboard(int $departmentId)
+    {
+        return Inertia::render('nurses/dashboard', $this->service->getDashboardData($departmentId));
+    }
     /**
      * Display the nurses dashboard with queue
      */
@@ -102,7 +46,7 @@ class NursesController extends Controller
                     'token' => $visit->visitToken ? $visit->visitToken->token : 'T-' . str_pad($visit->id, 4, '0', STR_PAD_LEFT),
                     'visit_token_id' => $visit->visitToken?->id,
                     'patient_id' => $visit->patient_id,
-                    'patient_number'=> $visit->patient->patient_number,
+                    'patient_number' => $visit->patient->patient_number,
                     'patient_name' => $visit->patient ? $visit->patient->first_name . ' ' . $visit->patient->last_name : 'Unknown',
                     'contact' => $visit->patient?->phone ?? 'N/A',
                     'gender' => $visit->patient?->gender ?? 'N/A',
@@ -120,7 +64,7 @@ class NursesController extends Controller
 
         // Get statistics
 
-        Log::info('patient details ',[$queuedPatients]);
+        Log::info('patient details ', [$queuedPatients]);
 
         return Inertia::render('nurses/nurses', [
             'queue' => $queuedPatients,
@@ -226,10 +170,12 @@ class NursesController extends Controller
      *  view staff in the departments
      */
 
-    public function viewStaff(){
-        return Inertia::render('nurses/nurse-department',
-        ['viewStaffs' => User::all()]
-         );
+    public function viewStaff()
+    {
+        return Inertia::render(
+            'nurses/nurse-department',
+            ['viewStaffs' => User::all()]
+        );
     }
 
     /**
@@ -262,11 +208,13 @@ class NursesController extends Controller
         }
     }
 
-    private function routeComponent(){
+    private function routeComponent()
+    {
         return 'nurses/dashboard';
     }
 
-    public function visit () {
+    public function visit()
+    {
 
         $visit  = PatientVisit::with(['patient', 'assignedStaff', 'visitToken'])
             ->where('department_id', 6)
@@ -280,7 +228,7 @@ class NursesController extends Controller
                     'token' => $visit->visitToken ? $visit->visitToken->token : 'T-' . str_pad($visit->id, 4, '0', STR_PAD_LEFT),
                     'visit_token_id' => $visit->visitToken?->id,
                     'patient_id' => $visit->patient_id,
-                    'patient_number'=> $visit->patient->patient_number,
+                    'patient_number' => $visit->patient->patient_number,
                     'patient_name' => $visit->patient ? $visit->patient->first_name . ' ' . $visit->patient->last_name : 'Unknown',
                     'contact' => $visit->patient?->phone ?? 'N/A',
                     'gender' => $visit->patient?->gender ?? 'N/A',
@@ -295,7 +243,7 @@ class NursesController extends Controller
                     'department_id' => $visit->department_id,
                 ];
             });
-        return  Inertia::render('nurses/visits',[
+        return  Inertia::render('nurses/visits', [
             'queues' => $visit
         ]);
     }
@@ -324,12 +272,13 @@ class NursesController extends Controller
     /**
      *  get atients assigned to treatmebt room
      */
-    public function  treatmentRoom(){
+    public function  treatmentRoom()
+    {
 
-        $procedures          =   PatientVisit::with(['patient'])->where('department_id',11)->where('status',1)->get();
+        $procedures          =   PatientVisit::with(['patient'])->where('department_id', 11)->where('status', 1)->get();
         $patientsInTreatment = $this->mapFields($procedures);
 
-        return Inertia::render('nurses/treatment-room' ,[
+        return Inertia::render('nurses/treatment-room', [
             'procedures'  =>  $patientsInTreatment
         ]);
     }
@@ -369,7 +318,7 @@ class NursesController extends Controller
     public function  userDepartment()
     {
         return Inertia::render('nurses/user-department', [
-            'userDepartments'  => UserProfile::where('department_id',6)->get()
+            'userDepartments'  => UserProfile::where('department_id', 6)->get()
         ]);
     }
 }

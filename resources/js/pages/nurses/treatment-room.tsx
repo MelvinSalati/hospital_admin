@@ -2,7 +2,7 @@ import PageHeader from '@/components/PageHeader';
 import ReusableTable from '@/components/ReusableTable';
 import type { Column, Action } from '@/components/ReusableTable';
 import AppLayout from '@/layouts/app/app-header-layout';
-import { usePage, router } from '@inertiajs/react';
+import { usePage, router, Link } from '@inertiajs/react';
 import {
     BedIcon,
     Eye,
@@ -183,7 +183,7 @@ export default function InPatient() {
             icon: <Eye size={16} />,
             color: 'info',
             onClick: (row) =>
-                router.visit(`../patients/procedures/${row.patient_id}`),
+                router.visit(`../../patients/dashboard/${row.patient_id}`),
         },
     ];
 

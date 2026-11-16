@@ -32,7 +32,7 @@ class OphthalmologyDashboardController extends Controller
             $data = $data->getData(true);
         }
 
-        return Inertia::render('ophthalmology/dashboard', array_merge(
+        return Inertia::render('opthalmology/dashboard', array_merge(
             [
                 'userName' => $request->user()?->name ?? 'Ophthalmology User',
             ],

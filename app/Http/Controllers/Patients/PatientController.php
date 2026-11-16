@@ -25,15 +25,17 @@ use App\Models\Payments\Invoice;
 use Illuminate\Support\Facades\DB;
 use App\Services\Laboratories\LaboratoryService;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Schema;
 
 
 
 class PatientController extends Controller
 {
     protected PatientService $patientService;
-    protected LaboratoryService $laboratoryService; 
+    protected LaboratoryService $laboratoryService;
     protected $visitToken;
-
+    // Change to your dispensing table's real name
+    private const DISPENSATION_TABLE = 'dispensed_items';
 
     protected   $selectedScheme;
     protected  $token;
@@ -41,29 +43,28 @@ class PatientController extends Controller
     public function __construct(PatientService $patientService, LaboratoryService $laboratoryService)
     {
         $this->token     = new VisitTokenHelper();
-        $this->patientService = $patientService; 
+        $this->patientService = $patientService;
         /**
          * 
-         */ 
+         */
 
         $this->laboratoryService            =       $laboratoryService;
-        
     }
 
 
-    public function createOrder(Request $request, int $patientId){
-        try{
+    public function createOrder(Request $request, int $patientId)
+    {
+        try {
 
-             $tokenId = $this->token->getActiveToken($patientId)->token;
+            $tokenId = $this->token->getActiveToken($patientId)->token;
 
-             $order = array_merge($request->all(),[                         
+            $order = array_merge($request->all(), [
                 'visit_token'  =>  $tokenId,
                 'patient_id'   =>  $patientId
             ]);
 
-           return $this->laboratoryService->createLaboratoryOrder($order);
-        }
-        catch(\Exception $e){
+            return $this->laboratoryService->createLaboratoryOrder($order);
+        } catch (\Exception $e) {
             return response()->json([
                 'message'  => $e->getMessage()
             ]);
@@ -76,7 +77,7 @@ class PatientController extends Controller
     public function create()
     {
         $today  = Carbon::now()->format('Y-m-d');
-        return Inertia::render('receptions/create' , [
+        return Inertia::render('receptions/create', [
             'insuranceProviders' => InsuranceProvider::all(),
             'recentPatients' => Patient::all()
         ]);
@@ -99,7 +100,7 @@ class PatientController extends Controller
 
             // Generate patient number if not set
             if (empty($data['patient_number'])) {
-                $data['patient_number'] = 'AMH-'.Carbon::now()->format('Ym').'-'.rand(00000,99999);
+                $data['patient_number'] = 'AMH-' . Carbon::now()->format('Ym') . '-' . rand(00000, 99999);
             }
 
             // Add profile photo if present and is a valid file
@@ -132,7 +133,7 @@ class PatientController extends Controller
                 'success' => true,
                 'message' => 'Patient registered successfully',
                 'data' => $patient,
-            ],201);
+            ], 201);
         } catch (\Exception $e) {
             Log::error('Patient registration failed', [
                 'error' => $e->getMessage(),
@@ -233,56 +234,209 @@ class PatientController extends Controller
      * Show patient details
      */
 
-    public function getPatientDetails(string $patientUuid){
+    public function getPatientDetails(string $patientUuid)
+    {
         header('Cache-Control: no-cache, no-store, must-revalidate');
         header('Pragma: no-cache');
         header('Expires: 0');
-        return Inertia::render('patients/show',[
+        return Inertia::render('patients/show', [
             'patient' => $this->patientService->patient($patientUuid),
             'insuranceProviders' => InsuranceProvider::all()
         ]);
     }
-    public function show($Id)
+    public function show(int $id)
     {
         try {
-            $result = $this->patientService->getPatientById($Id);
-            Log::info($result);
+            $result = $this->patientService->getPatientById($id);
+
+            Log::info('patient data', [$result['data']]);
             if (!$result['success']) {
                 return redirect()->back()->with('error', $result['message']);
             }
 
             // Get visit status using the helper
-            $hasActiveVisit = VisitTokenHelper::hasActiveVisit($Id);
-            $activeToken = VisitTokenHelper::getActiveTokenArray($Id);
+            $hasActiveVisit = VisitTokenHelper::hasActiveVisit($id);
+            $activeToken = VisitTokenHelper::getActiveTokenArray($id);
 
             // Convert to DTO for consistent data structure
             $patientDTO = PatientDTO::fromModel($result['data']);
 
-            $interactions = Interaction::where('patient_id', $Id)
+            $interactions = Interaction::where('patient_id', $id)
                 ->with('provider')
                 ->get();
 
             return Inertia::render('patients/show', [
-                'patient' => $patientDTO->toArray(),
+                'patient' => array_merge(
+                    $patientDTO->toArray(),
+                    ['id' => $id],
+                    $this->clinicalRecords($id),
+                ),
                 'departments' => Department::all(),
                 'users' => User::all(),
                 'interactions' => $interactions,
+                'insuranceProviders' => InsuranceProvider::all(),
                 'visit_status' => [
                     'has_active_visit' => $hasActiveVisit,
                     'visit_token' => $activeToken ? $activeToken['token'] : null,
-                    'token_details' => $activeToken
-                ]
+                    'token_details' => $activeToken,
+                ],
             ]);
         } catch (\Exception $e) {
             Log::error('Failed to show patient', [
-                'patient_id' => $Id,
+                'patient_id' => $id,
                 'error' => $e->getMessage()
             ]);
 
             return redirect()->back()->with('error', 'Failed to load patient details.');
         }
     }
+    /**
+     * Builds the nested keys that show.tsx reads from `patient`.
+     * Timestamps are converted to ISO 8601 because Safari cannot parse
+     * "2026-11-10 19:03:03" with new Date().
+     */
+    private function clinicalRecords(int $patientId): array
+    {
+        $iso = fn($v) => $v ? Carbon::parse($v)->toIso8601String() : null;
 
+        // Paid invoices for this patient, used to derive payment status
+        $paidInvoices = DB::table('invoices')
+            ->where('patient_id', $patientId)
+            ->where('status', 'paid')
+            ->whereNull('deleted_at')
+            ->get(['id', 'prescription_id']);
+
+        $paidInvoiceIds = $paidInvoices->pluck('id')->map(fn($v) => (int) $v)->all();
+        $paidRxIds = $paidInvoices->pluck('prescription_id')->filter()
+            ->map(fn($v) => (int) $v)->all();
+
+        $items = DB::table('prescription_items')
+            ->where('patient_id', $patientId)
+            ->orderByDesc('created_at')
+            ->get();
+
+        // Paid invoices for this patient (from the previous step)
+        $paidInvoices = DB::table('invoices')
+            ->where('patient_id', $patientId)
+            ->where('status', 'paid')
+            ->whereNull('deleted_at')
+            ->get(['id', 'prescription_id']);
+        $paidInvoiceIds = $paidInvoices->pluck('id')->map(fn($v) => (int) $v)->all();
+        $paidRxIds = $paidInvoices->pluck('prescription_id')->filter()
+            ->map(fn($v) => (int) $v)->all();
+
+        // Dispensing totals per prescription + drug
+        $dispensed = collect();
+        $rxIds = $items->pluck('prescription_id')->filter()->unique()->values();
+        if ($rxIds->isNotEmpty() && Schema::hasTable(self::DISPENSATION_TABLE)) {
+            $dispensed = DB::table(self::DISPENSATION_TABLE)
+                ->whereIn('prescription_id', $rxIds)
+                ->get()
+                ->groupBy(fn($d) => $d->prescription_id . '-' . $d->drug_id)
+                ->map(fn($rows) => [
+                    'dispensed' => (float) $rows->sum('quantity_dispensed'),
+                    'remaining' => (float) $rows->sum('quantity_remaining'),
+                ]);
+        }
+
+        $prescription = $items->map(function ($p) use ($iso, $paidInvoiceIds, $paidRxIds, $dispensed) {
+            $paid = $p->payment_status === 'paid'
+                || ($p->invoice_id && in_array((int) $p->invoice_id, $paidInvoiceIds, true))
+                || ($p->prescription_id && in_array((int) $p->prescription_id, $paidRxIds, true));
+
+            // Start from the item's own status ('completed' -> 'dispensed' for the UI)
+            $dispensation = $p->dispensation_status === 'completed'
+                ? 'dispensed'
+                : $p->dispensation_status;
+
+            // Dispensing records win when they exist
+            $d = $dispensed->get($p->prescription_id . '-' . $p->drug_id);
+            if ($d && $d['dispensed'] > 0) {
+                $dispensation = $d['remaining'] <= 0 ? 'dispensed' : 'partial';
+            }
+
+            return [
+                'id' => $p->id,
+                'drug_name' => $p->drug_name,
+                'dosage' => $p->dosage,
+                'dosage_unit' => $p->dosage_unit,
+                'frequency' => $p->frequency,
+                'frequency_label' => $p->frequency_label,
+                'route' => $p->route,
+                'payment_status' => $paid ? 'paid' : $p->payment_status,
+                'dispensation_status' => $dispensation,
+                'is_cancelled' => (bool) $p->is_cancelled,
+                'prescribed_by' => null,
+                'created_at' => $iso($p->created_at),
+            ];
+        })->values();
+
+
+        $laboratory = DB::table('lab_order_items')
+            ->where('patient_id', $patientId)
+            ->whereNull('deleted_at')
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(fn($l) => [
+                'id' => $l->id,
+                'test_name' => $l->test_name,
+                'status' => $l->status,
+                'result_value' => $l->result_value,
+                'reference_range' => $l->reference_range,
+                'unit' => $l->unit,
+                'interpretation' => $l->interpretation,
+                'created_at' => $iso($l->created_at),
+            ])->values();
+
+        // History: interactions plus appointments, shaped like interactions.
+        // Appointment ids are prefixed so React keys never collide with interaction ids.
+        $interactions = DB::table('interactions')
+            ->where('patient_id', $patientId)
+            ->get()
+            ->map(fn($i) => [
+                'id' => $i->id,
+                'patient_id' => $i->patient_id,
+                'provider_id' => $i->provider_id,
+                'type' => $i->type,
+                'description' => $i->description,
+                'status' => $i->status,
+                'created_at' => $iso($i->created_at),
+            ]);
+
+        $appointments = DB::table('appointments')
+            ->where('patient_id', $patientId)
+            ->whereNull('deleted_at')
+            ->get()
+            ->map(fn($a) => [
+                'id' => 'appt-' . $a->id,
+                'patient_id' => $a->patient_id,
+                'provider_id' => $a->doctor_id,
+                'type' => 'appointment',
+                'description' => $a->reason,
+                'status' => $a->status,
+                'created_at' => $iso($a->scheduled_at ?? "{$a->appointment_date} {$a->appointment_time}"),
+            ]);
+
+        // The vitals table is not in your dump, so 'vital_signs' is a guess.
+        // Column names must match show.tsx: systolic_bp, diastolic_bp, pulse_rate,
+        // respiratory_rate, spO2, bmi, temperature, blood_glucose, pain_level,
+        // notes, recorded_at, created_at. Alias them in a select() if they differ.
+        $vital_sign = Schema::hasTable('vital_signs')
+            ? DB::table('vital_signs')
+            ->where('patient_id', $patientId)
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(fn($v) => (array) $v)
+            ->values()
+            : collect();
+
+        return [
+            'prescription' => $prescription,
+            'laboratory' => $laboratory,
+            'interaction' => $interactions->concat($appointments)->values(),
+            'vital_sign' => $vital_sign,
+        ];
+    }
     /**
      * Show edit form
      */
@@ -429,22 +583,23 @@ class PatientController extends Controller
         }
     }
 
-    public function procedures(int $Id){
-       try
-       {
-         return Inertia::render('patients/procedures',$this->getProcedures($Id));
-       }catch(\Exception $e){
-             return Inertia::render('patients/procedures',[
-            'error' => $e->getMessage(),
-        ]);
-       }
+    public function procedures(int $Id)
+    {
+        try {
+            return Inertia::render('patients/procedures', $this->getProcedures($Id));
+        } catch (\Exception $e) {
+            return Inertia::render('patients/procedures', [
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
 
-    public function getProcedures(int $Id):array {
+    public function getProcedures(int $Id): array
+    {
         $hasActiveVisit = VisitTokenHelper::hasActiveVisit($Id);
         $activeToken = VisitTokenHelper::getActiveTokenArray($Id);
-    Log::info([$activeToken]);
+        Log::info([$activeToken]);
         if (!$hasActiveVisit || !$activeToken) {
             return [
                 'previousProcedures' => []
@@ -456,7 +611,7 @@ class PatientController extends Controller
 
         return [
             'procedures' => Service::where('scheme_type', $schemeSelected)
-                ->whereNotIn('service_category', ['Laboratory', 'Drugs','Imaging','Procedures'])
+                ->whereNotIn('service_category', ['Laboratory', 'Drugs', 'Imaging', 'Procedures'])
                 ->get(),
             'previousProcedures' => PatientProcedureItem::where('patient_id', $Id)->get(),
             'patientId' => $Id

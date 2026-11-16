@@ -44,11 +44,13 @@ export default function Dispensed() {
                 },
             ]}
         >
+            <div className="bg-blue-50 h-full p-2">
             <PageHeader
                 title="Dispensed Medications"
                 subtitle="View all dispensed medications and prescriptions"
             />
             <DispensedDrugsTable transactions={dispensed} />
+            </div>
         </AppLayout>
     );
 }

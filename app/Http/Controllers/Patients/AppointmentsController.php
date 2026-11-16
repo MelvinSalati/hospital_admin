@@ -120,7 +120,7 @@ class AppointmentsController extends Controller
 
                 'doctor_id' => $validated['doctor_id'],
 
-                'department_id' => $validated['department_id'],
+                'department' => $validated['department_id'],
 
                 'reason' => $validated['reason'],
 

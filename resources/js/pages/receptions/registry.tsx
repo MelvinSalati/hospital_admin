@@ -1,19 +1,25 @@
 import {
+    DevicePhoneMobileIcon,
+    EnvelopeIcon,
+    FaceFrownIcon,
     MagnifyingGlassIcon,
-    FunnelIcon,
-    XMarkIcon,
+    PhoneIcon,
     UserPlusIcon,
-    AdjustmentsHorizontalIcon,
+    UsersIcon,
+    XMarkIcon,
 } from '@heroicons/react/24/outline';
-import { Link, usePage, router } from '@inertiajs/react';
-import axios from 'axios';
-import { useState, useEffect } from 'react';
+import { Link, router } from '@inertiajs/react';
+import { useMemo, useRef, useState } from 'react';
 import { toast } from 'react-hot-toast';
 import AddPatientModal from '@/components/modals/AddPatientModal';
 import PageHeader from '@/components/PageHeader';
+import ReusableTable from '@/components/ReusableTable';
 import AppLayout from '@/layouts/app-layout';
 import Http from '@/utils/Http';
-import ReusableTable from '@/components/ReusableTable';
+
+/* -------------------------------------------------------------------------- */
+/* TYPES                                                                      */
+/* -------------------------------------------------------------------------- */
 
 interface Patient {
     id: string | number;
@@ -41,9 +47,7 @@ interface Patient {
     insurance_number: string | null;
 }
 
-// Search options
 type SearchOption =
-    | 'all'
     | 'name'
     | 'patient_number'
     | 'phone'
@@ -53,107 +57,218 @@ type SearchOption =
     | 'national_id'
     | 'email';
 
-const searchOptions: {
+type StatusFilter = 'all' | 'active' | 'inactive';
+
+/* -------------------------------------------------------------------------- */
+/* CONSTANTS                                                                  */
+/* -------------------------------------------------------------------------- */
+
+const SEARCH_OPTIONS: {
     value: SearchOption;
     label: string;
-    icon: string;
     placeholder: string;
 }[] = [
     {
         value: 'name',
         label: 'Name',
-        icon: '👤',
-        placeholder: 'Search by first or last name...',
+        placeholder: 'First or last name, e.g. Mary Phiri',
     },
     {
         value: 'patient_number',
         label: 'Patient ID',
-        icon: '🆔',
-        placeholder: 'Search by patient ID...',
+        placeholder: 'Patient number, e.g. P-000123',
     },
     {
         value: 'phone',
-        label: 'Phone Number',
-        icon: '📱',
-        placeholder: 'Search by phone number...',
+        label: 'Phone',
+        placeholder: 'Phone number, e.g. 0977 123 456',
+    },
+    {
+        value: 'alt_phone',
+        label: 'Alt phone',
+        placeholder: 'Alternative phone number',
     },
     {
         value: 'nrc',
-        label: 'NRC Number',
-        icon: '🪪',
-        placeholder: 'Enter NRC number (e.g., 123456/78/9)...',
+        label: 'NRC',
+        placeholder: 'NRC number, e.g. 123456/78/9',
+    },
+    {
+        value: 'passport',
+        label: 'Passport',
+        placeholder: 'Passport number',
+    },
+    {
+        value: 'national_id',
+        label: 'National ID',
+        placeholder: 'National ID number',
+    },
+    {
+        value: 'email',
+        label: 'Email',
+        placeholder: 'Email address',
     },
 ];
 
-// Helper function to format null/empty values
-const formatValue = (value: any): string => {
-    if (value === null || value === undefined || value === '') {
+const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
+    { value: 'all', label: 'All' },
+    { value: 'active', label: 'Active' },
+    { value: 'inactive', label: 'Inactive' },
+];
+
+/* -------------------------------------------------------------------------- */
+/* HELPERS                                                                    */
+/* -------------------------------------------------------------------------- */
+
+const hasValue = (value: unknown): boolean =>
+    value !== null && value !== undefined && value !== '';
+
+const fullName = (patient: Patient): string => {
+    const name = [patient.first_name, patient.last_name]
+        .filter(hasValue)
+        .join(' ');
+
+    return name || '—';
+};
+
+const initials = (patient: Patient): string => {
+    const first = hasValue(patient.first_name) ? patient.first_name[0] : '';
+    const last = hasValue(patient.last_name) ? patient.last_name[0] : '';
+
+    return (first + last).toUpperCase() || '?';
+};
+
+const formatRegistered = (date: string): string => {
+    if (!hasValue(date)) {
         return '—';
     }
-    return String(value);
+
+    const parsed = new Date(date);
+
+    return Number.isNaN(parsed.getTime())
+        ? '—'
+        : parsed.toLocaleDateString('en-GB', {
+              day: '2-digit',
+              month: 'short',
+              year: 'numeric',
+          });
 };
 
-// Helper function to check if value exists
-const hasValue = (value: any): boolean => {
-    return value !== null && value !== undefined && value !== '';
-};
+/* -------------------------------------------------------------------------- */
+/* SMALL UI PIECES                                                            */
+/* -------------------------------------------------------------------------- */
 
-// Define table columns
-const getTableColumns = (formatDate: (date: string) => string) => [
+function IdChip({ label, value }: { label: string; value: string }) {
+    return (
+        <span className="inline-flex items-center gap-1.5 rounded border border-gray-200 bg-gray-50 px-2 py-0.5 font-mono text-xs">
+            <span className="text-gray-500">{label}:</span>
+            <span className="text-gray-800">{value}</span>
+        </span>
+    );
+}
+
+function ContactLine({
+    icon,
+    label,
+    value,
+}: {
+    icon: React.ReactNode;
+    label: string;
+    value: string | null | undefined;
+}) {
+    return (
+        <div className="flex items-center gap-1.5">
+            <span className="text-gray-500" aria-hidden="true">
+                {icon}
+            </span>
+            <span className="sr-only">{label}:</span>
+            <span className="truncate">{hasValue(value) ? value : '—'}</span>
+        </div>
+    );
+}
+
+function Spinner({ className = 'h-4 w-4' }: { className?: string }) {
+    return (
+        <svg
+            className={`${className} animate-spin motion-reduce:animate-none`}
+            fill="none"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+        >
+            <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+            />
+            <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+            />
+        </svg>
+    );
+}
+
+function EmptyState({
+    icon,
+    title,
+    description,
+    action,
+}: {
+    icon: React.ReactNode;
+    title: string;
+    description: string;
+    action?: React.ReactNode;
+}) {
+    return (
+        <div className="flex flex-col items-center rounded-xl border border-gray-200 bg-white p-12 text-center shadow-sm">
+            <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-gray-100 text-gray-500">
+                {icon}
+            </div>
+            <p className="text-base font-medium text-gray-900">{title}</p>
+            <p className="mt-1 max-w-md text-sm text-gray-600">{description}</p>
+            {action && <div className="mt-4">{action}</div>}
+        </div>
+    );
+}
+
+/* -------------------------------------------------------------------------- */
+/* TABLE COLUMNS                                                              */
+/* -------------------------------------------------------------------------- */
+
+const getTableColumns = () => [
     {
         id: 'patient_number',
         label: 'Patient #',
         sortable: true,
         render: (patient: Patient) => (
-            <span className="font-mono text-sm font-medium text-blue-600">
-                {formatValue(patient.patient_number)}
+            <span className="font-mono text-sm font-medium text-blue-700">
+                {hasValue(patient.patient_number)
+                    ? patient.patient_number
+                    : '—'}
             </span>
         ),
     },
     {
         id: 'first_name',
-        label: 'First Name',
+        label: 'Patient',
         sortable: true,
         render: (patient: Patient) => (
             <div className="flex items-center">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-blue-600 text-sm font-medium text-white">
-                    {hasValue(patient.first_name) ? patient.first_name[0] : '?'}
-                    {hasValue(patient.last_name) ? patient.last_name[0] : '?'}
+                <div
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-blue-600 text-sm font-medium text-white"
+                    aria-hidden="true"
+                >
+                    {initials(patient)}
                 </div>
-                <div className="ml-3">
-                    <div className="text-sm font-medium text-gray-900">
-                        {hasValue(patient.first_name) ? patient.first_name : ''}{' '}
-                        {hasValue(patient.last_name) ? patient.last_name : ''}
-                        {!hasValue(patient.first_name) &&
-                            !hasValue(patient.last_name) &&
-                            '—'}
+                <div className="ml-3 min-w-0">
+                    <div className="truncate text-sm font-medium text-gray-900">
+                        {fullName(patient)}
                     </div>
-                    <div className="text-xs text-gray-400 capitalize">
-                        {hasValue(patient.gender) ? patient.gender : '—'}
-                    </div>
-                </div>
-            </div>
-        ),
-    },
-    {
-        id: 'last_name',
-        label: 'Surname',
-        sortable: true,
-        render: (patient: Patient) => (
-            <div className="flex items-center">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-blue-600 text-sm font-medium text-white">
-                    {hasValue(patient.first_name) ? patient.first_name[0] : '?'}
-                    {hasValue(patient.last_name) ? patient.last_name[0] : '?'}
-                </div>
-                <div className="ml-3">
-                    <div className="text-sm font-medium text-gray-900">
-                        {hasValue(patient.first_name) ? patient.first_name : ''}{' '}
-                        {hasValue(patient.last_name) ? patient.last_name : ''}
-                        {!hasValue(patient.first_name) &&
-                            !hasValue(patient.last_name) &&
-                            '—'}
-                    </div>
-                    <div className="text-xs text-gray-400 capitalize">
+                    <div className="text-xs text-gray-600 capitalize">
                         {hasValue(patient.gender) ? patient.gender : '—'}
                     </div>
                 </div>
@@ -165,116 +280,116 @@ const getTableColumns = (formatDate: (date: string) => string) => [
         label: 'Contact',
         sortable: false,
         render: (patient: Patient) => (
-            <div className="space-y-0.5 text-sm text-gray-600">
-                <div className="flex items-center gap-1.5">
-                    <span className="text-gray-400">✉</span>
-                    <span className="text-sm">
-                        {hasValue(patient.email) ? patient.email : '—'}
-                    </span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                    <span className="text-gray-400">📱</span>
-                    <span>{hasValue(patient.phone) ? patient.phone : '—'}</span>
-                </div>
+            <div className="space-y-0.5 text-sm text-gray-700">
+                <ContactLine
+                    icon={<EnvelopeIcon className="h-4 w-4" />}
+                    label="Email"
+                    value={patient.email}
+                />
+                <ContactLine
+                    icon={<DevicePhoneMobileIcon className="h-4 w-4" />}
+                    label="Phone"
+                    value={patient.phone}
+                />
                 {hasValue(patient.alt_phone) && (
-                    <div className="flex items-center gap-1.5 text-xs text-gray-400">
-                        <span>📞</span>
-                        <span>{patient.alt_phone}</span>
-                    </div>
+                    <ContactLine
+                        icon={<PhoneIcon className="h-4 w-4" />}
+                        label="Alternative phone"
+                        value={patient.alt_phone}
+                    />
                 )}
             </div>
         ),
     },
     {
-        id: 'patient_number',
+        id: 'identification',
         label: 'Identification',
         sortable: false,
-        render: (patient: Patient) => (
-            <div className="space-y-0.5">
-                {hasValue(patient.nrc) && (
-                    <div className="inline-flex items-center gap-1.5 rounded border border-gray-200 bg-gray-50 px-2 py-0.5 font-mono text-xs">
-                        <span className="text-gray-400">NRC:</span>
-                        <span className="text-gray-700">{patient.nrc}</span>
-                    </div>
-                )}
-                {hasValue(patient.passport) && (
-                    <div className="ml-1 inline-flex items-center gap-1.5 rounded border border-gray-200 bg-gray-50 px-2 py-0.5 font-mono text-xs">
-                        <span className="text-gray-400">Passport:</span>
-                        <span className="text-gray-700">
-                            {patient.passport}
-                        </span>
-                    </div>
-                )}
-                {hasValue(patient.national_id) && (
-                    <div className="ml-1 inline-flex items-center gap-1.5 rounded border border-gray-200 bg-gray-50 px-2 py-0.5 font-mono text-xs">
-                        <span className="text-gray-400">NID:</span>
-                        <span className="text-gray-700">
-                            {patient.national_id}
-                        </span>
-                    </div>
-                )}
-                {!hasValue(patient.nrc) &&
-                    !hasValue(patient.passport) &&
-                    !hasValue(patient.national_id) && (
-                        <span className="text-xs text-gray-400">—</span>
+        render: (patient: Patient) => {
+            const hasAny =
+                hasValue(patient.nrc) ||
+                hasValue(patient.passport) ||
+                hasValue(patient.national_id);
+
+            return (
+                <div className="flex flex-wrap gap-1">
+                    {hasValue(patient.nrc) && (
+                        <IdChip label="NRC" value={patient.nrc as string} />
                     )}
-            </div>
-        ),
+                    {hasValue(patient.passport) && (
+                        <IdChip
+                            label="Passport"
+                            value={patient.passport as string}
+                        />
+                    )}
+                    {hasValue(patient.national_id) && (
+                        <IdChip
+                            label="NID"
+                            value={patient.national_id as string}
+                        />
+                    )}
+                    {!hasAny && (
+                        <span className="text-xs text-gray-500">—</span>
+                    )}
+                </div>
+            );
+        },
     },
     {
         id: 'status',
         label: 'Status',
         sortable: true,
-        render: (patient: Patient) => (
-            <span
-                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
-                    patient.status === 'active'
-                        ? 'bg-green-100 text-green-700'
-                        : 'bg-gray-100 text-gray-600'
-                }`}
-            >
+        render: (patient: Patient) => {
+            const active = patient.status === 'active';
+
+            return (
                 <span
-                    className={`h-1.5 w-1.5 rounded-full ${
-                        patient.status === 'active'
-                            ? 'bg-green-500'
-                            : 'bg-gray-400'
+                    className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
+                        active
+                            ? 'bg-green-100 text-green-800'
+                            : 'bg-gray-100 text-gray-700'
                     }`}
-                ></span>
-                {patient.status === 'active' ? 'Active' : 'Inactive'}
-            </span>
-        ),
+                >
+                    <span
+                        className={`h-1.5 w-1.5 rounded-full ${
+                            active ? 'bg-green-600' : 'bg-gray-500'
+                        }`}
+                        aria-hidden="true"
+                    />
+                    {active ? 'Active' : 'Inactive'}
+                </span>
+            );
+        },
     },
     {
         id: 'created_at',
         label: 'Registered',
         sortable: true,
         render: (patient: Patient) => (
-            <span className="text-sm text-gray-500">
-                {hasValue(patient.created_at)
-                    ? new Date(patient.created_at).toLocaleDateString('en-GB', {
-                          day: '2-digit',
-                          month: 'short',
-                          year: 'numeric',
-                      })
-                    : '—'}
+            <span className="text-sm text-gray-600">
+                {formatRegistered(patient.created_at)}
             </span>
         ),
     },
     {
-        // id: 'actions',
+        id: 'actions',
         label: 'Actions',
         sortable: false,
         render: (patient: Patient) => (
-            <div className="flex items-center justify-end gap-3">
+            <div className="flex items-center justify-end gap-1">
                 <Link
                     href={`/patients/dashboard/${patient.id}`}
-                    className="font-medium text-blue-600 transition-colors hover:text-blue-800"
+                    onClick={(e) => e.stopPropagation()}
+                    aria-label={`View ${fullName(patient)}`}
+                    className="inline-flex min-h-11 items-center rounded-md px-3 font-medium text-blue-700 transition-colors hover:bg-blue-50 hover:text-blue-900 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:outline-none"
                 >
                     View
                 </Link>
                 <Link
                     href={`/patients/${patient.id}/edit`}
-                    className="font-medium text-gray-600 transition-colors hover:text-gray-800"
+                    onClick={(e) => e.stopPropagation()}
+                    aria-label={`Edit ${fullName(patient)}`}
+                    className="inline-flex min-h-11 items-center rounded-md px-3 font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-900 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:outline-none"
                 >
                     Edit
                 </Link>
@@ -283,49 +398,66 @@ const getTableColumns = (formatDate: (date: string) => string) => [
     },
 ];
 
+/* -------------------------------------------------------------------------- */
+/* PAGE                                                                       */
+/* -------------------------------------------------------------------------- */
+
 export default function Registry() {
-    const { auth, recentPatients } = usePage().props as any;
+    const inputRef = useRef<HTMLInputElement>(null);
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
-    const [searchOption, setSearchOption] = useState<SearchOption>('all');
-    const [statusFilter, setStatusFilter] = useState<
-        'all' | 'active' | 'inactive'
-    >('all');
+    const [searchOption, setSearchOption] = useState<SearchOption>('name');
+    const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
     const [patients, setPatients] = useState<Patient[]>([]);
     const [loading, setLoading] = useState(false);
     const [hasSearched, setHasSearched] = useState(false);
+    const [inputError, setInputError] = useState<string | null>(null);
 
-    console.log(patients);
-
-    // Get current search option
-    const currentOption = searchOptions.find(
-        (opt) => opt.value === searchOption,
+    const currentOption = SEARCH_OPTIONS.find(
+        (option) => option.value === searchOption,
     );
 
-    // Handle search with POST request
+    const visiblePatients = useMemo(
+        () =>
+            statusFilter === 'all'
+                ? patients
+                : patients.filter((patient) => patient.status === statusFilter),
+        [patients, statusFilter],
+    );
+
+    const activeCount = patients.filter((p) => p.status === 'active').length;
+    const inactiveCount = patients.filter(
+        (p) => p.status === 'inactive',
+    ).length;
+
+    const columns = useMemo(() => getTableColumns(), []);
+
     const handleSearch = async () => {
-        if (!searchTerm.trim() && statusFilter === 'all') {
-            // If no search term and no status filter, clear results
+        const term = searchTerm.trim();
+
+        if (!term) {
+            setInputError(
+                `Enter a ${currentOption?.label.toLowerCase() ?? 'value'} to search for.`,
+            );
             setPatients([]);
             setHasSearched(false);
+            inputRef.current?.focus();
             return;
         }
 
+        setInputError(null);
         setLoading(true);
+
         try {
             const response = await Http.post('/patients/registry/search', {
-                search_value: searchTerm,
+                search_value: term,
                 search_type: searchOption,
             });
-            console.log(searchTerm, searchOption, response);
+
             if (response.data.success) {
                 setPatients(response.data.data || []);
                 setHasSearched(true);
-
-                if (response.data.data.length === 0) {
-                    toast.error('No patients found matching your criteria');
-                }
             } else {
                 toast.error(
                     response.data.message || 'Failed to search patients',
@@ -333,337 +465,334 @@ export default function Registry() {
                 setPatients([]);
             }
         } catch (error: any) {
-            console.error('Search error:', error);
-            toast.error(error.message || 'An error occurred while searching');
+            toast.error(error?.message || 'An error occurred while searching');
             setPatients([]);
         } finally {
             setLoading(false);
         }
     };
 
-    // Handle Enter key press
-    const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter') {
             handleSearch();
         }
     };
 
-    // Handle search button click
-    const handleSearchClick = () => {
-        handleSearch();
-    };
-
     const handlePatientAdded = () => {
         toast.success('Patient added successfully');
-        // Refresh the search results
-        if (searchTerm || statusFilter !== 'all') {
+
+        if (searchTerm.trim()) {
             handleSearch();
         }
     };
 
     const clearSearch = () => {
         setSearchTerm('');
-        setSearchOption('all');
+        setSearchOption('name');
         setStatusFilter('all');
         setPatients([]);
         setHasSearched(false);
+        setInputError(null);
+        inputRef.current?.focus();
     };
 
-    // Format date for display
-    const formatDate = (date: string) => {
-        try {
-            return new Date(date).toLocaleDateString('en-US', {
-                year: 'numeric',
-                month: 'short',
-                day: 'numeric',
-            });
-        } catch {
-            return date;
-        }
+    const selectOption = (value: SearchOption) => {
+        setSearchOption(value);
+        setInputError(null);
+        inputRef.current?.focus();
     };
 
-    // Get table columns with formatDate
-    const columns = getTableColumns(formatDate);
+    const hasFilters =
+        searchTerm !== '' || statusFilter !== 'all' || searchOption !== 'name';
 
     return (
         <AppLayout
             breadcrumbs={[
-                {
-                    title: 'Patient',
-                    href: '/',
-                },
-                {
-                    title: 'Registry',
-                    href: '/',
-                },
+                { title: 'Patient', href: '/' },
+                { title: 'Registry', href: '/' },
             ]}
         >
             <div className="min-h-screen bg-blue-50 p-4 md:p-6">
                 <PageHeader
-                    icon={
-                        <svg
-                            className="h-5 w-5"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                        >
-                            <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
-                            />
-                        </svg>
-                    }
-                    title={'Search'}
+                    icon={<UsersIcon className="h-5 w-5" />}
+                    title="Search"
                     subtitle="Find registered patients using multiple identification methods"
                 />
 
-                {/* Search Section */}
                 <div className="bg-white p-2">
-                    <div className="mb-6 rounded-xl bg-white p-4">
-                        <div className="flex flex-col gap-3 lg:flex-row">
-                            {/* Search Input */}
+                    {/* ------------------------------ Search card ------------------------------ */}
+                    <section
+                        aria-label="Patient search"
+                        className="mb-6 rounded-xl bg-white p-4"
+                    >
+                        <label
+                            htmlFor="patient-search"
+                            className="mb-1.5 block text-sm font-medium text-gray-800"
+                        >
+                            Search by{' '}
+                            <span className="text-blue-700">
+                                {currentOption?.label}
+                            </span>
+                        </label>
+
+                        <div className="flex flex-col gap-3 sm:flex-row">
                             <div className="relative flex-1">
-                                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                                    <MagnifyingGlassIcon className="h-5 w-5 text-gray-400" />
+                                <div
+                                    className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3"
+                                    aria-hidden="true"
+                                >
+                                    <MagnifyingGlassIcon className="h-5 w-5 text-gray-500" />
                                 </div>
+
                                 <input
+                                    id="patient-search"
+                                    ref={inputRef}
                                     type="text"
-                                    placeholder={
-                                        currentOption?.placeholder ||
-                                        'Search patients...'
+                                    inputMode={
+                                        searchOption === 'phone' ||
+                                        searchOption === 'alt_phone'
+                                            ? 'tel'
+                                            : 'text'
                                     }
+                                    autoComplete="off"
+                                    placeholder={currentOption?.placeholder}
                                     value={searchTerm}
-                                    onChange={(e) =>
-                                        setSearchTerm(e.target.value)
+                                    onChange={(e) => {
+                                        setSearchTerm(e.target.value);
+                                        if (inputError) setInputError(null);
+                                    }}
+                                    onKeyDown={handleKeyDown}
+                                    aria-invalid={inputError ? true : undefined}
+                                    aria-describedby={
+                                        inputError
+                                            ? 'patient-search-error'
+                                            : undefined
                                     }
-                                    onKeyPress={handleKeyPress}
-                                    className="w-full rounded-lg border border-gray-300 bg-white py-2.5 pr-10 pl-10 text-gray-900 transition-all placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                                    className={`min-h-11 w-full rounded-lg border bg-white py-2.5 pr-11 pl-10 text-gray-900 transition-colors placeholder:text-gray-500 focus:ring-2 focus:outline-none ${
+                                        inputError
+                                            ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
+                                            : 'border-gray-300 focus:border-blue-600 focus:ring-blue-600'
+                                    }`}
                                 />
+
                                 {searchTerm && (
                                     <button
-                                        onClick={() => setSearchTerm('')}
-                                        className="absolute inset-y-0 right-0 flex items-center pr-3"
-                                    >
-                                        <XMarkIcon className="h-5 w-5 text-gray-400 transition-colors hover:text-gray-600" />
-                                    </button>
-                                )}
-                            </div>
-
-                            {/* Search Options */}
-                            <div className="flex flex-wrap gap-2">
-                                <select
-                                    value={searchOption}
-                                    onChange={(e) =>
-                                        setSearchOption(
-                                            e.target.value as SearchOption,
-                                        )
-                                    }
-                                    className="min-w-[160px] rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-gray-700 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
-                                >
-                                    {searchOptions.map((option) => (
-                                        <option
-                                            key={option.value}
-                                            value={option.value}
-                                        >
-                                            {option.icon} {option.label}
-                                        </option>
-                                    ))}
-                                </select>
-
-                                <select
-                                    value={statusFilter}
-                                    onChange={(e) =>
-                                        setStatusFilter(e.target.value as any)
-                                    }
-                                    className="min-w-[130px] rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-gray-700 focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
-                                >
-                                    <option value="all">All Status</option>
-                                    <option value="active">● Active</option>
-                                    <option value="inactive">○ Inactive</option>
-                                </select>
-
-                                {/* Search Button */}
-                                <button
-                                    onClick={handleSearchClick}
-                                    disabled={loading}
-                                    className="flex items-center gap-2 rounded-lg bg-blue-600 px-6 py-2.5 text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                    {loading ? (
-                                        <>
-                                            <svg
-                                                className="h-4 w-4 animate-spin"
-                                                fill="none"
-                                                viewBox="0 0 24 24"
-                                            >
-                                                <circle
-                                                    className="opacity-25"
-                                                    cx="12"
-                                                    cy="12"
-                                                    r="10"
-                                                    stroke="currentColor"
-                                                    strokeWidth="4"
-                                                />
-                                                <path
-                                                    className="opacity-75"
-                                                    fill="currentColor"
-                                                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                                                />
-                                            </svg>
-                                            Searching...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <MagnifyingGlassIcon className="h-4 w-4" />
-                                            Search
-                                        </>
-                                    )}
-                                </button>
-
-                                {(searchTerm ||
-                                    statusFilter !== 'all' ||
-                                    searchOption !== 'all') && (
-                                    <button
-                                        onClick={clearSearch}
-                                        className="rounded-lg bg-gray-100 px-3 py-2.5 text-gray-500 transition-colors hover:bg-gray-200 hover:text-gray-700"
-                                        title="Clear all filters"
+                                        type="button"
+                                        onClick={() => {
+                                            setSearchTerm('');
+                                            inputRef.current?.focus();
+                                        }}
+                                        aria-label="Clear search text"
+                                        className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-r-lg text-gray-500 transition-colors hover:text-gray-800 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:outline-none"
                                     >
                                         <XMarkIcon className="h-5 w-5" />
                                     </button>
                                 )}
                             </div>
-                        </div>
 
-                        {/* Quick Search Chips */}
-                        <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                            <span className="mr-1 text-xs text-gray-400">
-                                Quick search:
-                            </span>
-                            {[
-                                { label: 'NRC', value: 'nrc' },
-                                { label: 'Passport', value: 'passport' },
-                                { label: 'Phone', value: 'phone' },
-                                { label: 'Alt Phone', value: 'alt_phone' },
-                                {
-                                    label: 'Patient ID',
-                                    value: 'patient_number',
-                                },
-                                { label: 'Email', value: 'email' },
-                            ].map(({ label, value }) => (
+                            <div className="flex gap-2">
                                 <button
-                                    key={label}
-                                    onClick={() => {
-                                        setSearchOption(value as SearchOption);
-                                        setSearchTerm('');
-                                        const input = document.querySelector(
-                                            'input[type="text"]',
-                                        ) as HTMLInputElement;
-                                        if (input) input.focus();
-                                    }}
-                                    className={`rounded-full border px-2.5 py-1 text-xs transition-all ${
-                                        searchOption === value
-                                            ? 'border-blue-300 bg-blue-50 text-blue-700'
-                                            : 'border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100'
-                                    }`}
+                                    type="button"
+                                    onClick={handleSearch}
+                                    disabled={loading}
+                                    className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg bg-blue-700 px-6 text-sm font-medium text-white transition-colors hover:bg-blue-800 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60 sm:flex-none"
                                 >
-                                    {label}
+                                    {loading ? (
+                                        <>
+                                            <Spinner />
+                                            Searching…
+                                        </>
+                                    ) : (
+                                        <>
+                                            <MagnifyingGlassIcon
+                                                className="h-4 w-4"
+                                                aria-hidden="true"
+                                            />
+                                            Search
+                                        </>
+                                    )}
                                 </button>
-                            ))}
-                        </div>
-                    </div>
 
-                    {/* Results Stats */}
-                    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                        <div className="flex items-center gap-3">
-                            <p className="text-sm text-gray-600">
-                                {hasSearched ? (
-                                    <>
-                                        <span className="font-semibold text-gray-900">
-                                            {patients.length}
-                                        </span>{' '}
-                                        patient
-                                        {patients.length !== 1 ? 's' : ''} found
-                                        {searchTerm && (
-                                            <span className="ml-1 text-gray-400">
-                                                matching "{searchTerm}"
-                                            </span>
-                                        )}
-                                        {statusFilter !== 'all' && (
-                                            <span
-                                                className={`ml-1 rounded-full px-2 py-0.5 text-xs ${
-                                                    statusFilter === 'active'
-                                                        ? 'bg-green-100 text-green-700'
-                                                        : 'bg-gray-100 text-gray-600'
-                                                }`}
-                                            >
-                                                {statusFilter}
-                                            </span>
-                                        )}
-                                    </>
-                                ) : (
-                                    'Enter search criteria and click Search'
+                                {hasFilters && (
+                                    <button
+                                        type="button"
+                                        onClick={clearSearch}
+                                        className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-gray-100 px-4 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-200 hover:text-gray-900 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:outline-none"
+                                    >
+                                        <XMarkIcon
+                                            className="h-4 w-4"
+                                            aria-hidden="true"
+                                        />
+                                        Clear
+                                    </button>
                                 )}
-                            </p>
+                            </div>
                         </div>
+
+                        {inputError && (
+                            <p
+                                id="patient-search-error"
+                                role="alert"
+                                className="mt-1.5 text-sm text-red-700"
+                            >
+                                {inputError}
+                            </p>
+                        )}
+
+                        {/* Search type */}
+                        <div className="mt-4">
+                            <span
+                                id="search-type-label"
+                                className="mb-1.5 block text-xs font-medium tracking-wide text-gray-600 uppercase"
+                            >
+                                Search type
+                            </span>
+                            <div
+                                role="radiogroup"
+                                aria-labelledby="search-type-label"
+                                className="flex flex-wrap gap-2"
+                            >
+                                {SEARCH_OPTIONS.map((option) => {
+                                    const selected =
+                                        searchOption === option.value;
+
+                                    return (
+                                        <button
+                                            key={option.value}
+                                            type="button"
+                                            role="radio"
+                                            aria-checked={selected}
+                                            onClick={() =>
+                                                selectOption(option.value)
+                                            }
+                                            className={`min-h-9 rounded-full border px-3.5 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:outline-none ${
+                                                selected
+                                                    ? 'border-blue-700 bg-blue-700 font-medium text-white'
+                                                    : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                                            }`}
+                                        >
+                                            {option.label}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        {/* Status filter */}
+                        <div className="mt-4">
+                            <span
+                                id="status-filter-label"
+                                className="mb-1.5 block text-xs font-medium tracking-wide text-gray-600 uppercase"
+                            >
+                                Patient status
+                            </span>
+                            <div
+                                role="radiogroup"
+                                aria-labelledby="status-filter-label"
+                                className="inline-flex rounded-lg bg-gray-100 p-1"
+                            >
+                                {STATUS_OPTIONS.map((option) => {
+                                    const selected =
+                                        statusFilter === option.value;
+
+                                    return (
+                                        <button
+                                            key={option.value}
+                                            type="button"
+                                            role="radio"
+                                            aria-checked={selected}
+                                            onClick={() =>
+                                                setStatusFilter(option.value)
+                                            }
+                                            className={`min-h-9 rounded-md px-4 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:outline-none ${
+                                                selected
+                                                    ? 'bg-white font-medium text-gray-900 shadow-sm'
+                                                    : 'text-gray-700 hover:text-gray-900'
+                                            }`}
+                                        >
+                                            {option.label}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </section>
+
+                    {/* ----------------------------- Results summary ---------------------------- */}
+                    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                        <p
+                            role="status"
+                            aria-live="polite"
+                            className="text-sm text-gray-700"
+                        >
+                            {loading ? (
+                                'Searching…'
+                            ) : hasSearched ? (
+                                <>
+                                    <span className="font-semibold text-gray-900">
+                                        {visiblePatients.length}
+                                    </span>{' '}
+                                    {visiblePatients.length === 1
+                                        ? 'patient'
+                                        : 'patients'}{' '}
+                                    found
+                                    {searchTerm.trim() && (
+                                        <span className="ml-1 text-gray-600">
+                                            matching “{searchTerm.trim()}”
+                                        </span>
+                                    )}
+                                    {statusFilter !== 'all' && (
+                                        <span
+                                            className={`ml-2 rounded-full px-2 py-0.5 text-xs font-medium ${
+                                                statusFilter === 'active'
+                                                    ? 'bg-green-100 text-green-800'
+                                                    : 'bg-gray-100 text-gray-700'
+                                            }`}
+                                        >
+                                            {statusFilter}
+                                        </span>
+                                    )}
+                                </>
+                            ) : (
+                                'Enter search criteria and select Search.'
+                            )}
+                        </p>
+
                         {patients.length > 0 && (
                             <div className="flex items-center gap-2 text-sm">
-                                <span className="flex items-center gap-1.5 rounded-md bg-green-50 px-2.5 py-1 text-green-700">
-                                    <span className="h-1.5 w-1.5 rounded-full bg-green-500"></span>
-                                    {
-                                        patients.filter(
-                                            (p) => p.status === 'active',
-                                        ).length
-                                    }{' '}
-                                    Active
+                                <span className="flex items-center gap-1.5 rounded-md bg-green-50 px-2.5 py-1 text-green-800">
+                                    <span
+                                        className="h-1.5 w-1.5 rounded-full bg-green-600"
+                                        aria-hidden="true"
+                                    />
+                                    {activeCount} Active
                                 </span>
-                                <span className="flex items-center gap-1.5 rounded-md bg-gray-50 px-2.5 py-1 text-gray-600">
-                                    <span className="h-1.5 w-1.5 rounded-full bg-gray-400"></span>
-                                    {
-                                        patients.filter(
-                                            (p) => p.status === 'inactive',
-                                        ).length
-                                    }{' '}
-                                    Inactive
+                                <span className="flex items-center gap-1.5 rounded-md bg-gray-100 px-2.5 py-1 text-gray-700">
+                                    <span
+                                        className="h-1.5 w-1.5 rounded-full bg-gray-500"
+                                        aria-hidden="true"
+                                    />
+                                    {inactiveCount} Inactive
                                 </span>
                             </div>
                         )}
                     </div>
 
-                    {/* Reusable Table */}
+                    {/* -------------------------------- Results -------------------------------- */}
                     {loading ? (
-                        <div className="flex items-center justify-center rounded-xl border border-gray-200 bg-white p-12 shadow-sm">
-                            <div className="flex items-center gap-2">
-                                <svg
-                                    className="h-6 w-6 animate-spin text-blue-600"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                >
-                                    <circle
-                                        className="opacity-25"
-                                        cx="12"
-                                        cy="12"
-                                        r="10"
-                                        stroke="currentColor"
-                                        strokeWidth="4"
-                                    />
-                                    <path
-                                        className="opacity-75"
-                                        fill="currentColor"
-                                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                                    />
-                                </svg>
-                                <span className="text-gray-500">
-                                    Searching...
-                                </span>
-                            </div>
+                        <div
+                            role="status"
+                            className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white p-12 text-gray-600 shadow-sm"
+                        >
+                            <Spinner className="h-6 w-6 text-blue-700" />
+                            Searching patients…
                         </div>
-                    ) : patients.length > 0 ? (
+                    ) : visiblePatients.length > 0 ? (
                         <ReusableTable
-                            data={patients}
+                            data={visiblePatients}
                             columns={columns}
                             searchable={false}
-                            onRowClick={(patient) => {
+                            onRowClick={(patient: Patient) => {
                                 router.visit(
                                     `/patients/dashboard/${patient.id}`,
                                 );
@@ -672,46 +801,37 @@ export default function Registry() {
                             className="rounded-xl border border-gray-200 bg-white shadow-sm"
                         />
                     ) : hasSearched ? (
-                        <div className="flex flex-col items-center rounded-xl border border-gray-200 bg-white p-12 shadow-sm">
-                            <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-gray-100">
-                                <svg
-                                    className="h-6 w-6 text-gray-400"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
+                        <EmptyState
+                            icon={<FaceFrownIcon className="h-6 w-6" />}
+                            title="No patients found"
+                            description={
+                                patients.length > 0
+                                    ? `No ${statusFilter} patients match this search. Try “All” status.`
+                                    : 'Check the spelling, try a different search type (for example NRC or phone), or register them as a new patient.'
+                            }
+                            action={
+                                <button
+                                    type="button"
+                                    onClick={() => setIsModalOpen(true)}
+                                    className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-blue-700 px-5 text-sm font-medium text-white transition-colors hover:bg-blue-800 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 focus-visible:outline-none"
                                 >
-                                    <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2}
-                                        d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                                    <UserPlusIcon
+                                        className="h-4 w-4"
+                                        aria-hidden="true"
                                     />
-                                </svg>
-                            </div>
-                            <p className="text-base font-medium text-gray-900">
-                                No patients found
-                            </p>
-                            <p className="mt-1 text-sm text-gray-500">
-                                Try adjusting your search criteria or filters
-                            </p>
-                        </div>
+                                    Register new patient
+                                </button>
+                            }
+                        />
                     ) : (
-                        <div className="flex flex-col items-center rounded-xl border border-gray-200 bg-white p-12 shadow-sm">
-                            <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-gray-100">
-                                <MagnifyingGlassIcon className="h-6 w-6 text-gray-400" />
-                            </div>
-                            <p className="text-base font-medium text-gray-900">
-                                Search for patients
-                            </p>
-                            <p className="mt-1 text-sm text-gray-500">
-                                Enter a search term and click Search to find
-                                patients
-                            </p>
-                        </div>
+                        <EmptyState
+                            icon={<MagnifyingGlassIcon className="h-6 w-6" />}
+                            title="Search for patients"
+                            description="Choose a search type, enter a value and press Enter or select Search."
+                        />
                     )}
                 </div>
 
-                {/* Add Patient Modal */}
                 <AddPatientModal
                     isOpen={isModalOpen}
                     onClose={() => setIsModalOpen(false)}

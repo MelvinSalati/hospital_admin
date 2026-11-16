@@ -2,6 +2,7 @@
 
 namespace App\Repositories\Dashboards;
 
+use App\Models\Appointments\Appointment;
 use App\Models\Patients\LabOrder;
 use App\Models\Patients\LabOrderItem;
 use App\Models\Laboratories\LabResultItem;
@@ -666,7 +667,7 @@ class DashboardRepository
             ->where('status', 1)
             ->count();
 
-        $appointmentsToday = PatientVisit::where('department_id', $departmentId)
+        $appointmentsToday = Appointment::where('department', $departmentId)
             ->whereDate('appointment_date', $today)
             ->count();
 
@@ -692,20 +693,7 @@ class DashboardRepository
             'childHealthVisits' => $childHealthVisits,
         ];
 
-        $topServices = PatientVisit::where('department_id', $departmentId)
-            ->where('created_at', '>=', Carbon::now()->subDays(30))
-            ->whereNotNull('service_name')
-            ->where('service_name', '!=', '')
-            ->selectRaw('service_name as name, COUNT(*) as count')
-            ->groupBy('service_name')
-            ->orderByDesc('count')
-            ->limit(4)
-            ->get()
-            ->map(fn($row) => [
-                'name'  => $row->name,
-                'count' => (int) $row->count,
-            ])
-            ->all();
+        $topServices = [];
 
         $statusMap = [
             1 => 'waiting',

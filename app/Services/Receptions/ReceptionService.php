@@ -6,17 +6,23 @@ use App\Repositories\Receptions\ReceptionRepository;
 
 class ReceptionService
 {
-    protected ReceptionRepository $receptionRepository;
+    public function __construct(
+        private readonly ReceptionRepository $repository
+    ) {}
+
     /**
-     * Create a new class instance.
+     * Props for the receptions/dashboard Inertia page.
      */
-    public function __construct(ReceptionRepository $repository)
+    public function dashboard(int $departmentId): array
     {
-        $this->receptionRepository       =  $repository;
-    } 
-
-
-    public  function getDashboard() : array {
-        return $this->receptionRepository->dashboard();
+        return [
+            'stats'           => $this->repository->mapDashboardMetrics(),
+            'visits'          => $this->repository->getActiveQueue(),
+            'alerts'          => $this->repository->receptionAlerts($departmentId),
+            'serviceData'     => $this->repository->serviceData(),
+            'attendanceTrend' => $this->repository->attendanceTrend(),
+            'paymentStats'    => $this->repository->paymentStats(),
+            'patientFlow'     => $this->repository->patientFlow(),
+        ];
     }
 }

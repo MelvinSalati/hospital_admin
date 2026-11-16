@@ -11,12 +11,12 @@ Route::prefix('theatre')->group(function () {
 
     Route::get('/dashboard/{departmentId}', [TheatreDashboardController::class, 'index']);
 
-    Route::get('schedule', [TheatreController::class, 'schedule']);
-    Route::get('queue', [TheatreController::class, 'queue']);
+    Route::get('schedule/{departmentId}', [TheatreController::class, 'appointments']);
+    Route::get('queue/{departmentId}', [TheatreController::class, 'queue']);
     Route::get('procedures', [TheatreController::class, 'procedures']);
     Route::get('processed', [TheatreController::class, 'processed']);
 
-    Route::get('bulk-orders/{departmentId}', [TheatreBulkStoreController::class, 'index']);
+    Route::get('bulk-orders/{departmentId}', [TheatreController::class, 'bulkOrders']);
 
     Route::get('reports/{departmentId}', [TheatreReportController::class, 'index'])->name('theatre.reports');
 });

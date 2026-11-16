@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\AdminController;
+use App\Http\Controllers\Services\ServiceController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1/admin')->group(function () {
@@ -13,6 +14,7 @@ Route::prefix('v1/admin')->group(function () {
     Route::get('/budgets', [AdminController::class, 'getBudgets']);
     Route::get('/purchase-orders', [AdminController::class, 'getPurchaseRequisitions']);
     Route::get('/purchase-orders/approved', [AdminController::class, 'getPurchaseOrders']);
+    Route::post('/users/{userId}/service', [ServiceController::class, 'create']);
     // New budget and requisition routes
     Route::get('/purchase-requisition/{id}/check-budget', [AdminController::class, 'checkBudget']);
     Route::post('/purchase-requisition/{id}/approve', [AdminController::class, 'approveRequisition']);

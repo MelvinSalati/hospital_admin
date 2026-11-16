@@ -1,5 +1,5 @@
 // pages/pharmacies/queue.tsx
-import { router, usePage } from '@inertiajs/react';
+import { router, usePage, Link } from '@inertiajs/react';
 import { CheckCircle2, Pill, X } from 'lucide-react';
 import Notiflix from 'notiflix';
 import { useEffect, useState } from 'react';
@@ -121,13 +121,16 @@ export default function Queue() {
                                         </span>
                                     </td>
                                     <td className="px-4 py-3 text-right">
-                                        <button
-                                            onClick={() => setActive(rx)}
-                                            className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
-                                        >
-                                            <Pill size={12} />
-                                            Dispense
-                                        </button>
+                                       {rx.patient_id ? (
+        <Link
+            href={`/patients/pharmacy/dispense/${rx.patient_id}`}
+            className="text-blue-600 hover:underline"
+        >
+            Dispense
+        </Link>
+    ) : (
+        <span className="text-gray-400">No patient</span>
+    )}
                                     </td>
                                 </tr>
                             ))}

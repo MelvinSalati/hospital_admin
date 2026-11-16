@@ -61,8 +61,8 @@ class AppointmentRepository implements AppointmentInterface
                 'patient_name' => $appointment->patient
                     ? trim($appointment->patient->first_name . ' ' . $appointment->patient->last_name)
                     : null,
-                'department_id' => $appointment->department_id,
-                'department_name' => $appointment->department?->name,
+                'department_id' => $appointment->department,
+                // 'department_name' => $appointment->department?->name,
                 'doctor_id' => $appointment->doctor_id,
                 'doctor_name' => $appointment->doctor?->name,
                 'created_by'  => $appointment->creator?->name,

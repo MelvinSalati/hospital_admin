@@ -1,53 +1,44 @@
 import { Link, usePage, router } from '@inertiajs/react';
 import {
     ArrowLeftCircle,
-    ArrowRightCircleIcon,
+    ArrowRightCircle,
     BarChart2,
     BarChart3,
     Barcode,
     Boxes,
-    BoxesIcon,
-    Building2,
-    Calendar1Icon,
     CalendarClock,
-    CheckCircle2Icon,
+    CalendarDays,
     ClipboardCheck,
-    CogIcon,
-    CreditCard,
-    DollarSignIcon,
-    DownloadIcon,
+    Cog,
+    DollarSign,
+    Download,
     FileText,
-    FileTextIcon,
     LayoutGrid,
     LogOut,
     PackageCheck,
     PackageMinus,
     Pill,
     PillBottle,
-    PillBottleIcon,
     PlusCircle,
     Receipt,
     Search,
-    SearchIcon,
     Shield,
-    ShoppingBagIcon,
+    ShoppingBag,
     Stethoscope,
     TrendingUp,
     Truck,
     UserCircle,
-    UserPlus2Icon,
+    UserPlus,
     UserSquare,
     Users,
     Wallet,
-    Baby,
-    Scissors,
-    Smile,
-    Eye,
-    HeartPulse,
+    TagIcon,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+
 import AppLogo from '@/components/app-logo';
 import { Badge } from '@/components/ui/badge';
+
 import {
     Sidebar,
     SidebarContent,
@@ -57,11 +48,12 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
+
 import routes from '@/constants/routes';
 import type { NavItem } from '@/types';
 
 /* -------------------------------------------------------------------------- */
-/*                                   Types                                    */
+/* TYPES                                                                      */
 /* -------------------------------------------------------------------------- */
 
 interface OrderCounts {
@@ -78,29 +70,40 @@ interface OrderBadgeConfig {
     subSections?: Record<string, keyof OrderCounts>;
 }
 
-/**
- * Declarative rule for patching a `NavItem.href` with a department id.
- * `build(item, departmentId)` returns the new href (or the original).
- */
 interface DepartmentHrefRule {
     match: (item: NavItem) => boolean;
     build: (item: NavItem, departmentId: string | number | null) => string;
 }
 
+interface AuthUser {
+    id?: number;
+    name?: string;
+    role?: string;
+    profile?: {
+        role?: string;
+        roles?: string[] | string;
+        department_id?: string | number | null;
+        departmentId?: string | number | null;
+    };
+}
+
+/** NavItem plus optional sub-links (used by the admin menu). */
+type NavEntry = NavItem & {
+    children?: { title: string; href: string }[];
+};
+
 /* -------------------------------------------------------------------------- */
-/*                                 Constants                                  */
+/* CONSTANTS                                                                  */
 /* -------------------------------------------------------------------------- */
 
+// NOTE: this is a relative path, so it resolves differently depending on the
+// current URL. Prefer an absolute path if your routes constant allows it.
 const ACCOUNT_HREF = `../../${routes.web.user.account}`;
 
-/** Titles that belong in the "settings/account" footer section of the sidebar. */
-const SETTINGS_SECTION_KEYWORDS = [
-    'account',
-    'settings',
-    'configurations',
-] as const;
+const DEFAULT_REDIRECT = '/reception/dashboard';
 
-/** Roles that should hit `/api/order-counts`. */
+const SETTINGS_SECTION_KEYWORDS = ['account', 'settings', 'configurations'];
+
 const ORDER_COUNT_ROLES = [
     'bulkstore',
     'lab_technician',
@@ -109,23 +112,19 @@ const ORDER_COUNT_ROLES = [
     'receptionist',
     'humanresources',
     'accountant',
-] as const;
-
-/** Default landing path when we cannot resolve a role. */
-const DEFAULT_REDIRECT = '/reception/dashboard';
+];
 
 /* -------------------------------------------------------------------------- */
-/*                               Nav definitions                              */
+/* ROLE NAVIGATION                                                            */
 /* -------------------------------------------------------------------------- */
 
-const roleNavItems: Record<string, NavItem[]> = {
+const roleNavItems: Record<string, NavEntry[]> = {
     doctor: [
         {
             title: 'Dashboard',
             href: '/consultation/dashboard',
             icon: LayoutGrid,
         },
-        { title: 'Search', href: '/reception/registry', icon: SearchIcon },
         {
             title: 'Consultations',
             href: '/consultation/queue',
@@ -134,185 +133,193 @@ const roleNavItems: Record<string, NavItem[]> = {
         {
             title: 'Appointments',
             href: '/consultation/appointment',
-            icon: CalendarClock,
+            icon: CalendarDays,
         },
-        { title: 'Account', href: ACCOUNT_HREF, icon: UserSquare },
+        {
+            title: 'Account',
+            href: ACCOUNT_HREF,
+            icon: UserSquare,
+        },
     ],
+
     admin: [
-        { title: 'Dashboard', href: '/admin/dashboard', icon: LayoutGrid },
+        {
+            title: 'Dashboard',
+            href: '/admin/dashboard',
+            icon: LayoutGrid,
+        },
         {
             title: 'User Management',
             href: '/admin/manage-users',
             icon: Users,
             children: [
-                { title: 'Users', href: '/admin/manage-users' },
-                { title: 'Roles & Permissions', href: '/admin/roles' },
+                {
+                    title: 'Users',
+                    href: '/admin/manage-users',
+                },
+                {
+                    title: 'Roles & Permissions',
+                    href: '/admin/roles',
+                },
             ],
         },
-        // { title: 'Human Resources', href: '/admin/hr', icon: UserCircle },
         {
             title: 'Manage Budgets',
             href: '/admin/budgets',
-            icon: DollarSignIcon,
+            icon: DollarSign,
         },
         {
             title: 'Purchase Requisitions',
             href: '/admin/purchase-requisitions',
-            icon: BoxesIcon,
+            icon: Boxes,
         },
         {
             title: 'Purchase Orders',
             href: '/admin/purchase-orders',
-            icon: FileTextIcon,
+            icon: FileText,
         },
-        // {
-        //     title: 'Inventory Oversight',
-        //     href: '/admin/inventory',
-        //     icon: BoxesIcon,
-        // },
-        // {
-        //     title: 'Approvals',
-        //     href: '/admin/approvals',
-        //     icon: CheckCircle2Icon,
-        //     children: [
-        //         {
-        //             title: 'Purchase Requisitions',
-        //             href: '/admin/approvals/purchase-requisitions',
-        //         },
-        //         {
-        //             title: 'Purchase Orders',
-        //             href: '/admin/approvals/purchase-orders',
-        //         },
-        //         {
-        //             title: 'Stock Adjustments',
-        //             href: '/admin/approvals/stock-adjustments',
-        //         },
-        //         { title: 'Refunds', href: '/admin/approvals/refunds' },
-        //     ],
-        // },
         {
             title: 'Reports',
             href: '/admin/reports',
             icon: BarChart3,
             children: [
-                { title: 'System Reports', href: '/admin/reports/system' },
+                {
+                    title: 'System Reports',
+                    href: '/admin/reports/system',
+                },
                 {
                     title: 'Financial Reports',
                     href: '/admin/reports/financial',
                 },
-                { title: 'Audit Reports', href: '/admin/reports/audit' },
-                { title: 'Usage Analytics', href: '/admin/reports/analytics' },
+                {
+                    title: 'Audit Reports',
+                    href: '/admin/reports/audit',
+                },
+                {
+                    title: 'Usage Analytics',
+                    href: '/admin/reports/analytics',
+                },
             ],
+        },
+    ],
+
+    nurse: [
+        {
+            title: 'Dashboard',
+            href: '/nurses/dashboard',
+            icon: LayoutGrid,
         },
         {
-            title: 'Administration',
-            href: '/admin/settings',
-            icon: Building2,
-            children: [
-                { title: 'Facilities', href: '/admin/facilities' },
-                { title: 'Branches', href: '/admin/branches' },
-                { title: 'Services', href: '/admin/services' },
-                { title: 'Wards', href: '/admin/wards' },
-                { title: 'Insurance Providers', href: '/admin/insurance' },
-            ],
+            title: 'Search',
+            href: '/nurses/registry',
+            icon: Search,
         },
-        // {
-        //     title: 'Configurations',
-        //     href: '/admin/settings',
-        //     icon: CogIcon,
-        //     children: [
-        //         { title: 'General Settings', href: '/admin/settings/general' },
-        //         { title: 'Billing Settings', href: '/admin/settings/billing' },
-        //         {
-        //             title: 'Number Sequences',
-        //             href: '/admin/settings/sequences',
-        //         },
-        //         {
-        //             title: 'Notifications',
-        //             href: '/admin/settings/notifications',
-        //         },
-        //         { title: 'Integrations', href: '/admin/settings/integrations' },
-        //         { title: 'Backup & Restore', href: '/admin/settings/backup' },
-        //         { title: 'System Logs', href: '/admin/settings/logs' },
-        //     ],
-        // },
-    ],
-    nurse: [
-        { title: 'Dashboard', href: '/nurses/dashboard', icon: LayoutGrid },
-        { title: 'Search', href: '/nurses/registry', icon: SearchIcon },
         {
             title: 'Appointments',
             href: '/nurses/appointments',
-            icon: Calendar1Icon,
+            icon: CalendarDays,
         },
         {
             title: 'Queue & Check-in',
             href: '/nurses/queue',
             icon: ClipboardCheck,
         },
-        { title: 'In Patient', href: '/nurses/in-patient', icon: Stethoscope },
+        {
+            title: 'In Patient',
+            href: '/nurses/in-patient',
+            icon: Stethoscope,
+        },
         {
             title: 'Treatment Room',
             href: '/nurses/treatment-room',
-            icon: PillBottleIcon,
+            icon: PillBottle,
         },
-        { title: 'Bulk Store', href: '/nurses/bulk-store', icon: Boxes },
+        {
+            title: 'Bulk Store',
+            href: '/nurses/bulk-store',
+            icon: Boxes,
+        },
         {
             title: 'Users',
             href: '/nurses/user-department',
-            icon: UserPlus2Icon,
+            icon: UserPlus,
         },
-        { title: 'Reports', href: '/nurses/reports', icon: BarChart3 },
-        { title: 'Account', href: '/users/manage-account', icon: UserCircle },
+        {
+            title: 'Reports',
+            href: '/nurses/reports',
+            icon: BarChart3,
+        },
+        {
+            title: 'Account',
+            href: '/users/manage-account',
+            icon: UserCircle,
+        },
     ],
+
     receptionist: [
-        { title: 'Dashboard', href: '/reception/dashboard', icon: LayoutGrid },
-        { title: 'Search', href: '/reception/registry', icon: Search },
+        {
+            title: 'Dashboard',
+            href: '/reception/dashboard',
+            icon: LayoutGrid,
+        },
+        {
+            title: 'Search',
+            href: '/reception/registry',
+            icon: Search,
+        },
         {
             title: 'Add Patient',
             href: '/reception/create',
-            icon: UserPlus2Icon,
+            icon: UserPlus,
         },
         {
             title: 'Appointments',
             href: '/reception/appointments',
-            icon: Calendar1Icon,
+            icon: CalendarDays,
         },
         {
-            title: 'Queue & Check-in',
-            href: '/reception/queue',
-            icon: ClipboardCheck,
-        },
-        { title: 'Visits', href: '/reception/visits', icon: Stethoscope },
-        { title: 'Billing', href: '/reception/bills', icon: DollarSignIcon },
-        { title: 'Payments', href: '/reception/payments', icon: CreditCard },
-        {
-            title: 'Insurance & Schemes',
-            href: '/reception/insurance',
-            icon: Shield,
+            title: 'Visits',
+            href: '/reception/visits',
+            icon: Stethoscope,
         },
         {
-            title: 'User Management',
-            href: '/admin/manage-users',
-            icon: Users,
-            children: [
-                { title: 'Users', href: '/admin/manage-users' },
-                { title: 'Roles & Permissions', href: '/admin/roles' },
-            ],
+            title: 'Add User',
+            href: '/user/create',
+            icon: PlusCircle,
         },
-        { title: 'Add User', href: '/user/create', icon: PlusCircle },
-        { title: 'Reports', href: '/reception/reports', icon: BarChart2 },
-        { title: 'Account', href: ACCOUNT_HREF, icon: UserSquare },
+        {
+            title: 'Reports',
+            href: '/reception/reports',
+            icon: BarChart2,
+        },
+        {
+            title: 'Account',
+            href: ACCOUNT_HREF,
+            icon: UserSquare,
+        },
     ],
+
     pharmacist: [
-        { title: 'Dashboard', href: '/pharmacy/dashboard', icon: LayoutGrid },
-        { title: 'Prescriptions', href: '/pharmacy/prescriptions', icon: Pill },
+        {
+            title: 'Dashboard',
+            href: '/pharmacy/dashboard',
+            icon: LayoutGrid,
+        },
+        {
+            title: 'Prescriptions',
+            href: '/pharmacy/prescriptions',
+            icon: Pill,
+        },
         {
             title: 'Bulk Store',
             href: '/pharmacy/bulk-orders',
             icon: Barcode,
         },
-        { title: 'Dispensed', href: '/pharmacy/dispensed', icon: Pill },
+        {
+            title: 'Dispensed',
+            href: '/pharmacy/dispensed',
+            icon: Pill,
+        },
         {
             title: 'Manage Products',
             href: '/pharmacy/stock-monitoring',
@@ -323,8 +330,13 @@ const roleNavItems: Record<string, NavItem[]> = {
             href: '/pharmacy/reports',
             icon: BarChart3,
         },
-        { title: 'Account', href: ACCOUNT_HREF, icon: UserSquare },
+        {
+            title: 'Account',
+            href: ACCOUNT_HREF,
+            icon: UserSquare,
+        },
     ],
+
     maternal_child_health: [
         {
             title: 'Dashboard',
@@ -337,22 +349,12 @@ const roleNavItems: Record<string, NavItem[]> = {
             icon: CalendarClock,
         },
         {
-            title: 'Queue & Check-in',
+            title: 'Queue',
             href: '/maternal-child-health/queue',
             icon: Users,
         },
         {
-            title: 'Maternal Care',
-            href: '/maternal-child-health/maternal-care',
-            icon: HeartPulse,
-        },
-        {
-            title: 'Child Health',
-            href: '/maternal-child-health/child-health',
-            icon: Baby,
-        },
-        {
-            title: 'Processed',
+            title: 'Attended',
             href: '/maternal-child-health/processed',
             icon: ClipboardCheck,
         },
@@ -366,7 +368,11 @@ const roleNavItems: Record<string, NavItem[]> = {
             href: '/maternal-child-health/reports',
             icon: BarChart3,
         },
-        { title: 'Account', href: ACCOUNT_HREF, icon: UserSquare },
+        {
+            title: 'Account',
+            href: ACCOUNT_HREF,
+            icon: UserSquare,
+        },
     ],
 
     theatre: [
@@ -376,24 +382,19 @@ const roleNavItems: Record<string, NavItem[]> = {
             icon: LayoutGrid,
         },
         {
-            title: 'Surgery Schedule',
+            title: 'Appointments',
             href: '/theatre/schedule',
             icon: CalendarClock,
         },
         {
-            title: 'Queue',
+            title: 'Theatre Queue',
             href: '/theatre/queue',
             icon: Users,
         },
         {
-            title: 'Procedures',
-            href: '/theatre/procedures',
-            icon: Scissors,
-        },
-        {
-            title: 'Processed',
-            href: '/theatre/processed',
-            icon: ClipboardCheck,
+            title: 'Manage Billables',
+            href: '/theatre',
+            icon: Barcode,
         },
         {
             title: 'Bulk Store',
@@ -405,7 +406,11 @@ const roleNavItems: Record<string, NavItem[]> = {
             href: '/theatre/reports',
             icon: BarChart3,
         },
-        { title: 'Account', href: ACCOUNT_HREF, icon: UserSquare },
+        {
+            title: 'Account',
+            href: ACCOUNT_HREF,
+            icon: UserSquare,
+        },
     ],
 
     dental: [
@@ -420,18 +425,13 @@ const roleNavItems: Record<string, NavItem[]> = {
             icon: CalendarClock,
         },
         {
-            title: 'Queue',
+            title: 'Manage Queue',
             href: '/dental/queue',
             icon: Users,
         },
         {
-            title: 'Dental Procedures',
-            href: '/dental/procedures',
-            icon: Stethoscope,
-        },
-        {
-            title: 'Processed',
-            href: '/dental/processed',
+            title: 'Manage Billables',
+            href: '/dental/billables',
             icon: ClipboardCheck,
         },
         {
@@ -444,55 +444,63 @@ const roleNavItems: Record<string, NavItem[]> = {
             href: '/dental/reports',
             icon: BarChart3,
         },
-        { title: 'Account', href: ACCOUNT_HREF, icon: UserSquare },
+        {
+            title: 'Account',
+            href: ACCOUNT_HREF,
+            icon: UserSquare,
+        },
     ],
 
-    ophthalmology: [
+    // Keep this spelling consistent with the existing Laravel route prefix.
+    opthalmology: [
         {
             title: 'Dashboard',
-            href: '/ophthalmology/dashboard',
+            href: '/opthalmology/dashboard',
             icon: LayoutGrid,
         },
         {
             title: 'Appointments',
-            href: '/ophthalmology/appointments',
+            href: '/opthalmology/appointments',
             icon: CalendarClock,
         },
         {
-            title: 'Queue',
-            href: '/ophthalmology/queue',
+            title: 'Manage Queue',
+            href: '/opthalmology/queue',
             icon: Users,
         },
         {
-            title: 'Eye Examinations',
-            href: '/ophthalmology/examinations',
-            icon: Eye,
-        },
-        {
-            title: 'Procedures',
-            href: '/ophthalmology/procedures',
-            icon: Stethoscope,
-        },
-        {
-            title: 'Processed',
-            href: '/ophthalmology/processed',
-            icon: ClipboardCheck,
-        },
-        {
             title: 'Bulk Store',
-            href: '/ophthalmology/bulk-orders',
+            href: '/opthalmology/bulk-orders',
             icon: Barcode,
         },
         {
+            title: 'Manage Billables',
+            href: '/billables/department',
+            icon: TagIcon,
+        },
+        {
             title: 'Reports',
-            href: '/ophthalmology/reports',
+            href: '/opthalmology/reports',
             icon: BarChart3,
         },
-        { title: 'Account', href: ACCOUNT_HREF, icon: UserSquare },
+        {
+            title: 'Account',
+            href: ACCOUNT_HREF,
+            icon: UserSquare,
+        },
     ],
+
     bulkstore: [
-        { title: 'Dashboard', href: '/bulkstore/dashboard', icon: LayoutGrid },
-        { title: 'Products', href: '/bulkstore/products', icon: Barcode },
+        {
+            title: 'Dashboard',
+            href: '/bulkstore/dashboard',
+            icon: LayoutGrid,
+        },
+        {
+            title: 'Products',
+            href: '/bulkstore/products',
+            icon: Barcode,
+        },
         {
             title: 'Stock Adjustments',
             href: '/bulkstore/adjustments',
@@ -506,15 +514,23 @@ const roleNavItems: Record<string, NavItem[]> = {
         {
             title: 'Goods Received Note',
             href: '/bulkstore/goods-received-note',
-            icon: DownloadIcon,
+            icon: Download,
         },
         {
             title: 'Stock Pricing',
             href: '/bulkstore/stock-pricing',
-            icon: DollarSignIcon,
+            icon: DollarSign,
         },
-        { title: 'Issue Stock', href: '/bulkstore/issues', icon: PackageMinus },
-        { title: 'Returns', href: '/bulkstore/returns', icon: ArrowLeftCircle },
+        {
+            title: 'Issue Stock',
+            href: '/bulkstore/issues',
+            icon: PackageMinus,
+        },
+        {
+            title: 'Returns',
+            href: '/bulkstore/returns',
+            icon: ArrowLeftCircle,
+        },
         {
             title: 'Purchase Orders',
             href: '/bulkstore/purchase-orders',
@@ -525,86 +541,283 @@ const roleNavItems: Record<string, NavItem[]> = {
             href: '/bulkstore/purchase-requisition',
             icon: FileText,
         },
-        { title: 'Suppliers', href: '/bulkstore/suppliers', icon: Truck },
-        { title: 'Batch Management', href: '/bulkstore/batches', icon: Boxes },
+        {
+            title: 'Suppliers',
+            href: '/bulkstore/suppliers',
+            icon: Truck,
+        },
+        {
+            title: 'Batch Management',
+            href: '/bulkstore/batches',
+            icon: Boxes,
+        },
         {
             title: 'Expiry Tracking',
             href: '/bulkstore/expiry',
             icon: CalendarClock,
         },
-        { title: 'Reports', href: '/bulkstore/reports', icon: BarChart3 },
+        {
+            title: 'Reports',
+            href: '/bulkstore/reports',
+            icon: BarChart3,
+        },
         {
             title: 'Configurations',
             href: '/bulkstore/module-settings',
-            icon: CogIcon,
+            icon: Cog,
         },
-        { title: 'Account', href: ACCOUNT_HREF, icon: UserSquare },
+        {
+            title: 'Account',
+            href: ACCOUNT_HREF,
+            icon: UserSquare,
+        },
     ],
+
     lab_technician: [
-        // href patched in-component (needs department_id)
-        { title: 'Dashboard', href: '/laboratory/dashboard', icon: LayoutGrid },
-        { title: 'Queues', href: '/laboratory', icon: Users },
+        {
+            title: 'Dashboard',
+            href: '/laboratory/dashboard',
+            icon: LayoutGrid,
+        },
+        {
+            title: 'Queues',
+            href: '/laboratory',
+            icon: Users,
+        },
         {
             title: 'Processed',
             href: '/laboratory/processed',
-            icon: ArrowRightCircleIcon,
+            icon: ArrowRightCircle,
         },
-        // href patched in-component (needs department_id)
         {
             title: 'Bulk Store Orders',
             href: '/laboratory/bulk-orders',
-            icon: ShoppingBagIcon,
+            icon: ShoppingBag,
         },
-        { title: 'Reports', href: '/laboratory/reports', icon: BarChart3 },
-        { title: 'Account', href: ACCOUNT_HREF, icon: UserSquare },
+        {
+            title: 'Reports',
+            href: '/laboratory/reports',
+            icon: BarChart3,
+        },
+        {
+            title: 'Account',
+            href: ACCOUNT_HREF,
+            icon: UserSquare,
+        },
     ],
+
     radiologist: [
-        // href patched in-component (needs department_id)
-        { title: 'Dashboard', href: '/radiology/dashboard', icon: LayoutGrid },
-        { title: 'Queues', href: '/radiology/queue', icon: Users },
+        {
+            title: 'Dashboard',
+            href: '/radiology/dashboard',
+            icon: LayoutGrid,
+        },
+        {
+            title: 'Queues',
+            href: '/radiology/queue',
+            icon: Users,
+        },
         {
             title: 'Images Seen',
             href: '/radiology/processed',
-            icon: ArrowRightCircleIcon,
+            icon: ArrowRightCircle,
         },
-        // href patched in-component (needs department_id)
         {
             title: 'Bulk Store Orders',
             href: '/radiology/bulk-orders',
-            icon: ShoppingBagIcon,
+            icon: ShoppingBag,
         },
         {
             title: 'Reports',
             href: '/radiology/reports',
             icon: BarChart3,
         },
-        { title: 'Account', href: ACCOUNT_HREF, icon: UserSquare },
+        {
+            title: 'Account',
+            href: ACCOUNT_HREF,
+            icon: UserSquare,
+        },
     ],
+
     accountant: [
-        { title: 'Patient Billing', href: '/billing', icon: Receipt },
-        { title: 'Invoices', href: '/invoices', icon: FileText },
-        { title: 'Revenue', href: '/finance/revenue', icon: TrendingUp },
+        {
+            title: 'Patient Billing',
+            href: '/billing',
+            icon: Receipt,
+        },
+        {
+            title: 'Invoices',
+            href: '/invoices',
+            icon: FileText,
+        },
+        {
+            title: 'Revenue',
+            href: '/finance/revenue',
+            icon: TrendingUp,
+        },
         {
             title: 'Daily Collections',
             href: '/finance/collections',
             icon: Wallet,
         },
-        { title: 'Expenses', href: '/finance/expenses', icon: Receipt },
+        {
+            title: 'Expenses',
+            href: '/finance/expenses',
+            icon: Receipt,
+        },
         {
             title: 'Financial Reports',
             href: '/reports/financial',
             icon: BarChart3,
         },
-        { title: 'Account', href: ACCOUNT_HREF, icon: UserSquare },
+        {
+            title: 'Account',
+            href: ACCOUNT_HREF,
+            icon: UserSquare,
+        },
     ],
+
     bulk_store_manager: [
-        { title: 'Bulk Store', href: '/bulkstore/store', icon: Boxes },
-        { title: 'Suppliers', href: '/suppliers', icon: Truck },
-        { title: 'Stock Expiry', href: '/inventory/expiry', icon: PillBottle },
-        { title: 'Insurance Claims', href: '/insurance', icon: Shield },
-        { title: 'Account', href: ACCOUNT_HREF, icon: UserSquare },
+        {
+            title: 'Bulk Store',
+            href: '/bulkstore/store',
+            icon: Boxes,
+        },
+        {
+            title: 'Suppliers',
+            href: '/suppliers',
+            icon: Truck,
+        },
+        {
+            title: 'Stock Expiry',
+            href: '/inventory/expiry',
+            icon: PillBottle,
+        },
+        {
+            title: 'Insurance Claims',
+            href: '/insurance',
+            icon: Shield,
+        },
+        {
+            title: 'Account',
+            href: ACCOUNT_HREF,
+            icon: UserSquare,
+        },
     ],
 };
+
+/* -------------------------------------------------------------------------- */
+/* DEPARTMENT ROUTE RULES                                                     */
+/* -------------------------------------------------------------------------- */
+
+/** Rule that appends the department id to a path: `/path/{id}` or `/path`. */
+const departmentRule = (title: string, path: string): DepartmentHrefRule => ({
+    match: (item) => item.title === title,
+    build: (_item, id) => (id ? `${path}/${id}` : path),
+});
+
+/** Rule for shared billables pages: `/billables/department/{id}`. */
+const billablesRule = (
+    fallback: string,
+    title = 'Manage Billables',
+): DepartmentHrefRule => ({
+    match: (item) => item.title === title,
+    build: (_item, id) => (id ? `/billables/department/${id}` : fallback),
+});
+
+const DEPARTMENT_HREF_RULES: Record<string, DepartmentHrefRule[]> = {
+    doctor: [
+        departmentRule('Dashboard', '/consultation/dashboard'),
+        departmentRule('Consultations', '/consultation/queue'),
+        departmentRule('Appointments', '/consultation/appointment'),
+    ],
+
+    lab_technician: [
+        departmentRule('Dashboard', '/laboratory/dashboard'),
+        departmentRule('Bulk Store Orders', '/laboratory/bulk-orders'),
+        departmentRule('Reports', '/laboratory/reports'),
+    ],
+
+    pharmacist: [
+        departmentRule('Dashboard', '/pharmacy/dashboard'),
+        departmentRule('Bulk Store', '/pharmacy/bulk-orders'),
+        departmentRule('Department Stock', '/pharmacy/department-stock'),
+        departmentRule('Reports', '/pharmacy/reports'),
+    ],
+
+    radiologist: [
+        departmentRule('Dashboard', '/radiology/dashboard'),
+        departmentRule('Queues', '/radiology/queue'),
+        departmentRule('Bulk Store Orders', '/radiology/bulk-orders'),
+        departmentRule('Reports', '/radiology/reports'),
+    ],
+
+    maternal_child_health: [
+        departmentRule('Dashboard', '/maternal-child-health/dashboard'),
+        departmentRule('Appointments', '/maternal-child-health/appointments'),
+        departmentRule('Queue', '/maternal-child-health/queue'),
+        departmentRule('Bulk Store', '/maternal-child-health/bulk-orders'),
+        departmentRule('Reports', '/maternal-child-health/reports'),
+    ],
+
+    theatre: [
+        departmentRule('Dashboard', '/theatre/dashboard'),
+        departmentRule('Appointments', '/theatre/schedule'),
+        departmentRule('Theatre Queue', '/theatre/queue'),
+        departmentRule('Procedures', '/theatre/procedures'),
+        billablesRule('/theatre'),
+        departmentRule('Processed', '/theatre/processed'),
+        departmentRule('Bulk Store', '/theatre/bulk-orders'),
+        departmentRule('Reports', '/theatre/reports'),
+    ],
+
+    dental: [
+        departmentRule('Dashboard', '/dental/dashboard'),
+        departmentRule('Appointments', '/dental/appointments'),
+        departmentRule('Manage Queue', '/dental/queue'),
+        billablesRule('/dental/billables'),
+        departmentRule('Bulk Store', '/dental/bulk-orders'),
+        departmentRule('Reports', '/dental/reports'),
+    ],
+
+    opthalmology: [
+        departmentRule('Dashboard', '/opthalmology/dashboard'),
+        departmentRule('Appointments', '/opthalmology/appointments'),
+        departmentRule('Manage Queue', '/opthalmology/queue'),
+        departmentRule('Eye Examinations', '/opthalmology/examinations'),
+        departmentRule('Procedures', '/opthalmology/procedures'),
+        departmentRule('Processed', '/opthalmology/processed'),
+        departmentRule('Bulk Store', '/opthalmology/bulk-orders'),
+        billablesRule('/billables/department'),
+        departmentRule('Reports', '/opthalmology/reports'),
+    ],
+
+    nurse: [
+        departmentRule('Dashboard', '/nurses/dashboard'),
+        departmentRule('Search', '/nurses/registry'),
+        departmentRule('Appointments', '/nurses/appointments'),
+        departmentRule('Queue & Check-in', '/nurses/queue'),
+        departmentRule('In Patient', '/nurses/in-patient'),
+        departmentRule('Treatment Room', '/nurses/treatment-room'),
+        departmentRule('Bulk Store', '/nurses/bulk-store'),
+        departmentRule('Users', '/nurses/user-department'),
+        departmentRule('Reports', '/nurses/reports'),
+    ],
+
+    receptionist: [
+        departmentRule('Dashboard', '/reception/dashboard'),
+        departmentRule('Search', '/reception/registry'),
+        departmentRule('Add Patient', '/reception/create'),
+        departmentRule('Appointments', '/reception/appointments'),
+        departmentRule('View Queues', '/reception/queues'),
+        departmentRule('Visits', '/reception/visits'),
+        departmentRule('Reports', '/reception/reports'),
+    ],
+};
+
+/* -------------------------------------------------------------------------- */
+/* ORDER BADGE CONFIGURATION                                                  */
+/* -------------------------------------------------------------------------- */
 
 const ORDER_BADGE_CONFIG: Record<string, OrderBadgeConfig> = {
     bulkstore: {
@@ -620,13 +833,20 @@ const ORDER_BADGE_CONFIG: Record<string, OrderBadgeConfig> = {
     lab_technician: {
         countKey: 'labOrders',
         href: '/laboratory/orders',
-        titleMapping: { Orders: 'labOrders' },
+        titleMapping: {
+            Orders: 'labOrders',
+            'Bulk Store Orders': 'labOrders',
+        },
     },
+
     pharmacist: {
         countKey: 'pharmacyOrders',
         href: '/pharmacy/orders',
-        titleMapping: { Queue: 'pharmacyOrders' },
+        titleMapping: {
+            Queue: 'pharmacyOrders',
+        },
     },
+
     admin: {
         countKey: 'allOrders',
         href: '/admin/orders',
@@ -635,6 +855,7 @@ const ORDER_BADGE_CONFIG: Record<string, OrderBadgeConfig> = {
             Laboratory: 'labOrders',
         },
     },
+
     receptionist: {
         countKey: 'allOrders',
         href: '/admin/orders',
@@ -645,204 +866,124 @@ const ORDER_BADGE_CONFIG: Record<string, OrderBadgeConfig> = {
     },
 };
 
-/**
- * Roles whose nav items need a `/{departmentId}` suffix appended.
- * Add a new role here instead of writing another `if` in the component.
- */
-const DEPARTMENT_HREF_RULES: Record<string, DepartmentHrefRule[]> = {
-    lab_technician: [
-        {
-            match: (item) => item.title === 'Dashboard',
-            build: (_item, id) =>
-                id ? `/laboratory/dashboard/${id}` : '/laboratory/dashboard',
-        },
-        {
-            match: (item) => item.title === 'Bulk Store Orders',
-            build: (_item, id) =>
-                id
-                    ? `/laboratory/bulk-orders/${id}`
-                    : '/laboratory/bulk-orders',
-        },
-        // ✅ ADDED — lab reports also need departmentId
-        {
-            match: (item) => item.title === 'Reports',
-            build: (_item, id) =>
-                id ? `/laboratory/reports/${id}` : '/laboratory/reports',
-        },
-    ],
-    pharmacist: [
-        {
-            match: (item) => item.title === 'Dashboard',
-            build: (_item, id) =>
-                id ? `/pharmacy/dashboard/${id}` : '/pharmacy/dashboard',
-        },
-        {
-            match: (item) => item.title === 'Bulk Store',
-            build: (_item, id) =>
-                id ? `/pharmacy/bulk-orders/${id}` : '/pharmacy/bulk-orders',
-        },
-        {
-            match: (item) => item.title === 'Department Stock',
-            build: (_item, id) =>
-                id
-                    ? `/pharmacy/department-stock/${id}`
-                    : '/pharmacy/department-stock',
-        },
-        // ✅ ADDED — this is the missing rule
-        {
-            match: (item) => item.title === 'Reports',
-            build: (_item, id) =>
-                id ? `/pharmacy/reports/${id}` : '/pharmacy/reports',
-        },
-    ],
-    radiologist: [
-        {
-            match: (item) => item.title === 'Dashboard',
-            build: (_item, id) =>
-                id ? `/radiology/dashboard/${id}` : '/radiology/dashboard',
-        },
-        {
-            match: (item) => item.title === 'Bulk Store Orders',
-            build: (_item, id) =>
-                id ? `/radiology/bulk-orders/${id}` : '/radiology/bulk-orders',
-        },
-        // ✅ ADDED — this is the missing rule
-        {
-            match: (item) => item.title === 'Reports',
-            build: (_item, id) =>
-                id ? `/radiology/reports/${id}` : '/radiology/reports',
-        },
-    ],
-    // ✅ ADDED — maternal child health inherits laboratory-style rules
-    maternal_child_health: [
-        {
-            match: (item) => item.title === 'Dashboard',
-            build: (_item, id) =>
-                id
-                    ? `/maternal-child-health/dashboard/${id}`
-                    : '/maternal-child-health/dashboard',
-        },
-        {
-            match: (item) => item.title === 'Bulk Store',
-            build: (_item, id) =>
-                id
-                    ? `/maternal-child-health/bulk-orders/${id}`
-                    : '/maternal-child-health/bulk-orders',
-        },
-        {
-            match: (item) => item.title === 'Reports',
-            build: (_item, id) =>
-                id
-                    ? `/maternal-child-health/reports/${id}`
-                    : '/maternal-child-health/reports',
-        },
-    ],
-    // ✅ ADDED — theatre inherits laboratory-style rules
-    theatre: [
-        {
-            match: (item) => item.title === 'Dashboard',
-            build: (_item, id) =>
-                id ? `/theatre/dashboard/${id}` : '/theatre/dashboard',
-        },
-        {
-            match: (item) => item.title === 'Bulk Store',
-            build: (_item, id) =>
-                id ? `/theatre/bulk-orders/${id}` : '/theatre/bulk-orders',
-        },
-        {
-            match: (item) => item.title === 'Reports',
-            build: (_item, id) =>
-                id ? `/theatre/reports/${id}` : '/theatre/reports',
-        },
-    ],
-    // ✅ ADDED — dental inherits laboratory-style rules
-    dental: [
-        {
-            match: (item) => item.title === 'Dashboard',
-            build: (_item, id) =>
-                id ? `/dental/dashboard/${id}` : '/dental/dashboard',
-        },
-        {
-            match: (item) => item.title === 'Bulk Store',
-            build: (_item, id) =>
-                id ? `/dental/bulk-orders/${id}` : '/dental/bulk-orders',
-        },
-        {
-            match: (item) => item.title === 'Reports',
-            build: (_item, id) =>
-                id ? `/dental/reports/${id}` : '/dental/reports',
-        },
-    ],
-    // ✅ ADDED — ophthalmology inherits laboratory-style rules
-    ophthalmology: [
-        {
-            match: (item) => item.title === 'Dashboard',
-            build: (_item, id) =>
-                id
-                    ? `/ophthalmology/dashboard/${id}`
-                    : '/ophthalmology/dashboard',
-        },
-        {
-            match: (item) => item.title === 'Bulk Store',
-            build: (_item, id) =>
-                id
-                    ? `/ophthalmology/bulk-orders/${id}`
-                    : '/ophthalmology/bulk-orders',
-        },
-        {
-            match: (item) => item.title === 'Reports',
-            build: (_item, id) =>
-                id ? `/ophthalmology/reports/${id}` : '/ophthalmology/reports',
-        },
-    ],
-};
-
 /* -------------------------------------------------------------------------- */
-/*                                   Utils                                    */
+/* AUTHENTICATION HELPERS                                                     */
 /* -------------------------------------------------------------------------- */
 
-function resolveUserRole(props: any): string {
-    const raw =
-        props.auth?.user?.profile?.roles ??
-        props.auth?.profile?.role ??
-        props.auth?.user?.role;
-    if (Array.isArray(raw)) return raw[0] || '';
-    return raw || 'receptionist';
+function normalizeRoles(raw: unknown): string[] {
+    if (Array.isArray(raw)) {
+        return raw.filter(
+            (role): role is string =>
+                typeof role === 'string' && role.length > 0,
+        );
+    }
+
+    if (typeof raw === 'string' && raw.length > 0) {
+        return [raw];
+    }
+
+    return [];
 }
 
-function resolveDepartmentId(props: any): string | number | null {
-    return (
-        props.auth?.user?.profile?.department_id ??
-        props.auth?.user?.profile?.departmentId ??
-        null
-    );
+/** Returns the first non-empty role list (an empty array no longer blocks fallbacks). */
+function resolveUserRoles(user?: AuthUser): string[] {
+    const candidates = [user?.profile?.roles, user?.profile?.role, user?.role];
+
+    for (const candidate of candidates) {
+        const roles = normalizeRoles(candidate);
+
+        if (roles.length > 0) {
+            return roles;
+        }
+    }
+
+    return [];
 }
+
+function resolveUserRole(user?: AuthUser): string {
+    return resolveUserRoles(user)[0] ?? 'receptionist';
+}
+
+function resolveDepartmentId(user?: AuthUser): string | number | null {
+    return user?.profile?.department_id ?? user?.profile?.departmentId ?? null;
+}
+
+/* -------------------------------------------------------------------------- */
+/* NAVIGATION HELPERS                                                         */
+/* -------------------------------------------------------------------------- */
 
 function isSettingsItem(item: NavItem): boolean {
-    const title = item.title.toLowerCase();
+    const title = (item.title ?? '').toLowerCase();
+
     return SETTINGS_SECTION_KEYWORDS.some((keyword) => title.includes(keyword));
 }
 
 function patchDepartmentHrefs(
     userRole: string,
-    items: NavItem[],
+    items: NavEntry[],
     departmentId: string | number | null,
-): NavItem[] {
+): NavEntry[] {
     const rules = DEPARTMENT_HREF_RULES[userRole];
-    if (!rules) return items;
+
+    if (!rules) {
+        return items;
+    }
 
     return items.map((item) => {
-        const rule = rules.find((r) => r.match(item));
-        return rule ? { ...item, href: rule.build(item, departmentId) } : item;
+        const rule = rules.find((candidate) => candidate.match(item));
+
+        if (!rule) {
+            return item;
+        }
+
+        return {
+            ...item,
+            href: rule.build(item, departmentId),
+        };
     });
 }
 
+function getRoleDashboard(
+    role: string,
+    departmentId: string | number | null,
+): string {
+    // Roles whose dashboard URL is scoped to a department id.
+    const departmentRoutes: Record<string, string> = {
+        lab_technician: '/laboratory/dashboard',
+        radiologist: '/radiology/dashboard',
+        maternal_child_health: '/maternal-child-health/dashboard',
+        theatre: '/theatre/dashboard',
+        dental: '/dental/dashboard',
+        opthalmology: '/opthalmology/dashboard',
+        receptionist: '/reception/dashboard',
+        nurse: '/nurses/dashboard',
+        doctor: '/consultation/dashboard',
+    };
+
+    // Roles with a single, unscoped dashboard.
+    const normalRoutes: Record<string, string> = {
+        admin: '/admin/dashboard',
+        pharmacist: '/pharmacy/dashboard',
+        bulkstore: '/bulkstore/dashboard',
+        accountant: '/billing',
+        bulk_store_manager: '/bulkstore/store',
+    };
+
+    if (departmentRoutes[role]) {
+        const base = departmentRoutes[role];
+
+        return departmentId ? `${base}/${departmentId}` : base;
+    }
+
+    return normalRoutes[role] ?? DEFAULT_REDIRECT;
+}
+
 /* -------------------------------------------------------------------------- */
-/*                                Subcomponents                               */
+/* NAVIGATION LINK                                                            */
 /* -------------------------------------------------------------------------- */
 
 interface NavLinkProps {
-    item: NavItem;
+    item: NavEntry;
     orderCount?: number | null;
     variant?: 'default' | 'settings';
 }
@@ -852,38 +993,81 @@ function NavLink({
     orderCount = null,
     variant = 'default',
 }: NavLinkProps) {
+    const { url } = usePage();
     const Icon = item.icon;
+
     const iconGap = variant === 'settings' ? 'gap-3' : 'gap-6';
 
+    const path = url.split('?')[0];
+    const isActive = path === item.href || path.startsWith(`${item.href}/`);
+    const hasActiveChild =
+        item.children?.some((child) => path.startsWith(child.href)) ?? false;
+    const expanded = isActive || hasActiveChild;
+
     return (
-        <Link
-            href={item.href}
-            className="group flex items-center justify-between rounded-lg px-3 py-2 text-sm font-medium text-gray-700 transition-all hover:bg-blue-50 hover:text-blue-700 dark:text-gray-300 dark:hover:bg-blue-900/30 dark:hover:text-blue-400"
-        >
-            <div className={`flex items-center ${iconGap}`}>
-                {Icon && (
-                    <Icon className="h-4 w-4 text-gray-500 group-hover:text-blue-600 dark:text-gray-400 dark:group-hover:text-blue-400" />
+        <div>
+            <Link
+                href={item.href}
+                className={`group flex items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-all hover:bg-blue-50 hover:text-blue-700 dark:hover:bg-blue-900/30 dark:hover:text-blue-400 ${
+                    isActive
+                        ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                        : 'text-gray-700 dark:text-gray-300'
+                }`}
+            >
+                <div className={`flex items-center ${iconGap}`}>
+                    {Icon && (
+                        <Icon className="h-4 w-4 shrink-0 text-gray-500 group-hover:text-blue-600 dark:text-gray-400 dark:group-hover:text-blue-400" />
+                    )}
+
+                    <span className="group-data-[collapsible=icon]:hidden">
+                        {item.title}
+                    </span>
+                </div>
+
+                {orderCount !== null && orderCount > 0 && (
+                    <Badge
+                        variant="destructive"
+                        className="ml-auto h-5 min-w-[20px] rounded-full bg-red-500 px-1.5 text-xs font-medium text-white group-data-[collapsible=icon]:hidden hover:bg-red-600"
+                    >
+                        {orderCount}
+                    </Badge>
                 )}
-                <span>{item.title}</span>
-            </div>
-            {orderCount !== null && orderCount > 0 && (
-                <Badge
-                    variant="destructive"
-                    className="ml-auto h-5 min-w-[20px] rounded-full bg-red-500 px-1.5 text-xs font-medium text-white hover:bg-red-600"
-                >
-                    {orderCount}
-                </Badge>
+            </Link>
+
+            {item.children && expanded && (
+                <div className="mt-1 ml-9 space-y-1 border-l border-gray-200 pl-3 group-data-[collapsible=icon]:hidden dark:border-gray-700">
+                    {item.children.map((child) => (
+                        <Link
+                            key={child.title}
+                            href={child.href}
+                            className={`block rounded-md px-2 py-1.5 text-xs font-medium hover:text-blue-700 dark:hover:text-blue-400 ${
+                                path.startsWith(child.href)
+                                    ? 'text-blue-700 dark:text-blue-400'
+                                    : 'text-gray-600 dark:text-gray-400'
+                            }`}
+                        >
+                            {child.title}
+                        </Link>
+                    ))}
+                </div>
             )}
-        </Link>
+        </div>
     );
 }
 
 /* -------------------------------------------------------------------------- */
-/*                                   Main                                     */
+/* MAIN SIDEBAR                                                               */
 /* -------------------------------------------------------------------------- */
 
 export default function AppSidebar() {
     const { props } = usePage();
+
+    const authUser = (props.auth as { user?: AuthUser } | undefined)?.user;
+
+    const userRole = resolveUserRole(authUser);
+    const roles = resolveUserRoles(authUser);
+    const rolesKey = roles.join(',');
+    const departmentId = resolveDepartmentId(authUser);
 
     const [orderCounts, setOrderCounts] = useState<OrderCounts>({
         bulkOrders: 0,
@@ -892,14 +1076,18 @@ export default function AppSidebar() {
         allOrders: 0,
     });
 
-    const roles: string[] = props.auth?.user?.profile?.roles ?? [];
-    const userRole = resolveUserRole(props);
-    const departmentId = resolveDepartmentId(props);
+    /* ---------------------------------------------------------------------- */
+    /* FETCH ORDER COUNTS                                                     */
+    /* ---------------------------------------------------------------------- */
 
-    /* ---------------- Order counts ---------------- */
     useEffect(() => {
-        if (!roles.some((role) => ORDER_COUNT_ROLES.includes(role as any)))
+        const shouldFetch = rolesKey
+            .split(',')
+            .some((role) => ORDER_COUNT_ROLES.includes(role));
+
+        if (!shouldFetch) {
             return;
+        }
 
         let cancelled = false;
 
@@ -907,103 +1095,106 @@ export default function AppSidebar() {
             try {
                 const response = await fetch('/api/order-counts', {
                     headers: {
+                        Accept: 'application/json',
                         'X-CSRF-TOKEN':
                             document
-                                .querySelector('meta[name="csrf-token"]')
-                                ?.getAttribute('content') || '',
+                                .querySelector<HTMLMetaElement>(
+                                    'meta[name="csrf-token"]',
+                                )
+                                ?.getAttribute('content') ?? '',
                     },
                 });
-                if (!response.ok) return;
+
+                if (!response.ok) {
+                    return;
+                }
+
                 const data = await response.json();
-                if (cancelled) return;
+
+                if (cancelled) {
+                    return;
+                }
+
                 setOrderCounts({
-                    bulkOrders: data.bulkOrders || 0,
-                    labOrders: data.labOrders || 0,
-                    pharmacyOrders: data.pharmacyOrders || 0,
-                    allOrders: data.allOrders || 0,
+                    bulkOrders: Number(data.bulkOrders) || 0,
+                    labOrders: Number(data.labOrders) || 0,
+                    pharmacyOrders: Number(data.pharmacyOrders) || 0,
+                    allOrders: Number(data.allOrders) || 0,
                 });
-            } catch {
-                /* silent */
+            } catch (error) {
+                console.error('Unable to fetch order counts:', error);
             }
         };
 
         fetchOrderCounts();
+
         return () => {
             cancelled = true;
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [roles.join(',')]);
+    }, [rolesKey]);
 
-    /* ---------------- Root redirect ---------------- */
+    /* ---------------------------------------------------------------------- */
+    /* ROOT REDIRECT                                                          */
+    /* ---------------------------------------------------------------------- */
+
     useEffect(() => {
-        const path = window.location.pathname;
-        if (path !== '/' && path !== '/dashboard') return;
+        const currentPath = window.location.pathname;
 
-        const redirectMap: Record<string, string> = {
-            nurse: '/nurses/dashboard',
-            doctor: '/consultation/dashboard',
-            admin: '/admin/dashboard',
-            receptionist: '/reception/dashboard',
-            pharmacist: '/pharmacy/dashboard',
-            bulkstore: '/bulkstore/dashboard',
-            lab_technician: departmentId
-                ? `/laboratory/dashboard/${departmentId}`
-                : '/laboratory/dashboard',
-            radiologist: departmentId
-                ? `/radiology/dashboard/${departmentId}`
-                : '/radiology/dashboard',
-            // ✅ ADDED — these roles previously fell back to reception dashboard
-            maternal_child_health: departmentId
-                ? `/maternal-child-health/dashboard/${departmentId}`
-                : '/maternal-child-health/dashboard',
-            theatre: departmentId
-                ? `/theatre/dashboard/${departmentId}`
-                : '/theatre/dashboard',
-            dental: departmentId
-                ? `/dental/dashboard/${departmentId}`
-                : '/dental/dashboard',
-            ophthalmology: departmentId
-                ? `/ophthalmology/dashboard/${departmentId}`
-                : '/ophthalmology/dashboard',
-        };
+        if (currentPath !== '/' && currentPath !== '/dashboard') {
+            return;
+        }
 
-        const matchedRole = roles.find((r) => redirectMap[r]);
-        router.visit(matchedRole ? redirectMap[matchedRole] : DEFAULT_REDIRECT);
-    }, [roles, departmentId]);
+        const destination = getRoleDashboard(userRole, departmentId);
 
-    /* ---------------- Derived nav ---------------- */
-    const navItems = useMemo(
-        () =>
-            patchDepartmentHrefs(
-                userRole,
-                roleNavItems[userRole] ?? [],
-                departmentId,
-            ),
-        [userRole, departmentId],
-    );
+        if (currentPath !== destination) {
+            router.visit(destination, {
+                replace: true,
+            });
+        }
+    }, [userRole, departmentId]);
 
-    const { main, settings } = useMemo(
-        () => ({
+    /* ---------------------------------------------------------------------- */
+    /* DERIVED NAVIGATION                                                     */
+    /* ---------------------------------------------------------------------- */
+
+    const navItems = useMemo(() => {
+        const items = roleNavItems[userRole] ?? [];
+
+        return patchDepartmentHrefs(userRole, items, departmentId);
+    }, [userRole, departmentId]);
+
+    const { main, settings } = useMemo(() => {
+        return {
             main: navItems.filter((item) => !isSettingsItem(item)),
             settings: navItems.filter(isSettingsItem),
-        }),
-        [navItems],
-    );
+        };
+    }, [navItems]);
+
+    /* ---------------------------------------------------------------------- */
+    /* ORDER BADGES                                                           */
+    /* ---------------------------------------------------------------------- */
 
     const getOrderCountForItem = (itemTitle: string): number | null => {
         const config = ORDER_BADGE_CONFIG[userRole];
-        if (!config) return null;
 
-        if (config.titleMapping?.[itemTitle]) {
-            return orderCounts[config.titleMapping[itemTitle]];
+        if (!config) {
+            return null;
         }
-        if (config.subSections?.[itemTitle]) {
-            return orderCounts[config.subSections[itemTitle]];
+
+        const mappedKey =
+            config.titleMapping?.[itemTitle] ?? config.subSections?.[itemTitle];
+
+        if (mappedKey) {
+            return orderCounts[mappedKey];
         }
+
         return null;
     };
 
-    /* ---------------- Render ---------------- */
+    /* ---------------------------------------------------------------------- */
+    /* RENDER                                                                 */
+    /* ---------------------------------------------------------------------- */
+
     return (
         <Sidebar
             collapsible="icon"
@@ -1039,6 +1230,7 @@ export default function AppSidebar() {
                     {settings.length > 0 && main.length > 0 && (
                         <>
                             <div className="my-2 border-t border-gray-200 dark:border-gray-700" />
+
                             <div className="space-y-1">
                                 {settings.map((item) => (
                                     <NavLink
@@ -1055,15 +1247,24 @@ export default function AppSidebar() {
 
             <SidebarFooter className="border-t border-gray-200 pt-2 dark:border-gray-700">
                 <div className="flex items-center gap-3 px-3 py-2">
-                    <div className="flex-1">
+                    <div className="flex-1 group-data-[collapsible=icon]:hidden">
                         <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                            {props.auth?.user?.name || 'Guest'}
+                            {authUser?.name ?? 'Guest'}
                         </p>
+
                         <p className="text-[10px] text-gray-400 capitalize dark:text-gray-500">
-                            {userRole || 'No Role'}
+                            {userRole.replaceAll('_', ' ')}
                         </p>
+
+                        {departmentId !== null && (
+                            <p className="text-[10px] text-gray-400">
+                                Department ID: {departmentId}
+                            </p>
+                        )}
                     </div>
+
                     <button
+                        type="button"
                         onClick={() => router.post('/logout')}
                         className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
                         title="Logout"

@@ -296,7 +296,7 @@ function ActionButton({
 }
 
 // ============================================
-// DRAWER SHELL (shared by all three drawers)
+// DRAWER SHELL (shared by all drawers)
 // ============================================
 
 type DrawerAccent = 'slate' | 'teal' | 'red';
@@ -412,7 +412,7 @@ function AuditLogsDrawer({
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
-        if (!user) return;
+        if (!user?.id) return;
         let cancelled = false;
 
         const load = async () => {
@@ -562,7 +562,7 @@ function RevokeDrawer({
     const roles = user ? normalizeRoles(user.roles) : [];
 
     const confirm = async () => {
-        if (!user || !understood) return;
+        if (!user?.id || !understood) return;
         setSubmitting(true);
         try {
             // TODO: adjust endpoint
@@ -949,13 +949,399 @@ function NotifyDrawer({
 }
 
 // ============================================
+// USER SPECIALIST FEE / SERVICE DRAWER
+// ============================================
+
+interface UserServiceForm {
+    service_name: string;
+    cash_price: string;
+    insurance_price: string;
+    currency: string;
+    is_active: boolean;
+    notes: string;
+}
+
+const DEFAULT_SERVICE_FORM: UserServiceForm = {
+    service_name: 'Consultation',
+    cash_price: '',
+    insurance_price: '',
+    currency: 'ZMW',
+    is_active: true,
+    notes: '',
+};
+
+/**
+ * - SystemUser : open for that specific user (row action)
+ * - 'pick'     : open with a user selector (header button)
+ * - null       : closed
+ */
+type ServiceTarget = SystemUser | 'pick' | null;
+
+function UserServiceDrawer({
+    target,
+    users,
+    onClose,
+    onDone,
+}: {
+    target: ServiceTarget;
+    users: SystemUser[];
+    onClose: () => void;
+    onDone: () => void;
+}) {
+    const [picked, setPicked] = useState<SystemUser | null>(null);
+    const [form, setForm] = useState<UserServiceForm>(DEFAULT_SERVICE_FORM);
+    const [loading, setLoading] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [existingId, setExistingId] = useState<number | null>(null);
+
+    const isPick = target === 'pick';
+    // The resolved user — always a real SystemUser object or null, never `true`
+    const user: SystemUser | null = isPick
+        ? picked
+        : target && typeof target === 'object'
+          ? target
+          : null;
+    const userId = user?.id;
+
+    // Reset the picker whenever the drawer is opened/closed or target changes
+    useEffect(() => {
+        setPicked(null);
+    }, [target]);
+
+    // Load existing service for the resolved user (if any)
+    useEffect(() => {
+        setExistingId(null);
+        setForm(DEFAULT_SERVICE_FORM);
+
+        if (userId === undefined || userId === null) {
+            setLoading(false);
+            return;
+        }
+
+        let cancelled = false;
+
+        const load = async () => {
+            setLoading(true);
+            try {
+                // TODO: adjust endpoint
+                const res = await Http.get(`/admin/users/${userId}/service`);
+                const data = res.data?.service ?? res.data;
+
+                if (!cancelled && data) {
+                    setExistingId(data.id ?? null);
+                    setForm({
+                        service_name:
+                            data.service_name || data.name || 'Consultation',
+                        cash_price: String(
+                            data.cash_price ?? data.cost ?? data.amount ?? '',
+                        ),
+                        insurance_price: String(
+                            data.insurance_price ?? data.insurance_cost ?? '',
+                        ),
+                        currency: data.currency || 'ZMW',
+                        is_active: data.is_active ?? true,
+                        notes: data.notes || '',
+                    });
+                }
+            } catch {
+                // No existing service — keep defaults
+            } finally {
+                if (!cancelled) setLoading(false);
+            }
+        };
+
+        load();
+        return () => {
+            cancelled = true;
+        };
+    }, [userId]);
+
+    const update = <K extends keyof UserServiceForm>(
+        key: K,
+        value: UserServiceForm[K],
+    ) => {
+        setForm((prev) => ({ ...prev, [key]: value }));
+    };
+
+    const isValidPrice = (v: string) =>
+        v !== '' && !Number.isNaN(Number(v)) && Number(v) >= 0;
+
+    const validate = (): string | null => {
+        if (!user?.id) return 'Select a user first';
+        if (!form.service_name.trim()) return 'Enter a service name';
+        if (!isValidPrice(form.cash_price)) return 'Enter a valid cash price';
+        if (!isValidPrice(form.insurance_price))
+            return 'Enter a valid insurance price';
+        return null;
+    };
+
+    const save = async () => {
+        const problem = validate();
+        if (problem) {
+            toast.error(problem);
+            return;
+        }
+        if (!user?.id) return;
+        setSaving(true);
+
+        try {
+            const payload = {
+                user_id: user.id,
+                service_name: form.service_name.trim(),
+                cash_price: Number(form.cash_price),
+                insurance_price: Number(form.insurance_price),
+                currency: form.currency || 'ZMW',
+                is_active: form.is_active,
+                notes: form.notes.trim() || null,
+            };
+
+            // TODO: adjust endpoints
+            const res = existingId
+                ? await Http.put(
+                      `/admin/users/${user.id}/service/${existingId}`,
+                      payload,
+                  )
+                : await Http.post(`/admin/users/${user.id}/service`, payload);
+
+            if (res.data?.success === false) {
+                toast.error(res.data?.message ?? 'Could not save service');
+                return;
+            }
+
+            toast.success(
+                existingId
+                    ? `Consultation fee updated for ${user.name}`
+                    : `Consultation fee created for ${user.name}`,
+            );
+            onDone();
+            onClose();
+        } catch (error) {
+            toast.error(
+                getErrorMessage(error, 'Could not save consultation fee'),
+            );
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const fieldClass =
+        'w-full rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 focus:outline-none';
+
+    return (
+        <DrawerShell
+            open={!!target}
+            onClose={onClose}
+            locked={saving}
+            accent="teal"
+            icon={<Zap className="h-5 w-5" />}
+            title={
+                existingId ? 'Edit Consultation Fee' : 'Set Consultation Fee'
+            }
+            description={
+                user ? (
+                    <>
+                        Assign cash & insurance fees for{' '}
+                        <span className="font-medium text-slate-800">
+                            {user.name}
+                        </span>
+                    </>
+                ) : (
+                    'Select a user to assign consultation fees'
+                )
+            }
+            footer={
+                <div className="flex gap-2">
+                    <Button
+                        variant="outline"
+                        className="flex-1"
+                        onClick={onClose}
+                        disabled={saving}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        type="button"
+                        onClick={save}
+                        disabled={saving || loading}
+                        className="flex-1 bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-40"
+                    >
+                        {saving ? (
+                            <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                        ) : (
+                            <Zap className="mr-1.5 h-4 w-4" />
+                        )}
+                        {existingId ? 'Update fee' : 'Create service'}
+                    </Button>
+                </div>
+            }
+        >
+            {/* User picker (only when opened from the header button) */}
+            {isPick && (
+                <div>
+                    <label
+                        htmlFor="service-user-picker"
+                        className={`mb-1.5 block ${sectionLabel}`}
+                    >
+                        User
+                    </label>
+                    <select
+                        id="service-user-picker"
+                        value={picked?.id ?? ''}
+                        onChange={(e) => {
+                            const id = Number(e.target.value);
+                            setPicked(users.find((u) => u.id === id) ?? null);
+                        }}
+                        className={fieldClass}
+                    >
+                        <option value="">Select a user…</option>
+                        {users.map((u) => (
+                            <option key={u.id} value={u.id}>
+                                {u.name} — {u.email}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+            )}
+
+            {user && <UserCard user={user} />}
+
+            {!user ? (
+                <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-10 text-center">
+                    <p className="text-sm font-medium text-slate-700">
+                        No user selected
+                    </p>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                        Choose a user above to set their consultation fee.
+                    </p>
+                </div>
+            ) : loading ? (
+                <div className="space-y-4">
+                    {[0, 1, 2, 3].map((i) => (
+                        <div key={i} className="animate-pulse space-y-2">
+                            <div className="h-3 w-24 rounded bg-slate-200" />
+                            <div className="h-10 w-full rounded-lg bg-slate-100" />
+                        </div>
+                    ))}
+                </div>
+            ) : (
+                <div className="space-y-5">
+                    {/* Service name */}
+                    <div>
+                        <label className={`mb-1.5 block ${sectionLabel}`}>
+                            Service name
+                        </label>
+                        <input
+                            value={form.service_name}
+                            onChange={(e) =>
+                                update('service_name', e.target.value)
+                            }
+                            placeholder="e.g. Consultation, Follow-up, Procedure"
+                            className={fieldClass}
+                        />
+                    </div>
+
+                    {/* Prices - Cash & Insurance side by side */}
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <label className={`mb-1.5 block ${sectionLabel}`}>
+                                Cash price
+                            </label>
+                            <div className="relative">
+                                <span className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-xs font-medium text-slate-400">
+                                    {form.currency}
+                                </span>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={form.cash_price}
+                                    onChange={(e) =>
+                                        update('cash_price', e.target.value)
+                                    }
+                                    placeholder="0.00"
+                                    className={`${fieldClass} pl-12`}
+                                />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className={`mb-1.5 block ${sectionLabel}`}>
+                                Insurance price
+                            </label>
+                            <div className="relative">
+                                <span className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-xs font-medium text-slate-400">
+                                    {form.currency}
+                                </span>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={form.insurance_price}
+                                    onChange={(e) =>
+                                        update(
+                                            'insurance_price',
+                                            e.target.value,
+                                        )
+                                    }
+                                    placeholder="0.00"
+                                    className={`${fieldClass} pl-12`}
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    <p className="text-xs text-slate-400">
+                        Cash price is charged to walk-in / self-pay patients.
+                        Insurance price is used for insured patients.
+                    </p>
+
+                    {/* Active toggle */}
+                    <label className="flex cursor-pointer items-center justify-between rounded-lg border border-slate-200 bg-white p-4">
+                        <div>
+                            <p className="text-sm font-medium text-slate-900">
+                                Active
+                            </p>
+                            <p className="text-xs text-slate-500">
+                                Inactive fees will not appear in billing.
+                            </p>
+                        </div>
+                        <input
+                            type="checkbox"
+                            checked={form.is_active}
+                            onChange={(e) =>
+                                update('is_active', e.target.checked)
+                            }
+                            className="h-4 w-4 accent-teal-700"
+                        />
+                    </label>
+
+                    {/* Notes */}
+                    <div>
+                        <label className={`mb-1.5 block ${sectionLabel}`}>
+                            Notes (optional)
+                        </label>
+                        <textarea
+                            value={form.notes}
+                            onChange={(e) => update('notes', e.target.value)}
+                            rows={3}
+                            placeholder="Any internal notes about this fee…"
+                            className={`${fieldClass} resize-none`}
+                        />
+                    </div>
+                </div>
+            )}
+        </DrawerShell>
+    );
+}
+
+// ============================================
 // PAGE
 // ============================================
 
 export default function Users() {
     const [usersAll, setUsersAll] = useState<SystemUser[]>([]);
     const [loading, setLoading] = useState(false);
-
+    const [serviceTarget, setServiceTarget] = useState<ServiceTarget>(null);
     const [auditUser, setAuditUser] = useState<SystemUser | null>(null);
     const [revokeUser, setRevokeUser] = useState<SystemUser | null>(null);
     const [notifyTarget, setNotifyTarget] = useState<NotifyTarget>(null);
@@ -1057,37 +1443,23 @@ export default function Users() {
             sortable: true,
             format: () => <p className={textClass}>---</p>,
         },
-        // {
-        //     id: 'actions',
-        //     label: 'Actions',
-        //     minWidth: 130,
-        //     sortable: false,
-        //     format: (_value: unknown, row: SystemUser) => (
-        //         <div className="flex items-center gap-1">
-        //             <ActionButton
-        //                 label="View audit logs"
-        //                 tone="info"
-        //                 onClick={() => setAuditUser(row)}
-        //             >
-        //                 <ScrollText className="h-4 w-4" />
-        //             </ActionButton>
-        //             <ActionButton
-        //                 label="Send notification"
-        //                 tone="warning"
-        //                 onClick={() => setNotifyTarget(row)}
-        //             >
-        //                 <Bell className="h-4 w-4" />
-        //             </ActionButton>
-        //             <ActionButton
-        //                 label="Revoke permissions"
-        //                 tone="danger"
-        //                 onClick={() => setRevokeUser(row)}
-        //             >
-        //                 <ShieldOff className="h-4 w-4" />
-        //             </ActionButton>
-        //         </div>
-        //     ),
-        // },
+        {
+            id: 'actions',
+            label: 'Actions',
+            minWidth: 150,
+            sortable: false,
+            format: (_value: unknown, row: SystemUser) => (
+                <div className="flex items-center gap-1">
+                    <ActionButton
+                        label="Set consultation fee"
+                        tone="info"
+                        onClick={() => setServiceTarget(row)}
+                    >
+                        <Zap className="h-4 w-4" />
+                    </ActionButton>
+                </div>
+            ),
+        },
     ];
 
     return (
@@ -1104,7 +1476,21 @@ export default function Users() {
                         icon={<UsersIcon />}
                         subtitle="Manage all system users, roles and permissions"
                     >
-                        <div className="self-center">
+                        <div className="flex items-center gap-2 self-center">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                // FIX: was setServiceUser(true) — that passed a boolean
+                                // as the "user", so user.id was undefined.
+                                onClick={() => setServiceTarget('pick')}
+                                className="border-slate-300 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900"
+                            >
+                                <Zap className="h-3.5 w-3.5 sm:mr-1.5" />
+                                <span className="hidden sm:inline">
+                                    Specialist Costs
+                                </span>
+                            </Button>
+
                             <Button
                                 variant="outline"
                                 size="sm"
@@ -1127,6 +1513,13 @@ export default function Users() {
                     />
                 </Container>
             </div>
+
+            <UserServiceDrawer
+                target={serviceTarget}
+                users={usersAll}
+                onClose={() => setServiceTarget(null)}
+                onDone={getUsers}
+            />
 
             <AuditLogsDrawer
                 user={auditUser}

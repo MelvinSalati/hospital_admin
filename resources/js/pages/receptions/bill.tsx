@@ -1,5 +1,5 @@
 // resources/js/pages/reception/Bill.tsx
-import { usePage } from '@inertiajs/react';
+import { usePage, Link } from '@inertiajs/react';
 import {
     DollarSign,
     FileText,

@@ -369,4 +369,6 @@ require __DIR__ . '/pharmacy_api.php';
 require __DIR__ . '/maternal_api.php';
 require __DIR__ . '/theatre_api.php';
 require __DIR__ . '/dental_api.php';
-require __DIR__ . '/ophthalmology_api.php';
+require __DIR__ . '/opthamology_api.php';
+require __DIR__ . '/service_api.php';
+require __DIR__ . '/reception_api.php';

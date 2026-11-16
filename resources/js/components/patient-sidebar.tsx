@@ -127,10 +127,23 @@ const patientNavItems: PatientNavItem[] = [
         ],
     },
     { title: 'Martenal', href: (id) => `/patients/mch/${id}`, icon: BabyIcon },
+
     {
         title: 'Theater',
         href: (id) => `/patients/theater/${id}`,
         icon: Scissors,
+        children: [
+            {
+                title: 'Theater orders',
+                href: (id) => `/patients/theater/${id}`,
+                icon: Scissors,
+            },
+            {
+                title: 'Operative notes',
+                href: (id) => `/patients/theater/${id}?tab=op-notes`,
+                icon: FileText,
+            },
+        ],
     },
     {
         title: 'Opthamology',
@@ -167,7 +180,7 @@ const ROLE_NAV_MAP: Record<string, string[] | 'all'> = {
     pharmacist: ['Pharmacy'],
     radiology: ['Radiology'],
     reception: ['Payment'], // Billing + Payments live under this group
-    receptionist: ['Payment', 'Dashboard'],
+    receptionist: ['Payment', 'Dashboard', 'laboratory'],
     admin: 'all',
     administrator: 'all',
     doctor: 'all',
@@ -176,13 +189,21 @@ const ROLE_NAV_MAP: Record<string, string[] | 'all'> = {
     theatre: ['Theater'],
     dental: ['Dental'],
     dentist: ['Dental'],
-    opthamology: ['Opthamology'],
-    ophthalmology: ['Opthamology'],
+    opthalmology: [
+        'Opthamology',
+        'Consultation',
+        'Laboratory',
+        'Radiology',
+        'Pharmacy',
+        'Procedures',
+        'Appointments',
+    ],
 };
+const FALLBACK_ROLE = 'nurse';
 
 function filterNavByRole(role: string | null): PatientNavItem[] {
-    if (!role) return []; // no role → show nothing (safe default)
-    const rule = ROLE_NAV_MAP[role.toLowerCase()];
+    const key = (role?.trim() || FALLBACK_ROLE).toLowerCase();
+    const rule = ROLE_NAV_MAP[key];
 
     if (!rule) return []; // unknown role → nothing
     if (rule === 'all') return patientNavItems;
@@ -294,7 +315,7 @@ export function PatientSidebar({ patient }: { patient?: any }) {
         }
 
         if (typeof window !== 'undefined') {
-            setRole(localStorage.getItem('userRole'));
+            setRole(localStorage.getItem('userRole') || 'nurse');
         }
     }, [props, patient]);
 

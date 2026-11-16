@@ -1,18 +1,20 @@
 // components/dashboard/laboratory-dashboard.tsx
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import {
+    AlertTriangle,
     Bell,
+    CheckCircle2,
     ClipboardList,
     FlaskConical,
     MicroscopeIcon,
+    Search,
     TestTube2,
-    UserCheck,
     Users,
 } from 'lucide-react';
+
 import AppLayout from '@/layouts/app/app-header-layout';
 import PageHeader from '@/components/PageHeader';
-import { usePage } from '@inertiajs/react';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -47,15 +49,52 @@ export interface ResultAlert {
     createdAt: string;
 }
 
-export interface LaboratoryDashboardProps {
-    userName: string;
-    stats: LabStats;
-    topTests: TopTest[];
-    queue: QueuePatient[];
-    alerts: ResultAlert[];
+interface SummaryDatum {
+    label: string;
+    value: number;
+    color: string;
 }
 
-// ─── Dummy data (used when no props are supplied) ─────────────
+interface TrendDatum {
+    label: string;
+    orders: number;
+}
+
+export interface BillingService {
+    service: string;
+    tests: number;
+    cash: number;
+    insurance: number;
+}
+
+export interface LabBill {
+    id: number;
+    patientCode: string;
+    service: string;
+    payer: 'cash' | 'insurance';
+    insurer?: string | null;
+    amount: number;
+    status: 'paid' | 'pending' | 'claim submitted';
+}
+
+export interface LaboratoryBilling {
+    services?: BillingService[] | null;
+    recent?: LabBill[] | null;
+}
+
+export interface LaboratoryDashboardProps {
+    userName?: string | null;
+    stats?: Partial<LabStats> | null;
+    topTests?: TopTest[] | null;
+    queue?: QueuePatient[] | null;
+    alerts?: ResultAlert[] | null;
+    ordersTrend?: TrendDatum[] | null;
+    resultFlagData?: SummaryDatum[] | null;
+    sampleStatusData?: SummaryDatum[] | null;
+    billing?: LaboratoryBilling | null;
+}
+
+// ─── Fallback data (used when the controller sends nothing) ───
 
 const todayAt = (hours: number, minutes: number) => {
     const d = new Date();
@@ -63,26 +102,26 @@ const todayAt = (hours: number, minutes: number) => {
     return d.toISOString();
 };
 
-export const DUMMY_STATS: LabStats = {
+const DUMMY_STATS: LabStats = {
     sampleOrders: 128,
     processedSamples: 94,
     patientsSeen: 76,
     patientsInQueue: 12,
 };
 
-export const DUMMY_TOP_TESTS: TopTest[] = [
-    { name: 'Complete Blood Count', count: 42 },
-    { name: 'Lipid Panel', count: 28 },
-    { name: 'Blood Glucose', count: 19 },
+const DUMMY_TOP_TESTS: TopTest[] = [
+    { name: 'Complete blood count', count: 42 },
+    { name: 'Lipid panel', count: 28 },
+    { name: 'Blood glucose', count: 19 },
     { name: 'Urinalysis', count: 11 },
 ];
 
-export const DUMMY_QUEUE: QueuePatient[] = [
+const DUMMY_QUEUE: QueuePatient[] = [
     {
         id: 1,
         patientCode: 'LAB-0231',
         name: 'John Doe',
-        test: 'Complete Blood Count',
+        test: 'Complete blood count',
         waitingMinutes: 12,
         status: 'waiting',
     },
@@ -90,7 +129,7 @@ export const DUMMY_QUEUE: QueuePatient[] = [
         id: 2,
         patientCode: 'LAB-0232',
         name: 'Jane Smith',
-        test: 'Lipid Panel',
+        test: 'Lipid panel',
         waitingMinutes: 8,
         status: 'collecting',
     },
@@ -98,7 +137,7 @@ export const DUMMY_QUEUE: QueuePatient[] = [
         id: 3,
         patientCode: 'LAB-0233',
         name: 'Amir Khan',
-        test: 'Blood Glucose',
+        test: 'Blood glucose',
         waitingMinutes: 5,
         status: 'processing',
     },
@@ -110,22 +149,14 @@ export const DUMMY_QUEUE: QueuePatient[] = [
         waitingMinutes: 3,
         status: 'waiting',
     },
-    {
-        id: 5,
-        patientCode: 'LAB-0235',
-        name: 'Chen Wei',
-        test: 'Complete Blood Count',
-        waitingMinutes: 1,
-        status: 'collecting',
-    },
 ];
 
-export const DUMMY_ALERTS: ResultAlert[] = [
+const DUMMY_ALERTS: ResultAlert[] = [
     {
         id: 1,
         patientCode: 'LAB-0240',
         name: 'Fatima Noor',
-        test: 'Blood Glucose',
+        test: 'Blood glucose',
         value: '11.2 mmol/L',
         flag: 'elevated',
         createdAt: todayAt(9, 42),
@@ -134,7 +165,7 @@ export const DUMMY_ALERTS: ResultAlert[] = [
         id: 2,
         patientCode: 'LAB-0241',
         name: 'David Lee',
-        test: 'Lipid Panel',
+        test: 'Lipid panel',
         value: '6.8 mmol/L',
         flag: 'elevated',
         createdAt: todayAt(9, 15),
@@ -143,7 +174,7 @@ export const DUMMY_ALERTS: ResultAlert[] = [
         id: 3,
         patientCode: 'LAB-0242',
         name: 'Sara Ahmed',
-        test: 'Complete Blood Count',
+        test: 'Complete blood count',
         value: 'Normal',
         flag: 'normal',
         createdAt: todayAt(8, 55),
@@ -157,29 +188,87 @@ export const DUMMY_ALERTS: ResultAlert[] = [
         flag: 'normal',
         createdAt: todayAt(8, 20),
     },
+];
+
+const DUMMY_TREND: TrendDatum[] = [
+    { label: 'Mon', orders: 96 },
+    { label: 'Tue', orders: 112 },
+    { label: 'Wed', orders: 104 },
+    { label: 'Thu', orders: 131 },
+    { label: 'Fri', orders: 128 },
+    { label: 'Sat', orders: 74 },
+];
+
+const DUMMY_RESULT_FLAGS: SummaryDatum[] = [
+    { label: 'Normal', value: 71, color: '#16a34a' },
+    { label: 'Abnormal', value: 19, color: '#f59e0b' },
+    { label: 'Critical', value: 4, color: '#dc2626' },
+];
+
+const DUMMY_SAMPLE_STATUS: SummaryDatum[] = [
+    { label: 'Collected', value: 22, color: '#2563eb' },
+    { label: 'Processing', value: 18, color: '#0d9488' },
+    { label: 'Completed', value: 94, color: '#16a34a' },
+    { label: 'Rejected', value: 3, color: '#dc2626' },
+];
+
+const DUMMY_BILLING_SERVICES: BillingService[] = [
+    { service: 'Complete blood count', tests: 42, cash: 2100, insurance: 4200 },
+    { service: 'Lipid panel', tests: 28, cash: 1960, insurance: 3920 },
+    { service: 'Blood glucose', tests: 19, cash: 570, insurance: 1140 },
+    { service: 'Urinalysis', tests: 11, cash: 440, insurance: 880 },
+];
+
+const DUMMY_BILLS: LabBill[] = [
     {
-        id: 5,
-        patientCode: 'LAB-0244',
-        name: 'Elena Petrova',
-        test: 'Blood Glucose',
-        value: 'Normal',
-        flag: 'normal',
-        createdAt: todayAt(7, 50),
+        id: 1,
+        patientCode: 'LAB-0231',
+        service: 'Complete blood count',
+        payer: 'cash',
+        amount: 150,
+        status: 'paid',
+    },
+    {
+        id: 2,
+        patientCode: 'LAB-0232',
+        service: 'Lipid panel',
+        payer: 'insurance',
+        insurer: 'Madison',
+        amount: 280,
+        status: 'claim submitted',
+    },
+    {
+        id: 3,
+        patientCode: 'LAB-0233',
+        service: 'Blood glucose',
+        payer: 'cash',
+        amount: 60,
+        status: 'pending',
+    },
+    {
+        id: 4,
+        patientCode: 'LAB-0234',
+        service: 'Urinalysis',
+        payer: 'insurance',
+        insurer: 'NHIMA',
+        amount: 80,
+        status: 'claim submitted',
     },
 ];
 
-export const DUMMY_PROPS: LaboratoryDashboardProps = {
-    userName: 'Dr. Sample User',
-    stats: DUMMY_STATS,
-    topTests: DUMMY_TOP_TESTS,
-    queue: DUMMY_QUEUE,
-    alerts: DUMMY_ALERTS,
-};
-
 // ─── Helpers ──────────────────────────────────────────────────
 
-const MASK = '******';
+const formatMoney = (amount: number) =>
+    new Intl.NumberFormat('en-ZM', {
+        style: 'currency',
+        currency: 'ZMW',
+        maximumFractionDigits: 2,
+    }).format(Number.isFinite(Number(amount)) ? Number(amount) : 0);
 
+const CHART_COLORS = ['#2563eb', '#16a34a', '#d97706', '#9333ea'] as const;
+
+// Patient names stay masked on this screen.
+const MASK = '******';
 const maskName = (_name: string) => MASK;
 
 const isToday = (iso: string) => {
@@ -198,302 +287,497 @@ const formatTime = (iso: string) =>
         minute: '2-digit',
     });
 
-const CHART_COLORS = ['#2563eb', '#16a34a', '#d97706', '#9333ea'] as const;
+const buildGradient = (
+    data: { value: number; color: string }[],
+    total: number,
+) => {
+    let acc = 0;
+    return data
+        .map((item) => {
+            const start = acc;
+            acc += total > 0 ? (item.value / total) * 100 : 0;
+            return `${item.color} ${start}% ${acc}%`;
+        })
+        .join(', ');
+};
+
+const STATUS_STYLES: Record<QueuePatient['status'], string> = {
+    waiting: 'bg-yellow-100 text-yellow-800',
+    collecting: 'bg-blue-100 text-blue-800',
+    processing: 'bg-green-100 text-green-800',
+};
 
 // ─── Stat card ────────────────────────────────────────────────
 
-interface StatCardProps {
+function StatCard({
+    label,
+    value,
+    icon,
+    tone,
+}: {
     label: string;
     value: number;
-    icon: React.ReactNode;
+    icon: ReactNode;
     tone: string;
-}
+}) {
+    const safeValue = Number.isFinite(Number(value)) ? Number(value) : 0;
 
-function StatCard({ label, value, icon, tone }: StatCardProps) {
     return (
         <div
-            className={`${tone} flex items-center justify-between gap-2 rounded-lg px-3 py-2.5 shadow-sm`}
+            className={`flex items-center justify-between gap-2 rounded-lg px-3 py-3 shadow-sm ${tone}`}
         >
             <div className="min-w-0">
-                <p className="truncate text-[clamp(0.65rem,0.9vw,0.8rem)] font-medium text-slate-600">
+                <p className="truncate text-xs font-medium text-slate-600">
                     {label}
                 </p>
-                <p className="text-[clamp(1.25rem,2vw,1.75rem)] leading-tight font-semibold text-slate-900">
-                    {value.toLocaleString()}
+                <p className="text-2xl leading-tight font-semibold text-slate-900">
+                    {safeValue.toLocaleString()}
                 </p>
             </div>
-            <div className="shrink-0 rounded-md bg-white/60 p-1.5 text-slate-700">
+            <div
+                className="shrink-0 rounded-md bg-white/70 p-2 text-slate-700"
+                aria-hidden="true"
+            >
                 {icon}
             </div>
         </div>
     );
 }
 
-// ─── Doughnut (SVG, no chart dependency) ──────────────────────
+// ─── Most used tests (donut + bars) ───────────────────────────
 
-function Doughnut({ data }: { data: TopTest[] }) {
-    const total = data.reduce((s, d) => s + d.count, 0);
-    const r = 40;
-    const c = 2 * Math.PI * r;
-
-    const segments = useMemo(() => {
-        let offset = 0;
-        return data.map((d, i) => {
-            const len = total ? (d.count / total) * c : 0;
-            const seg = {
-                ...d,
-                len,
-                offset,
-                color: CHART_COLORS[i % CHART_COLORS.length],
-            };
-            offset += len;
-            return seg;
-        });
-    }, [data, total, c]);
+function TestBreakdown({ data }: { data: TopTest[] }) {
+    const total = data.reduce((sum, t) => sum + t.count, 0);
+    const colored = data.map((t, i) => ({
+        ...t,
+        value: t.count,
+        color: CHART_COLORS[i % CHART_COLORS.length],
+    }));
 
     return (
-        <div className="flex h-full flex-col items-center justify-center gap-2">
-            <svg
-                viewBox="0 0 100 100"
-                className="aspect-square w-full max-w-[11rem]"
-                role="img"
-                aria-label="Most used tests"
-            >
-                <g transform="rotate(-90 50 50)">
-                    <circle
-                        cx="50"
-                        cy="50"
-                        r={r}
-                        fill="none"
-                        stroke="#e2e8f0"
-                        strokeWidth="14"
-                    />
-                    {segments.map((s) => (
-                        <circle
-                            key={s.name}
-                            cx="50"
-                            cy="50"
-                            r={r}
-                            fill="none"
-                            stroke={s.color}
-                            strokeWidth="14"
-                            strokeDasharray={`${s.len} ${c - s.len}`}
-                            strokeDashoffset={-s.offset}
-                        />
+        <section className="rounded-xl bg-white p-4 shadow-sm">
+            <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-800">
+                <FlaskConical
+                    className="h-4 w-4 text-slate-500"
+                    aria-hidden="true"
+                />
+                Most used tests
+            </h2>
+
+            <div className="grid grid-cols-2 items-center gap-4">
+                <div className="flex justify-center">
+                    <div
+                        role="img"
+                        aria-label={`${total} tests across ${data.length} types`}
+                        className="relative flex h-36 w-36 items-center justify-center rounded-full"
+                        style={{
+                            background:
+                                total > 0
+                                    ? `conic-gradient(${buildGradient(colored, total)})`
+                                    : '#e2e8f0',
+                        }}
+                    >
+                        <div className="flex h-24 w-24 flex-col items-center justify-center rounded-full bg-white">
+                            <span className="text-2xl font-semibold text-slate-900">
+                                {total}
+                            </span>
+                            <span className="text-[10px] text-slate-500">
+                                Total tests
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="space-y-3">
+                    {colored.map((item) => (
+                        <div key={item.name}>
+                            <div className="mb-1 flex items-center justify-between gap-2 text-xs">
+                                <span className="truncate text-slate-600">
+                                    {item.name}
+                                </span>
+                                <span className="font-semibold text-slate-800 tabular-nums">
+                                    {item.count}
+                                </span>
+                            </div>
+                            <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                                <div
+                                    className="h-full rounded-full"
+                                    style={{
+                                        width: `${total > 0 ? (item.count / total) * 100 : 0}%`,
+                                        backgroundColor: item.color,
+                                    }}
+                                />
+                            </div>
+                        </div>
                     ))}
-                </g>
-                <text
-                    x="50"
-                    y="48"
-                    textAnchor="middle"
-                    className="fill-slate-900 text-[14px] font-semibold"
-                >
-                    {total}
-                </text>
-                <text
-                    x="50"
-                    y="60"
-                    textAnchor="middle"
-                    className="fill-slate-500 text-[7px]"
-                >
-                    tests
-                </text>
-            </svg>
-        </div>
+                    {colored.length === 0 && (
+                        <p className="text-xs text-slate-500">
+                            No tests recorded yet.
+                        </p>
+                    )}
+                </div>
+            </div>
+        </section>
     );
 }
 
-// ─── Horizontal progress list ─────────────────────────────────
+// ─── Orders trend (bars) ──────────────────────────────────────
 
-function TestProgress({ data }: { data: TopTest[] }) {
-    const max = Math.max(...data.map((d) => d.count), 1);
+function OrdersTrend({ data }: { data: TrendDatum[] }) {
+    const max = Math.max(...data.map((d) => d.orders), 1);
+
     return (
-        <ul className="flex h-full flex-col justify-center gap-3">
-            {data.map((t, i) => (
-                <li key={t.name}>
-                    <div className="mb-1 flex items-center justify-between text-[clamp(0.7rem,0.95vw,0.85rem)]">
-                        <span className="truncate font-medium text-slate-700">
-                            {t.name}
+        <section className="rounded-xl bg-white p-4 shadow-sm">
+            <div className="mb-4 flex items-center justify-between">
+                <div>
+                    <h2 className="text-sm font-semibold text-slate-800">
+                        Sample order trend
+                    </h2>
+                    <p className="text-xs text-slate-500">
+                        Orders received per day
+                    </p>
+                </div>
+                <span className="rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700">
+                    This week
+                </span>
+            </div>
+
+            <div className="flex h-36 items-end justify-between gap-3">
+                {data.map((item) => (
+                    <div
+                        key={item.label}
+                        className="flex h-full flex-1 flex-col items-center justify-end gap-2"
+                    >
+                        <span className="text-[10px] text-slate-500">
+                            {item.orders}
                         </span>
-                        <span className="text-slate-500 tabular-nums">
-                            {t.count}
-                        </span>
-                    </div>
-                    <div className="h-2 overflow-hidden rounded-full bg-slate-200">
                         <div
-                            className="h-full rounded-full transition-[width] duration-500"
-                            style={{
-                                width: `${(t.count / max) * 100}%`,
-                                backgroundColor:
-                                    CHART_COLORS[i % CHART_COLORS.length],
-                            }}
+                            className="w-full max-w-10 rounded-t-md bg-blue-500 transition-colors hover:bg-blue-700"
+                            style={{ height: `${(item.orders / max) * 75}%` }}
+                            title={`${item.orders} orders`}
                         />
+                        <span className="text-[10px] text-slate-500">
+                            {item.label}
+                        </span>
                     </div>
-                </li>
-            ))}
-        </ul>
+                ))}
+            </div>
+        </section>
     );
 }
 
 // ─── Queue table ──────────────────────────────────────────────
 
-const statusStyle: Record<QueuePatient['status'], string> = {
-    waiting: 'bg-yellow-100 text-yellow-800',
-    collecting: 'bg-blue-100 text-blue-800',
-    processing: 'bg-green-100 text-green-800',
-};
-
-function QueueTable({ rows }: { rows: QueuePatient[] }) {
+function LabQueue({ rows }: { rows: QueuePatient[] }) {
     return (
-        <div className="overflow-x-auto">
-            <table className="w-full text-left text-[clamp(0.7rem,0.95vw,0.85rem)]">
-                <thead className="text-slate-500">
-                    <tr className="border-b border-slate-200">
-                        <th className="py-2 pr-3 font-medium">Patient</th>
-                        <th className="py-2 pr-3 font-medium">Ref</th>
-                        <th className="py-2 pr-3 font-medium">Test</th>
-                        <th className="py-2 pr-3 font-medium">Waiting</th>
-                        <th className="py-2 font-medium">Status</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {rows.slice(0, 4).map((p) => (
-                        <tr
-                            key={p.id}
-                            className="border-b border-slate-100 last:border-0"
-                        >
-                            <td className="py-2 pr-3 font-medium tracking-wider text-slate-800">
-                                {maskName(p.name)}
-                            </td>
-                            <td className="py-2 pr-3 text-slate-600">
-                                {p.patientCode}
-                            </td>
-                            <td className="py-2 pr-3 text-slate-600">
-                                {p.test}
-                            </td>
-                            <td className="py-2 pr-3 text-slate-600 tabular-nums">
-                                {p.waitingMinutes} min
-                            </td>
-                            <td className="py-2">
-                                <span
-                                    className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${statusStyle[p.status]}`}
-                                >
-                                    {p.status}
-                                </span>
-                            </td>
+        <section className="rounded-xl bg-white p-4 shadow-sm">
+            <div className="mb-3 flex items-center justify-between">
+                <div>
+                    <h2 className="text-sm font-semibold text-slate-800">
+                        Patients in queue
+                    </h2>
+                    <p className="text-xs text-slate-500">
+                        Waiting for sample collection or processing
+                    </p>
+                </div>
+                <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
+                    {rows.length} in queue
+                </span>
+            </div>
+
+            <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                    <thead className="text-slate-500">
+                        <tr className="border-b border-slate-200">
+                            <th className="py-2 pr-3 font-medium">Patient</th>
+                            <th className="py-2 pr-3 font-medium">Reference</th>
+                            <th className="py-2 pr-3 font-medium">Test</th>
+                            <th className="py-2 pr-3 font-medium">Waiting</th>
+                            <th className="py-2 font-medium">Status</th>
                         </tr>
-                    ))}
-                    {rows.length === 0 && (
-                        <tr>
-                            <td
-                                colSpan={5}
-                                className="py-6 text-center text-slate-500"
+                    </thead>
+                    <tbody>
+                        {rows.slice(0, 6).map((p) => (
+                            <tr
+                                key={p.id}
+                                className="border-b border-slate-100 last:border-0"
                             >
-                                No patients in the queue.
-                            </td>
-                        </tr>
-                    )}
-                </tbody>
-            </table>
-        </div>
+                                <td className="py-3 pr-3 font-medium tracking-wider text-slate-800">
+                                    {maskName(p.name)}
+                                </td>
+                                <td className="py-3 pr-3 text-slate-600">
+                                    {p.patientCode}
+                                </td>
+                                <td className="py-3 pr-3 text-slate-600">
+                                    {p.test}
+                                </td>
+                                <td className="py-3 pr-3 text-slate-600 tabular-nums">
+                                    {p.waitingMinutes} min
+                                </td>
+                                <td className="py-3">
+                                    <span
+                                        className={`rounded-full px-2 py-1 text-[10px] font-medium capitalize ${STATUS_STYLES[p.status]}`}
+                                    >
+                                        {p.status}
+                                    </span>
+                                </td>
+                            </tr>
+                        ))}
+                        {rows.length === 0 && (
+                            <tr>
+                                <td
+                                    colSpan={5}
+                                    className="py-8 text-center text-slate-500"
+                                >
+                                    No patients in the queue.
+                                </td>
+                            </tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+        </section>
     );
 }
 
-// ─── Result notifications (right panel) ───────────────────────
+// ─── Summary card (donut + legend) ────────────────────────────
 
-type Tab = 'elevated' | 'normal';
-
-function ResultsPanel({ alerts }: { alerts: ResultAlert[] }) {
-    const [tab, setTab] = useState<Tab>('elevated');
-
-    const todays = useMemo(
-        () => alerts.filter((a) => isToday(a.createdAt)),
-        [alerts],
-    );
-    const counts = {
-        elevated: todays.filter((a) => a.flag === 'elevated').length,
-        normal: todays.filter((a) => a.flag === 'normal').length,
-    };
-    const visible = todays
-        .filter((a) => a.flag === tab)
-        .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
-
-    const tabs: { key: Tab; label: string }[] = [
-        { key: 'elevated', label: 'Abnormal Results' },
-        { key: 'normal', label: 'Normal results' },
-    ];
+function SummaryCard({
+    title,
+    subtitle,
+    data,
+}: {
+    title: string;
+    subtitle: string;
+    data: SummaryDatum[];
+}) {
+    const total = data.reduce((sum, item) => sum + item.value, 0);
 
     return (
-        <section className="flex h-full min-h-0 flex-col rounded-xl bg-white p-4 shadow-sm">
-            <header className="mb-3 flex items-center gap-2">
-                <Bell className="h-4 w-4 text-slate-500" />
-                <h2 className="text-sm font-semibold text-slate-800">
-                    Today&apos;s result notifications
-                </h2>
-            </header>
-
-            <div
-                role="tablist"
-                className="mb-3 grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1"
-            >
-                {tabs.map((t) => (
-                    <button
-                        key={t.key}
-                        role="tab"
-                        aria-selected={tab === t.key}
-                        onClick={() => setTab(t.key)}
-                        className={`flex items-center justify-center gap-2 rounded-md px-2 py-1.5 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 sm:text-sm ${
-                            tab === t.key
-                                ? 'bg-white text-slate-900 shadow-sm'
-                                : 'text-slate-500 hover:text-slate-700'
-                        }`}
-                    >
-                        {t.label}
-                        <span
-                            className={`rounded-full px-1.5 text-xs ${
-                                t.key === 'elevated'
-                                    ? 'bg-red-100 text-red-700'
-                                    : 'bg-green-100 text-green-700'
-                            }`}
-                        >
-                            {counts[t.key]}
-                        </span>
-                    </button>
-                ))}
+        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="mb-4 flex items-start justify-between">
+                <div>
+                    <h3 className="text-sm font-semibold text-slate-800">
+                        {title}
+                    </h3>
+                    <p className="mt-1 text-xs text-slate-500">{subtitle}</p>
+                </div>
+                <span className="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-600">
+                    Today
+                </span>
             </div>
 
-            <ul
-                role="tabpanel"
-                className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1"
-            >
-                {visible.map((a) => (
-                    <li
-                        key={a.id}
-                        className="flex items-center justify-between gap-3 rounded-lg border border-slate-100 px-3 py-2"
-                    >
-                        <div className="min-w-0">
-                            <p className="font-medium tracking-wider text-slate-800">
-                                {maskName(a.name)}
-                            </p>
-                            <p className="truncate text-xs text-slate-500">
-                                {a.patientCode} · {a.test}
-                            </p>
-                        </div>
-                        <div className="shrink-0 text-right">
-                            <p
-                                className={`text-sm font-semibold ${a.flag === 'elevated' ? 'text-red-600' : 'text-green-600'}`}
+            <div className="flex items-center gap-5">
+                <div
+                    role="img"
+                    aria-label={`${title}: ${total} total`}
+                    className="relative flex h-24 w-24 shrink-0 items-center justify-center rounded-full"
+                    style={{
+                        background:
+                            total > 0
+                                ? `conic-gradient(${buildGradient(data, total)})`
+                                : '#e2e8f0',
+                    }}
+                >
+                    <div className="flex h-[68px] w-[68px] flex-col items-center justify-center rounded-full bg-white">
+                        <span className="text-xl font-bold text-slate-800">
+                            {total}
+                        </span>
+                        <span className="text-[9px] text-slate-500">Total</span>
+                    </div>
+                </div>
+
+                <div className="min-w-0 flex-1 space-y-3">
+                    {data.map((item) => {
+                        const pct =
+                            total > 0
+                                ? Math.round((item.value / total) * 100)
+                                : 0;
+                        return (
+                            <div key={item.label}>
+                                <div className="mb-1 flex items-center justify-between gap-2">
+                                    <div className="flex min-w-0 items-center gap-2">
+                                        <span
+                                            className="h-2 w-2 shrink-0 rounded-full"
+                                            style={{
+                                                backgroundColor: item.color,
+                                            }}
+                                            aria-hidden="true"
+                                        />
+                                        <span className="truncate text-[11px] text-slate-600">
+                                            {item.label}
+                                        </span>
+                                    </div>
+                                    <span className="text-[11px] font-semibold text-slate-800">
+                                        {item.value}
+                                    </span>
+                                </div>
+                                <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                                    <div
+                                        className="h-full rounded-full"
+                                        style={{
+                                            width: `${pct}%`,
+                                            backgroundColor: item.color,
+                                        }}
+                                    />
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        </section>
+    );
+}
+
+// ─── Result notifications ─────────────────────────────────────
+
+type Filter = 'all' | ResultAlert['flag'];
+
+const FILTERS: { key: Filter; label: string }[] = [
+    { key: 'all', label: 'All' },
+    { key: 'elevated', label: 'Abnormal' },
+    { key: 'normal', label: 'Normal' },
+];
+
+const FLAG_STYLES = {
+    elevated: {
+        icon: AlertTriangle,
+        color: 'text-red-600',
+        bg: 'bg-red-50',
+        text: 'text-red-700',
+    },
+    normal: {
+        icon: CheckCircle2,
+        color: 'text-green-600',
+        bg: 'bg-green-50',
+        text: 'text-green-700',
+    },
+};
+
+function ResultsPanel({ alerts }: { alerts: ResultAlert[] }) {
+    const [filter, setFilter] = useState<Filter>('all');
+    const [query, setQuery] = useState('');
+
+    const todays = useMemo(
+        () =>
+            alerts
+                .filter((a) => isToday(a.createdAt))
+                .sort(
+                    (a, b) => +new Date(b.createdAt) - +new Date(a.createdAt),
+                ),
+        [alerts],
+    );
+
+    const visible = useMemo(() => {
+        const q = query.trim().toLowerCase();
+        return todays.filter(
+            (a) =>
+                (filter === 'all' || a.flag === filter) &&
+                (!q ||
+                    `${a.test} ${a.patientCode} ${a.value}`
+                        .toLowerCase()
+                        .includes(q)),
+        );
+    }, [todays, filter, query]);
+
+    return (
+        <section className="flex h-full min-h-[500px] min-w-0 flex-col rounded-xl border border-slate-200 bg-white shadow-sm">
+            <header className="flex items-center justify-between px-4 pt-4">
+                <div>
+                    <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                        <Bell
+                            className="h-4 w-4 text-slate-500"
+                            aria-hidden="true"
+                        />
+                        Result notifications
+                    </h2>
+                    <p className="text-xs text-slate-500">
+                        Results reported today
+                    </p>
+                </div>
+                <span className="text-lg font-semibold text-slate-900">
+                    {todays.length}
+                </span>
+            </header>
+
+            <div className="space-y-3 px-4 py-3">
+                <div className="relative">
+                    <Search
+                        className="absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
+                        aria-hidden="true"
+                    />
+                    <input
+                        type="search"
+                        aria-label="Search results"
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        placeholder="Search by test, reference or value…"
+                        className="w-full rounded-md bg-slate-100 py-2 pr-2 pl-8 text-xs outline-none focus:ring-2 focus:ring-blue-200"
+                    />
+                </div>
+
+                <div className="flex flex-wrap gap-1.5">
+                    {FILTERS.map(({ key, label }) => (
+                        <button
+                            key={key}
+                            type="button"
+                            aria-pressed={filter === key}
+                            onClick={() => setFilter(key)}
+                            className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                                filter === key
+                                    ? 'bg-slate-800 text-white'
+                                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                        >
+                            {label}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto px-2 pb-3">
+                {visible.map((a) => {
+                    const style = FLAG_STYLES[a.flag];
+                    const Icon = style.icon;
+                    return (
+                        <li
+                            key={a.id}
+                            className="flex items-start gap-3 rounded-lg px-2 py-3 transition-colors hover:bg-slate-50"
+                        >
+                            <span
+                                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${style.bg} ${style.color}`}
+                                aria-hidden="true"
                             >
-                                {a.value}
-                            </p>
-                            <p className="text-xs text-slate-400">
-                                {formatTime(a.createdAt)}
-                            </p>
-                        </div>
-                    </li>
-                ))}
+                                <Icon className="h-4 w-4" />
+                            </span>
+                            <div className="min-w-0 flex-1">
+                                <div className="flex justify-between gap-2">
+                                    <p className="truncate text-xs font-semibold text-slate-800">
+                                        {a.test}
+                                    </p>
+                                    <span className="shrink-0 text-[10px] text-slate-500">
+                                        {formatTime(a.createdAt)}
+                                    </span>
+                                </div>
+                                <p className="mt-1 text-[11px] text-slate-500">
+                                    <span className="tracking-wider">
+                                        {maskName(a.name)}
+                                    </span>{' '}
+                                    · {a.patientCode}
+                                </p>
+                                <p
+                                    className={`mt-0.5 text-[11px] font-semibold ${style.text}`}
+                                >
+                                    {a.value}
+                                </p>
+                            </div>
+                        </li>
+                    );
+                })}
                 {visible.length === 0 && (
-                    <li className="py-10 text-center text-sm text-slate-500">
-                        No {tab} results reported today.
+                    <li className="py-8 text-center text-xs text-slate-500">
+                        No results match.
                     </li>
                 )}
             </ul>
@@ -501,93 +785,257 @@ function ResultsPanel({ alerts }: { alerts: ResultAlert[] }) {
     );
 }
 
-// ─── Main layout ──────────────────────────────────────────────
+// ─── Billing (right column) ───────────────────────────────────
+
+const BILL_STATUS_STYLES: Record<LabBill['status'], string> = {
+    paid: 'bg-green-100 text-green-800',
+    pending: 'bg-yellow-100 text-yellow-800',
+    'claim submitted': 'bg-blue-100 text-blue-800',
+};
+
+function BillingRow({
+    services,
+    bills,
+}: {
+    services: BillingService[];
+    bills: LabBill[];
+}) {
+    return (
+        <section className="min-w-0 space-y-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="overflow-x-auto">
+                <h2 className="mb-2 text-sm font-semibold text-slate-800">
+                    Billing by service
+                </h2>
+                <table className="w-full text-left text-xs">
+                    <thead className="text-slate-500">
+                        <tr className="border-b border-slate-200">
+                            <th className="py-2 pr-3 font-medium">Service</th>
+                            <th className="py-2 pr-3 text-right font-medium">
+                                Tests
+                            </th>
+                            <th className="py-2 pr-3 text-right font-medium">
+                                Cash
+                            </th>
+                            <th className="py-2 pr-3 text-right font-medium">
+                                Insurance
+                            </th>
+                            <th className="py-2 text-right font-medium">
+                                Total
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {services.map((s) => (
+                            <tr
+                                key={s.service}
+                                className="border-b border-slate-100 last:border-0"
+                            >
+                                <td className="py-3 pr-3 font-medium text-slate-800">
+                                    {s.service}
+                                </td>
+                                <td className="py-3 pr-3 text-right text-slate-600 tabular-nums">
+                                    {s.tests}
+                                </td>
+                                <td className="py-3 pr-3 text-right whitespace-nowrap text-slate-600 tabular-nums">
+                                    {formatMoney(s.cash)}
+                                </td>
+                                <td className="py-3 pr-3 text-right whitespace-nowrap text-slate-600 tabular-nums">
+                                    {formatMoney(s.insurance)}
+                                </td>
+                                <td className="py-3 text-right font-semibold whitespace-nowrap text-slate-800 tabular-nums">
+                                    {formatMoney(s.cash + s.insurance)}
+                                </td>
+                            </tr>
+                        ))}
+                        {services.length === 0 && (
+                            <tr>
+                                <td
+                                    colSpan={5}
+                                    className="py-8 text-center text-slate-500"
+                                >
+                                    No billed services today.
+                                </td>
+                            </tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+
+            <div className="overflow-x-auto">
+                <h2 className="mb-2 text-sm font-semibold text-slate-800">
+                    Recent bills
+                </h2>
+                <table className="w-full text-left text-xs">
+                    <thead className="text-slate-500">
+                        <tr className="border-b border-slate-200">
+                            <th className="py-2 pr-3 font-medium">Reference</th>
+                            <th className="py-2 pr-3 font-medium">Service</th>
+                            <th className="py-2 pr-3 font-medium">Payer</th>
+                            <th className="py-2 pr-3 text-right font-medium">
+                                Amount
+                            </th>
+                            <th className="py-2 font-medium">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {bills.slice(0, 6).map((b) => (
+                            <tr
+                                key={b.id}
+                                className="border-b border-slate-100 last:border-0"
+                            >
+                                <td className="py-3 pr-3 text-slate-600">
+                                    {b.patientCode}
+                                </td>
+                                <td className="py-3 pr-3 font-medium text-slate-800">
+                                    {b.service}
+                                </td>
+                                <td className="py-3 pr-3 text-slate-600">
+                                    {b.payer === 'cash'
+                                        ? 'Cash'
+                                        : b.insurer
+                                          ? `Insurance (${b.insurer})`
+                                          : 'Insurance'}
+                                </td>
+                                <td className="py-3 pr-3 text-right whitespace-nowrap text-slate-800 tabular-nums">
+                                    {formatMoney(b.amount)}
+                                </td>
+                                <td className="py-3">
+                                    <span
+                                        className={`rounded-full px-2 py-1 text-[10px] font-medium whitespace-nowrap capitalize ${BILL_STATUS_STYLES[b.status]}`}
+                                    >
+                                        {b.status}
+                                    </span>
+                                </td>
+                            </tr>
+                        ))}
+                        {bills.length === 0 && (
+                            <tr>
+                                <td
+                                    colSpan={5}
+                                    className="py-8 text-center text-slate-500"
+                                >
+                                    No bills raised today.
+                                </td>
+                            </tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    );
+}
+
+// ─── Page ─────────────────────────────────────────────────────
 
 export default function LaboratoryDashboard({
-    userName = DUMMY_PROPS.userName,
-    stats = DUMMY_PROPS.stats,
-    topTests = DUMMY_PROPS.topTests,
-    queue = DUMMY_PROPS.queue,
-    alerts = DUMMY_PROPS.alerts,
-}: Partial<LaboratoryDashboardProps> = {}) {
-    const { props } = usePage();
+    stats: incomingStats,
+    topTests: incomingTests,
+    queue: incomingQueue,
+    alerts: incomingAlerts,
+    ordersTrend: incomingTrend,
+    resultFlagData: incomingFlags,
+    sampleStatusData: incomingStatus,
+    billing: incomingBilling,
+}: LaboratoryDashboardProps = {}) {
+    const stats: LabStats = { ...DUMMY_STATS, ...(incomingStats ?? {}) };
+    const topTests = incomingTests ?? DUMMY_TOP_TESTS;
+    const queue = incomingQueue ?? DUMMY_QUEUE;
+    const alerts = incomingAlerts ?? DUMMY_ALERTS;
+    const trend = incomingTrend ?? DUMMY_TREND;
+    const resultFlags = incomingFlags ?? DUMMY_RESULT_FLAGS;
+    const sampleStatus = incomingStatus ?? DUMMY_SAMPLE_STATUS;
+    const billingServices = incomingBilling?.services ?? DUMMY_BILLING_SERVICES;
+    const bills = incomingBilling?.recent ?? DUMMY_BILLS;
 
-    console.log(props);
-    const cards: StatCardProps[] = [
+    const top4 = useMemo(
+        () => [...topTests].sort((a, b) => b.count - a.count).slice(0, 4),
+        [topTests],
+    );
+
+    const abnormalToday = useMemo(
+        () =>
+            alerts.filter((a) => a.flag === 'elevated' && isToday(a.createdAt))
+                .length,
+        [alerts],
+    );
+
+    const statCards = [
         {
             label: 'Sample orders',
             value: stats.sampleOrders,
-            tone: 'bg-green-100',
             icon: <ClipboardList className="h-4 w-4" />,
+            tone: 'bg-blue-100',
         },
         {
             label: 'Processed samples',
             value: stats.processedSamples,
-            tone: 'bg-yellow-100',
             icon: <TestTube2 className="h-4 w-4" />,
-        },
-        {
-            label: 'Patients seen',
-            value: stats.patientsSeen,
-            tone: 'bg-blue-100',
-            icon: <UserCheck className="h-4 w-4" />,
+            tone: 'bg-green-100',
         },
         {
             label: 'In queue',
             value: stats.patientsInQueue,
-            tone: 'bg-green-100',
             icon: <Users className="h-4 w-4" />,
+            tone: 'bg-yellow-100',
+        },
+        {
+            label: 'Abnormal results today',
+            value: abnormalToday,
+            icon: <AlertTriangle className="h-4 w-4" />,
+            tone: 'bg-red-100',
         },
     ];
-
-    const top4 = [...topTests].sort((a, b) => b.count - a.count).slice(0, 4);
 
     return (
         <AppLayout
             breadcrumbs={[
-                { href: '/dashboard', title: 'Dashboard' },
+                { href: '/dashboard', title: 'Altaf Memorial Hospital' },
+                { href: '', title: 'Dashboard' },
                 { href: '', title: 'Laboratory' },
-                { href: '', title: 'Queue' },
             ]}
         >
-            <div className="bg-blue-100 p-2">
+            <div className="bg-blue-50 p-2">
                 <PageHeader
                     icon={<MicroscopeIcon className="h-5 w-5" />}
-                    title="Laboratory Department"
-                    subtitle="Manage patient queue, samples, and laboratory workflow"
+                    title="Laboratory department"
+                    subtitle="Manage the patient queue, samples and results"
                 />
             </div>
-            <div className="grid h-screen grid-cols-1 gap-4 overflow-hidden bg-blue-50 p-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
-                {/* LEFT */}
+
+            <div className="grid min-h-screen grid-cols-1 gap-4 overflow-hidden bg-blue-50 p-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
+                {/* LEFT CONTENT */}
                 <div className="flex min-h-0 flex-col gap-4 overflow-y-auto">
                     <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-                        {cards.map((c) => (
-                            <StatCard key={c.label} {...c} />
+                        {statCards.map((card) => (
+                            <StatCard key={card.label} {...card} />
                         ))}
                     </div>
 
-                    <section className="rounded-xl bg-white p-4 shadow-sm">
-                        <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
-                            <FlaskConical className="h-4 w-4 text-slate-500" />
-                            Most used tests
-                        </h2>
-                        <div className="grid grid-cols-2 gap-4">
-                            <Doughnut data={top4} />
-                            <TestProgress data={top4} />
-                        </div>
-                    </section>
-
-                    <section className="rounded-xl bg-white p-4 shadow-sm">
-                        <h2 className="mb-2 text-sm font-semibold text-slate-800">
-                            Patients in queue
-                        </h2>
-                        <QueueTable rows={queue} />
-                    </section>
+                    <TestBreakdown data={top4} />
+                    <OrdersTrend data={trend} />
+                    <LabQueue rows={queue} />
                 </div>
 
-                {/* RIGHT */}
-                <div className="min-h-0">
-                    <ResultsPanel alerts={alerts} />
+                {/* RIGHT CONTENT */}
+                <div className="flex min-h-0 min-w-0 flex-col gap-4">
+                    <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
+                        <div className="flex min-w-0 flex-col gap-4">
+                            <SummaryCard
+                                title="Result flags"
+                                subtitle="Normal, abnormal and critical results"
+                                data={resultFlags}
+                            />
+                            <SummaryCard
+                                title="Sample status"
+                                subtitle="Where today’s samples are in the workflow"
+                                data={sampleStatus}
+                            />
+                        </div>
+
+                        <ResultsPanel alerts={alerts} />
+                    </div>
+
+                    <BillingRow services={billingServices} bills={bills} />
                 </div>
             </div>
         </AppLayout>

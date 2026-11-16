@@ -1,6 +1,6 @@
 // pages/patients/Theater.tsx
 import { usePage, router } from '@inertiajs/react';
-import { Scissors, Plus, Activity } from 'lucide-react';
+import { Scissors, Plus } from 'lucide-react';
 import Notiflix from 'notiflix';
 import { useState } from 'react';
 import PageHeader from '@/components/PageHeader';
@@ -29,15 +29,13 @@ interface TheaterProps {
 }
 
 export default function Theater() {
-    const { patientId, services, previousOrders } =
+    const { patientId, services, previousOrders, users } =
         usePage<TheaterProps>().props;
-
-    // Controlled modal state — the trigger lives in PageHeader
     const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
 
     /**
      * Called when the ServiceModal saves.
-     * POSTs to Laravel via Inertia and lets the page reload with fresh data.
+     * POSTs to Laravel and reloads the previous orders list.
      */
     const handleSaveOrder = async (items: CartItem[], identifier: string) => {
         try {
@@ -108,6 +106,8 @@ export default function Theater() {
                         orderLabel="Procedure"
                         isOrderModalOpen={isOrderModalOpen}
                         onOrderModalClose={() => setIsOrderModalOpen(false)}
+                        operativeNotes
+                        users={users}
                     />
                 </div>
             </div>

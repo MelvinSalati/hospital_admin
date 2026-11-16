@@ -1,4 +1,4 @@
-// components/PatientVisitSchemeModal.tsx
+
 import {
     X,
     Banknote,

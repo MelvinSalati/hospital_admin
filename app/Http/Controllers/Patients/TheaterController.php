@@ -327,6 +327,66 @@ class TheaterController extends Controller
         }
     }
 
+
+    public function storeOperativeNote(Request $request)
+    {
+        $validator = Validator::make($request->all(), $this->noteRules($request->input('action') === 'sign'));
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors'  => $validator->errors(),
+            ], 422);
+        }
+
+        $orderItemId = (int) $request->input('theater_order_item_id');
+
+        $orderItem = DB::table('theater_order_items')->where('id', $orderItemId)->first();
+        if (!$orderItem) {
+            return response()->json(['message' => 'Theater order item not found.'], 404);
+        }
+
+        //
+        $update = 
+        DB::table('theater_order_items')->where('id', $orderItemId)->update([
+            'status' => 'Completed'
+        ]);
+
+        // One note per order item
+        $exists = DB::table('operative_notes')
+            ->where('theater_order_item_id', $orderItemId)
+            ->whereNull('deleted_at')
+            ->exists();
+
+        if ($exists) {
+            return response()->json(['message' => 'An operative note already exists for this procedure.'], 422);
+        }
+
+        $action   = $request->input('action', 'draft'); // draft | sign
+        $now      = now();
+        $userId   = Auth::id();
+
+        $data = $this->mapNotePayload($request, $orderItem, $action, $userId, $now);
+
+        try {
+            $id = DB::table('operative_notes')->insertGetId($data);
+
+            $note = DB::table('operative_notes')->where('id', $id)->first();
+
+            return response()->json([
+                'message' => $action === 'sign' ? 'Operative note signed.' : 'Draft saved.',
+                'note'    => [
+                    'id'        => $note->id,
+                    'status'    => $note->status,
+                    'signed_at' => $note->signed_at,
+                ],
+            ], 201);
+        } catch (\Exception $e) {
+            Log::error('Operative note store failed', ['error' => $e->getMessage()]);
+            return response()->json(['message' => 'Failed to save the operative note.'], 500);
+        }
+    }
+
     // ─────────────────────────────────────────────
     //  Private utilities
     // ─────────────────────────────────────────────
@@ -353,6 +413,243 @@ class TheaterController extends Controller
             ->count();
 
         return sprintf('%s-%s-%04d', $prefix, $date, $count + 1);
+    }
+
+    // public function storeOperativeNote(Request $request)
+    // {
+    //     $validator = Validator::make(
+    //         $request->all(),
+    //         $this->noteRules($request->input('action') === 'sign')
+    //     );
+
+    //     if ($validator->fails()) {
+    //         return response()->json([
+    //             'message' => 'Validation failed',
+    //             'errors'  => $validator->errors(),
+    //         ], 422);
+    //     }
+
+    //     $orderItemId = (int) $request->input('theater_order_item_id');
+
+    //     $orderItem = DB::table('theater_order_items')->where('id', $orderItemId)->first();
+    //     if (! $orderItem) {
+    //         return response()->json(['message' => 'Theater order item not found.'], 404);
+    //     }
+
+    //     $exists = DB::table('operative_notes')
+    //         ->where('theater_order_item_id', $orderItemId)
+    //         ->whereNull('deleted_at')
+    //         ->exists();
+
+    //     if ($exists) {
+    //         return response()->json([
+    //             'message' => 'An operative note already exists for this procedure.',
+    //         ], 422);
+    //     }
+
+    //     $action = $request->input('action', 'draft');
+    //     $now    = now();
+    //     $userId = Auth::id();
+
+    //     $data = $this->mapNotePayload($request, $orderItem, $action, $userId, $now);
+
+    //     try {
+    //         $id = DB::table('operative_notes')->insertGetId($data);
+
+    //         $note = DB::table('operative_notes')->where('id', $id)->first();
+
+    //         return response()->json([
+    //             'message' => $action === 'sign' ? 'Operative note signed.' : 'Draft saved.',
+    //             'note'    => [
+    //                 'id'        => $note->id,
+    //                 'status'    => $note->status,
+    //                 'signed_at' => $note->signed_at,
+    //             ],
+    //         ], 201);
+    //     } catch (\Exception $e) {
+    //         Log::error('Operative note store failed', ['error' => $e->getMessage()]);
+    //         return response()->json(['message' => 'Failed to save the operative note.'], 500);
+    //     }
+    // }
+
+    // ─────────────────────────────────────────────
+    //  Operative Notes – UPDATE (draft or sign)
+    // ─────────────────────────────────────────────
+
+    public function updateOperativeNote(Request $request, $id)
+    {
+        $note = DB::table('operative_notes')
+            ->where('id', $id)
+            ->whereNull('deleted_at')
+            ->first();
+
+        if (! $note) {
+            return response()->json(['message' => 'Operative note not found.'], 404);
+        }
+
+        if ($note->status === 'signed') {
+            return response()->json(['message' => 'Signed notes cannot be edited.'], 403);
+        }
+
+        $validator = Validator::make(
+            $request->all(),
+            $this->noteRules($request->input('action') === 'sign')
+        );
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors'  => $validator->errors(),
+            ], 422);
+        }
+
+        $orderItem = DB::table('theater_order_items')
+            ->where('id', $note->theater_order_item_id)
+            ->first();
+
+        $action = $request->input('action', 'draft');
+        $now    = now();
+        $userId = Auth::id();
+
+        $data = $this->mapNotePayload($request, $orderItem, $action, $userId, $now);
+
+        // Protect immutable columns
+        unset(
+            $data['theater_order_item_id'],
+            $data['patient_id'],
+            $data['patient_visit_id'],
+            $data['created_by'],
+            $data['created_at']
+        );
+
+        try {
+            DB::table('operative_notes')->where('id', $id)->update($data);
+
+            $updated = DB::table('operative_notes')->where('id', $id)->first();
+
+            return response()->json([
+                'message' => $action === 'sign' ? 'Operative note signed.' : 'Draft saved.',
+                'note'    => [
+                    'id'        => $updated->id,
+                    'status'    => $updated->status,
+                    'signed_at' => $updated->signed_at,
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Operative note update failed', ['error' => $e->getMessage()]);
+            return response()->json(['message' => 'Failed to save the operative note.'], 500);
+        }
+    }
+
+    // ─────────────────────────────────────────────
+    //  Private helpers
+    // ─────────────────────────────────────────────
+
+
+
+
+    private function noteRules(bool $signing = false): array
+    {
+        $required = $signing ? 'required' : 'nullable';
+
+        return [
+            'theater_order_item_id'       => 'required|integer|exists:theater_order_items,id',
+            'operation_date'              => "$required|date",
+            'start_time'                  => "$required|date_format:H:i",
+            'end_time'                    => "$required|date_format:H:i",
+            'theatre'                     => 'nullable|string|max:255',
+            'preoperative_diagnosis'      => "$required|string",
+            'postoperative_diagnosis'     => "$required|string",
+            'procedure_performed'         => "$required|string",
+            'anaesthesia_type'            => "$required|string|max:255",
+            'procedure_details'           => "$required|string",
+            'findings'                    => "$required|string",
+            'ebl_ml'                      => "$required|integer|min:0",
+            'fluids_ml'                   => 'nullable|integer|min:0',
+            'urine_output_ml'             => 'nullable|integer|min:0',
+            'counts_correct'              => "$required|in:correct,incorrect,not_applicable",
+            'specimens'                   => 'nullable|array',
+            'specimens.*.description'     => 'nullable|string',
+            'specimens.*.destination'     => 'nullable|string',
+            'complications_occurred'      => 'boolean',
+            'complications'               => 'required_if:complications_occurred,true|nullable|string',
+            'post_op_plan'                => 'nullable|array',
+            'post_op_plan.monitoring'     => "$required|string",
+            'post_op_plan.medications'    => "$required|string",
+            'post_op_plan.activity'       => 'nullable|string',
+            'post_op_plan.diet'           => 'nullable|string',
+            'post_op_plan.iv_fluids'      => 'nullable|string',
+            'post_op_plan.drains_dressings' => 'nullable|string',
+            'registration_number'         => "$required|string|max:255",
+            'action'                      => 'required|in:draft,sign',
+        ];
+    }
+
+    private function mapNotePayload(Request $request, $orderItem, string $action, $userId, $now): array
+    {
+        $signing = $action === 'sign';
+
+        return [
+            'theater_order_item_id'   => $orderItem->id,
+            'patient_id'              => $orderItem->patient_id,
+            'patient_visit_id'        => $orderItem->patient_visit_id ?? null,
+            'operation_date'          => $request->input('operation_date'),
+            'start_time'              => $request->input('start_time'),
+            'end_time'                => $request->input('end_time'),
+            'theatre'                 => $request->input('theatre'),
+            'preoperative_diagnosis'  => $request->input('preoperative_diagnosis'),
+            'postoperative_diagnosis' => $request->input('postoperative_diagnosis'),
+            'procedure_performed'     => $request->input('procedure_performed'),
+            'anaesthesia_type'        => $request->input('anaesthesia_type'),
+            'procedure_details'       => $request->input('procedure_details'),
+            'findings'                => $request->input('findings'),
+            'ebl_ml'                  => $request->input('ebl_ml'),
+            'fluids_ml'               => $request->input('fluids_ml'),
+            'urine_output_ml'         => $request->input('urine_output_ml'),
+            'counts_correct'          => $request->input('counts_correct'),
+            'specimens'               => json_encode($request->input('specimens', [])),
+            'complications_occurred'  => (bool) $request->input('complications_occurred', false),
+            'complications'           => $request->input('complications'),
+            'post_op_plan'            => json_encode($request->input('post_op_plan', [])),
+            'status'                  => $signing ? 'signed' : 'draft',
+            'registration_number'     => $request->input('registration_number'),
+            'signed_by'               => $signing ? $userId : null,
+            'signed_at'               => $signing ? $now : null,
+            'created_by'              => $userId,
+            'created_at'              => $now,
+            'updated_at'              => $now,
+        ];
+    }
+
+    private function noteToFormArray($n): array
+    {
+        return [
+            'operation_date'          => $n->operation_date,
+            'start_time'              => $n->start_time ? substr($n->start_time, 0, 5) : null,
+            'end_time'                => $n->end_time ? substr($n->end_time, 0, 5) : null,
+            'theatre'                 => $n->theatre,
+            'lead_surgeon_id'         => $n->lead_surgeon_id,
+            'anaesthetist_id'         => $n->anaesthetist_id,
+            'scrub_nurse_id'          => $n->scrub_nurse_id,
+            'circulating_nurse_id'    => $n->circulating_nurse_id,
+            'co_surgeon_ids'          => json_decode($n->co_surgeon_ids ?? '[]', true) ?: [],
+            'assistant_ids'           => json_decode($n->assistant_ids ?? '[]', true) ?: [],
+            'preoperative_diagnosis'  => $n->preoperative_diagnosis,
+            'postoperative_diagnosis' => $n->postoperative_diagnosis,
+            'procedure_performed'     => $n->procedure_performed,
+            'anaesthesia_type'        => $n->anaesthesia_type,
+            'procedure_details'       => $n->procedure_details,
+            'findings'                => $n->findings,
+            'ebl_ml'                  => $n->ebl_ml,
+            'fluids_ml'               => $n->fluids_ml,
+            'urine_output_ml'         => $n->urine_output_ml,
+            'counts_correct'          => $n->counts_correct,
+            'specimens'               => json_decode($n->specimens ?? '[]', true) ?: [],
+            'complications_occurred'  => (bool) $n->complications_occurred,
+            'complications'           => $n->complications,
+            'post_op_plan'            => json_decode($n->post_op_plan ?? '{}', true) ?: [],
+            'registration_number'     => $n->registration_number,
+        ];
     }
 
     // ─────────────────────────────────────────────

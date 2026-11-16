@@ -69,11 +69,12 @@ Route::prefix('v1/')->group(function () {
                 ->count(),
         ]);
     })->name('api.notifications.unread');
+    
 
     // Mark notification as read
     Route::post('notifications/{id}/mark-as-read', function ($id, Request $request) {
         $notification = Notification::find($id);
-        
+
         if (!$notification) {
             return response()->json([
                 'success' => false,
@@ -82,7 +83,7 @@ Route::prefix('v1/')->group(function () {
         }
 
         // Verify the user owns this notification
-        if ($notification->notifiable_id != $request->user()?->id) {
+        if ($notification->notifiable_id != $request->userId) {
             return response()->json([
                 'success' => false,
                 'message' => 'Unauthorized',
@@ -115,7 +116,7 @@ Route::prefix('v1/')->group(function () {
     // Delete a notification
     Route::delete('notifications/{id}', function ($id, Request $request) {
         $notification = Notification::find($id);
-        
+
         if (!$notification) {
             return response()->json([
                 'success' => false,
