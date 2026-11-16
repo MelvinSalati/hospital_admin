@@ -21,7 +21,7 @@ class RegistrationJob implements ShouldQueue
     /**
      * Create a new job instance.
      */
-    public function __construct(string $name, string $patientNumber, string $phoneNumber)
+    public function __construct(string $name, string $patientNumber, string $phoneNumber="260975995249")
     {
         $this->name = $name;
         $this->patientNumber = $patientNumber;
