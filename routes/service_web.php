@@ -10,9 +10,3 @@ Route::middleware(['auth'])->prefix('services')->name('services.')->group(functi
         ->name('page');
 });
 
-Route::middleware(['auth'])->prefix('billables')->name('services.')->group(function () {
-
-    // Display services management page
-    Route::get('/department/{departmentId}', [ServiceController::class, 'page'])
-        ->name('page');
-});
