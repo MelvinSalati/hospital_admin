@@ -213,11 +213,11 @@ class NursesController extends Controller
         return 'nurses/dashboard';
     }
 
-    public function visit()
+    public function visit(int $departmentId)
     {
 
         $visit  = PatientVisit::with(['patient', 'assignedStaff', 'visitToken'])
-            ->where('department_id', 6)
+            ->where('department_id',  $departmentId)
             ->where('status', 1)
             ->orderBy('created_at', 'asc')
             ->get()
