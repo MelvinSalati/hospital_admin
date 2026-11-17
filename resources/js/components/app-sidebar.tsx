@@ -49,7 +49,7 @@ import {
 
 import routes from '@/constants/routes';
 import { useEncounterCount } from '@/hooks/use-encounter-count';
-import http from '@/utils/http';
+import http from '@/utils/Http';
 import type { NavItem } from '@/types';
 
 /* -------------------------------------------------------------------------- */
