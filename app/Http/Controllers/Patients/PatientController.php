@@ -76,10 +76,25 @@ class PatientController extends Controller
      */
     public function create()
     {
-        $today  = Carbon::now()->format('Y-m-d');
         return Inertia::render('receptions/create', [
             'insuranceProviders' => InsuranceProvider::all(),
-            'recentPatients' => Patient::all()
+
+            'recentPatients' => Patient::query()
+                ->latest()
+                ->limit(6)
+                ->get()
+                ->map(function ($patient) {
+                    return [
+                        'id' => $patient->id,
+                        'created_at' => Carbon::parse($patient->created_at)->format('d F Y'),
+                        'status'  => $patient->status,
+                        'phone' => $patient->phone,
+                        'first_name' => $patient->first_name,
+                        'patient_number' => $patient->patient_number,
+                        'uuid' => $patient->patient_uuid,
+                        'last_name' => $patient->last_name
+                    ];
+                }),
         ]);
     }
 

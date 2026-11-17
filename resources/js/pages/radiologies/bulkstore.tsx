@@ -195,7 +195,7 @@ export default function BulkStore() {
                 </span>
             ),
         },
-     
+
         {
             id: 'priority',
             label: 'Priority',
@@ -269,25 +269,24 @@ export default function BulkStore() {
     return (
         <AppLayout
             breadcrumbs={[
-                { title: 'Radiology', href: '/bulk-store' },
+                { title: 'ALtaf Memorial Hospital', href: '/bulk-store' },
                 { title: 'Bulk Store', href: '' },
             ]}
         >
+            <PageHeader
+                icon={<BarcodeIcon className="h-5 w-5" />}
+                title="Bulk Store"
+                subtitle="Order from bulk store"
+                tabVariant="underline"
+                actions={[
+                    {
+                        label: 'Order from Bulk Store',
+                        onClick: () => setIsModalOpen(true),
+                    },
+                ]}
+                defaultTabId="overview"
+            />
             <div className="h-full space-y-4 bg-blue-50 p-4">
-                <PageHeader
-                    icon={<BarcodeIcon className="h-5 w-5" />}
-                    title="Bulk Store"
-                    subtitle="Order from bulk store"
-                    tabVariant="underline"
-                    actions={[
-                        {
-                            label: 'Order from Bulk Store',
-                            onClick: () => setIsModalOpen(true),
-                        },
-                    ]}
-                    defaultTabId="overview"
-                />
-
                 <ReusableTable
                     title="Ordered Items"
                     columns={columns}
@@ -772,3 +771,4 @@ function Meta({
         </div>
     );
 }
+

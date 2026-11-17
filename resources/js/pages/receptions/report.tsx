@@ -51,6 +51,7 @@ type RangeMode = 'day' | 'week' | 'month' | 'custom';
 // ============================================
 
 const breadcrumbs: BreadcrumbItem[] = [
+    { href: '/dashboard', title: 'Altaf Memorial Hospital' },
     { title: 'Reception', href: '/receptions' },
     { title: 'Reports', href: '/receptions/reports' },
 ];
@@ -373,15 +374,14 @@ export default function Reports() {
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Reception Reports" />
+            <PageHeader
+                title="Reception Reports"
+                icon={<BarChart3 />}
+                subtitle="View reports pertaining to the reception department"
+            />
 
-            <div className="min-h-screen bg-slate-100">
-                <div className="p-4">
-                    <PageHeader
-                        title="Reception Reports"
-                        icon={<BarChart3 />}
-                        subtitle="View reports pertaining to the reception department"
-                    />
-
+            <div className="min-h-screen bg-blue-50">
+                <div className="p-2">
                     <div className="mt-4 overflow-hidden rounded-lg shadow-sm">
                         <ReusableTable
                             columns={columns}

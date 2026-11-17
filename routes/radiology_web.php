@@ -6,6 +6,7 @@ use App\Http\Controllers\Radiologies\RadiologyController;
 use App\Http\Controllers\Radiologies\RadiologyBulkStoreController;
 use App\Http\Controllers\Reports\RadiologyReportController;
 
+
 Route::prefix('radiology')->group(function () {
     Route::get('/queue/{departmentId}', [RadiologyController::class, 'queue']);
     Route::get('processed', [RadiologyController::class, 'processed']);

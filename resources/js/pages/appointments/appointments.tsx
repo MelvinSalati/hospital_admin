@@ -227,7 +227,7 @@ export default function Appointments() {
                                 {value}
                             </span>
                             <div className="rounded bg-blue-50 px-1.5 py-0.5 text-xs text-slate-800">
-                                ID: {row.patient_id}
+                                {row.patient_id}
                             </div>
                         </div>
                     </div>
@@ -324,7 +324,7 @@ export default function Appointments() {
             },
         },
         {
-            id: 'time',
+            id: 'next_appointment_date',
             label: 'Time',
             sortable: true,
             format: (value, row) => {
@@ -346,11 +346,11 @@ export default function Appointments() {
                             <Clock size={14} className="text-slate-600" />
                         </div>
                         <div>
-                            <span className="font-mono text-sm font-semibold text-slate-800">
+                            {/* <span className="font-mono text-sm font-semibold text-slate-800">
                                 {formatTimeToHumanReadable(value)}
-                            </span>
+                            </span> */}
                             <div className="text-xs text-slate-400">
-                                {formatDate(new Date().toISOString())}
+                                {value}
                             </div>
                         </div>
                     </div>
@@ -652,13 +652,13 @@ export default function Appointments() {
                 { title: 'Appointments', href: '/reception/appointments' },
             ]}
         >
+            {' '}
+            <PageHeader
+                icon={<CalendarIcon className="h-6 w-6" />}
+                title="Appointments"
+                subtitle="Manage patient queue and consultations. Track all appointments for today."
+            />
             <div className="h-full bg-blue-50 p-4">
-                <PageHeader
-                    icon={<CalendarIcon className="h-6 w-6" />}
-                    title="Appointments"
-                    subtitle="Manage patient queue and consultations. Track all appointments for today."
-                />
-
                 {/* Reusable Table */}
                 <div className="mt-6">
                     <ReusableTable

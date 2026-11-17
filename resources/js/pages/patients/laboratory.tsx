@@ -65,6 +65,9 @@ interface LabOrderItem {
     lab_order_id?: number;
     created_by?: number | null;
     deleted_at?: string | null;
+    /** Public URL to the uploaded result PDF / image (from lab_result_files) */
+    result_file?: string | null;
+    result_file_name?: string | null;
 }
 
 interface LabOrder {
@@ -458,6 +461,185 @@ const OrderDetailsModal = ({
     );
 };
 
+// ─── Result File Viewer (PDF / Image) ───────────────────────────────────────
+const ResultFileViewer = ({
+    open,
+    onClose,
+    url,
+    title,
+}: {
+    open: boolean;
+    onClose: () => void;
+    url: string | null;
+    title?: string | null;
+}) => {
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(false);
+
+    useEffect(() => {
+        if (!open) return;
+        setLoading(true);
+        setError(false);
+
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') onClose();
+        };
+        window.addEventListener('keydown', onKey);
+        // Prevent background scroll while open
+        const prev = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+
+        return () => {
+            window.removeEventListener('keydown', onKey);
+            document.body.style.overflow = prev;
+        };
+    }, [open, onClose, url]);
+
+    if (!open || !url) return null;
+
+    const lower = url.toLowerCase();
+    const isPdf =
+        lower.endsWith('.pdf') ||
+        lower.includes('application/pdf') ||
+        lower.includes('/lab-results/');
+    const isImage = /\.(png|jpe?g|gif|webp|bmp)(\?|$)/i.test(url);
+
+    const handleLoad = () => setLoading(false);
+    const handleError = () => {
+        setLoading(false);
+        setError(true);
+    };
+
+    return (
+        <div
+            className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/70 p-3 backdrop-blur-sm sm:p-4"
+            onClick={onClose}
+            role="dialog"
+            aria-modal="true"
+            aria-label={title || 'Lab result report'}
+        >
+            <div
+                className="flex h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl dark:bg-slate-900"
+                onClick={(e) => e.stopPropagation()}
+            >
+                {/* Header */}
+                <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 sm:px-5 dark:border-slate-700">
+                    <div className="flex min-w-0 items-center gap-3">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 dark:bg-blue-950/40">
+                            <FileText className="h-4 w-4 text-blue-600" />
+                        </div>
+                        <div className="min-w-0">
+                            <h3 className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
+                                {title || 'Lab Result Report'}
+                            </h3>
+                            <p className="truncate text-xs text-slate-500">
+                                {isPdf
+                                    ? 'PDF Report'
+                                    : isImage
+                                      ? 'Image'
+                                      : 'Document'}
+                            </p>
+                        </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                        <a
+                            href={url}
+                            download
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="hidden rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 sm:inline-flex dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800"
+                        >
+                            Download
+                        </a>
+                        <a
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800"
+                        >
+                            Open in new tab
+                        </a>
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                            aria-label="Close viewer"
+                        >
+                            <X className="h-5 w-5" />
+                        </button>
+                    </div>
+                </div>
+
+                {/* Body */}
+                <div className="relative flex min-h-0 flex-1 items-center justify-center bg-slate-100 dark:bg-slate-950">
+                    {loading && !error && (
+                        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-slate-100/90 dark:bg-slate-950/90">
+                            <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
+                            <p className="text-sm text-slate-500">
+                                Loading report…
+                            </p>
+                        </div>
+                    )}
+
+                    {error ? (
+                        <div className="p-8 text-center">
+                            <AlertCircle className="mx-auto h-12 w-12 text-slate-400" />
+                            <p className="mt-3 text-sm font-medium text-slate-700 dark:text-slate-300">
+                                Could not load the report preview
+                            </p>
+                            <p className="mt-1 text-xs text-slate-500">
+                                The file may be unavailable or blocked by the
+                                browser.
+                            </p>
+                            <a
+                                href={url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mt-4 inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                            >
+                                Open in new tab
+                            </a>
+                        </div>
+                    ) : isPdf ? (
+                        <iframe
+                            key={url}
+                            src={`${url}#toolbar=1&navpanes=0&view=FitH`}
+                            title={title || 'Lab Result PDF'}
+                            className="h-full w-full border-0"
+                            onLoad={handleLoad}
+                            onError={handleError}
+                        />
+                    ) : isImage ? (
+                        <img
+                            key={url}
+                            src={url}
+                            alt={title || 'Lab result'}
+                            className="max-h-full max-w-full object-contain p-4"
+                            onLoad={handleLoad}
+                            onError={handleError}
+                        />
+                    ) : (
+                        <div className="p-8 text-center">
+                            <FileText className="mx-auto h-12 w-12 text-slate-400" />
+                            <p className="mt-3 text-sm text-slate-600 dark:text-slate-400">
+                                Preview not available for this file type.
+                            </p>
+                            <a
+                                href={url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mt-4 inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                            >
+                                Download / Open
+                            </a>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
 // ─── Order Results Drawer ───────────────────────────────────────────────────
 const OrderResultsDrawer = ({
     isOpen,
@@ -468,11 +650,14 @@ const OrderResultsDrawer = ({
     onClose: () => void;
     order: LabOrder | null;
 }) => {
+    const [viewerUrl, setViewerUrl] = useState<string | null>(null);
+    const [viewerTitle, setViewerTitle] = useState<string | null>(null);
+
     if (!isOpen || !order) return null;
 
     const items = order.item || [];
     const completedItems = items.filter(
-        (i) => i.status === 'completed' && i.result_value,
+        (i) => i.status === 'completed' && (i.result_value || i.result_file),
     );
     const pendingItems = items.filter(
         (i) => i.status === 'pending' || i.status === 'ordered',
@@ -590,33 +775,65 @@ const OrderResultsDrawer = ({
                                                         </div>
 
                                                         {/* Result value display */}
-                                                        <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50/50 p-3">
-                                                            <p className="text-[10px] font-semibold tracking-wider text-blue-600 uppercase">
-                                                                Result
-                                                            </p>
-                                                            <p className="mt-0.5 text-lg font-bold text-slate-800">
-                                                                {
-                                                                    item.result_value
-                                                                }
-                                                                {item.unit && (
-                                                                    <span className="ml-1 text-xs font-medium text-slate-500">
-                                                                        {
-                                                                            item.unit
-                                                                        }
-                                                                    </span>
-                                                                )}
-                                                            </p>
-                                                            {item.reference_range && (
-                                                                <p className="mt-1 text-[11px] text-slate-500">
-                                                                    Reference:{' '}
-                                                                    <span className="font-medium text-slate-700">
-                                                                        {
-                                                                            item.reference_range
-                                                                        }
-                                                                    </span>
+                                                        {(item.result_value ||
+                                                            item.result_file) && (
+                                                            <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50/50 p-3">
+                                                                <p className="text-[10px] font-semibold tracking-wider text-blue-600 uppercase">
+                                                                    Result
                                                                 </p>
-                                                            )}
-                                                        </div>
+                                                                {item.result_value ? (
+                                                                    <p className="mt-0.5 text-lg font-bold text-slate-800">
+                                                                        {
+                                                                            item.result_value
+                                                                        }
+                                                                        {item.unit && (
+                                                                            <span className="ml-1 text-xs font-medium text-slate-500">
+                                                                                {
+                                                                                    item.unit
+                                                                                }
+                                                                            </span>
+                                                                        )}
+                                                                    </p>
+                                                                ) : (
+                                                                    <p className="mt-0.5 text-sm text-slate-600">
+                                                                        Full
+                                                                        report
+                                                                        available
+                                                                        as PDF
+                                                                    </p>
+                                                                )}
+                                                                {item.reference_range && (
+                                                                    <p className="mt-1 text-[11px] text-slate-500">
+                                                                        Reference:{' '}
+                                                                        <span className="font-medium text-slate-700">
+                                                                            {
+                                                                                item.reference_range
+                                                                            }
+                                                                        </span>
+                                                                    </p>
+                                                                )}
+                                                                {item.result_file && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => {
+                                                                            setViewerUrl(
+                                                                                item.result_file!,
+                                                                            );
+                                                                            setViewerTitle(
+                                                                                item.result_file_name ||
+                                                                                    item.test_name,
+                                                                            );
+                                                                        }}
+                                                                        className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-blue-700"
+                                                                    >
+                                                                        <FileText className="h-3 w-3" />
+                                                                        View
+                                                                        Report
+                                                                        PDF
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        )}
 
                                                         {/* Meta info */}
                                                         <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
@@ -827,6 +1044,16 @@ const OrderResultsDrawer = ({
                     </div>
                 </div>
             </div>
+
+            <ResultFileViewer
+                open={!!viewerUrl}
+                onClose={() => {
+                    setViewerUrl(null);
+                    setViewerTitle(null);
+                }}
+                url={viewerUrl}
+                title={viewerTitle}
+            />
         </div>
     );
 };
@@ -843,6 +1070,9 @@ interface PreviousResult {
 }
 
 const PreviousResultsTable = ({ orders }: { orders: LabOrder[] }) => {
+    const [viewerUrl, setViewerUrl] = useState<string | null>(null);
+    const [viewerTitle, setViewerTitle] = useState<string | null>(null);
+
     // Flatten all items across orders for the previous results view
     const allItems = orders.flatMap((order) =>
         (order.item || []).map((item) => ({
@@ -852,9 +1082,11 @@ const PreviousResultsTable = ({ orders }: { orders: LabOrder[] }) => {
         })),
     );
 
-    // Filter completed orders with results
+    // Completed = has structured result OR an attached result file (PDF)
     const completedOrders = allItems.filter(
-        (item) => item.status === 'completed' && item.result_value,
+        (item) =>
+            item.status === 'completed' &&
+            (item.result_value || item.result_file),
     );
 
     // Filter rejected orders
@@ -883,12 +1115,12 @@ const PreviousResultsTable = ({ orders }: { orders: LabOrder[] }) => {
                 <div className="p-3">
                     {completedOrders.length > 0 ? (
                         <div className="space-y-2">
-                            {completedOrders.slice(0, 5).map((item) => (
+                            {completedOrders.slice(0, 8).map((item) => (
                                 <div
                                     key={item.id}
                                     className="rounded-lg bg-white p-3 shadow-sm transition-colors hover:bg-green-50"
                                 >
-                                    <div className="flex items-start justify-between">
+                                    <div className="flex items-start justify-between gap-2">
                                         <div className="min-w-0 flex-1">
                                             <p className="text-sm font-medium text-gray-800">
                                                 {item.test_name}
@@ -908,21 +1140,46 @@ const PreviousResultsTable = ({ orders }: { orders: LabOrder[] }) => {
                                                     </span>
                                                 )}
                                             </div>
+                                            {item.result_value && (
+                                                <p className="mt-1.5 text-xs font-semibold text-emerald-700">
+                                                    {item.result_value}
+                                                    {item.unit ? (
+                                                        <span className="ml-1 font-normal text-slate-500">
+                                                            {item.unit}
+                                                        </span>
+                                                    ) : null}
+                                                </p>
+                                            )}
                                         </div>
-                                        <div className="ml-2 flex items-center gap-2">
-                                            <Badge className="bg-blue-100 text-blue-800">
-                                                {item.result_value}
-                                            </Badge>
+                                        <div className="ml-2 flex shrink-0 flex-col items-end gap-1.5">
                                             <Badge className="bg-green-100 text-green-800">
                                                 Completed
                                             </Badge>
+                                            {item.result_file && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setViewerUrl(
+                                                            item.result_file!,
+                                                        );
+                                                        setViewerTitle(
+                                                            item.result_file_name ||
+                                                                item.test_name,
+                                                        );
+                                                    }}
+                                                    className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-[11px] font-medium text-blue-700 ring-1 ring-blue-200 hover:bg-blue-100"
+                                                >
+                                                    <FileText className="h-3 w-3" />
+                                                    View Report
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
                             ))}
-                            {completedOrders.length > 5 && (
+                            {completedOrders.length > 8 && (
                                 <p className="text-center text-xs text-gray-400">
-                                    +{completedOrders.length - 5} more results
+                                    +{completedOrders.length - 8} more results
                                 </p>
                             )}
                         </div>
@@ -1032,6 +1289,16 @@ const PreviousResultsTable = ({ orders }: { orders: LabOrder[] }) => {
                     )}
                 </div>
             </div>
+
+            <ResultFileViewer
+                open={!!viewerUrl}
+                onClose={() => {
+                    setViewerUrl(null);
+                    setViewerTitle(null);
+                }}
+                url={viewerUrl}
+                title={viewerTitle}
+            />
         </div>
     );
 };
@@ -1867,7 +2134,7 @@ const OrderModal = ({
                                                     {service.service_name}
                                                 </div>
                                                 <div className="mt-0.5 flex items-center gap-2">
-                                                    <span className="text-xs font-semibold">
+                                                    <span className="hidden text-xs font-semibold">
                                                         {formatCurrency(price)}
                                                     </span>
                                                     <span className="text-xs text-slate-500">
@@ -1903,7 +2170,7 @@ const OrderModal = ({
                             <div className="mb-3 flex items-center justify-between">
                                 <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-700">
                                     <ShoppingCart className="h-4 w-4 text-blue-600" />
-                                    Cart
+                                    Tests Ordered
                                     <span className="ml-1 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
                                         {cart.length}
                                     </span>
@@ -1934,7 +2201,7 @@ const OrderModal = ({
                                     return (
                                         <div
                                             key={item.cart_id}
-                                            className={`rounded-lg border ${colorClass} bg-white px-3 py-2.5`}
+                                            className={`rounded-lg border ${colorClass} bg-slate-100 px-3 py-2.5`}
                                         >
                                             <div className="flex items-start justify-between">
                                                 <div className="min-w-0 flex-1">
@@ -1942,7 +2209,7 @@ const OrderModal = ({
                                                         {item.service_name}
                                                     </div>
                                                     <div className="mt-0.5 flex items-center gap-2 text-xs text-slate-500">
-                                                        <span className="font-semibold">
+                                                        <span className="hidden font-semibold">
                                                             {formatCurrency(
                                                                 itemPrice,
                                                             )}
@@ -1994,7 +2261,7 @@ const OrderModal = ({
                                                         +
                                                     </button>
                                                 </div>
-                                                <div className="text-sm font-semibold text-blue-600">
+                                                <div className="hidden text-sm font-semibold text-blue-600">
                                                     {formatCurrency(total)}
                                                 </div>
                                             </div>
@@ -2005,7 +2272,7 @@ const OrderModal = ({
                                     <div className="py-10 text-center">
                                         <ShoppingCart className="mx-auto h-9 w-9 text-slate-300" />
                                         <p className="mt-2 text-sm text-slate-400">
-                                            Cart is empty
+                                            No tests selected
                                         </p>
                                     </div>
                                 )}
@@ -2016,10 +2283,10 @@ const OrderModal = ({
                     {/* Footer - below both columns, spans full width */}
                     <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50/50 px-5 py-3.5">
                         <div className="flex items-center gap-2 text-sm">
-                            <span className="font-medium text-slate-600">
+                            <span className="hidden font-medium text-slate-600">
                                 Total:
                             </span>
-                            <span className="text-xl font-bold text-blue-600">
+                            <span className="hidden text-xl font-bold text-blue-600">
                                 {formatCurrency(totalAmount)}
                             </span>
                             <span className="ml-2 rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-700">
@@ -2049,7 +2316,7 @@ const OrderModal = ({
                                         Processing...
                                     </span>
                                 ) : (
-                                    `Place Order (${formatCurrency(totalAmount)})`
+                                    `Place Order`
                                 )}
                             </button>
                         </div>
@@ -2080,11 +2347,29 @@ export default function Laboratory() {
     const enhancedOrders: LabOrder[] = useMemo(() => {
         const raw = previousOrders || [];
 
+        // Normalize any path from lab_result_files into a public URL
+        const toPublicUrl = (raw: string | null | undefined): string | null => {
+            if (!raw) return null;
+            if (
+                raw.startsWith('http://') ||
+                raw.startsWith('https://') ||
+                raw.startsWith('/storage/')
+            ) {
+                return raw;
+            }
+            return `/storage/${raw.replace(/^\/+/, '')}`;
+        };
+
         // Case 1: Backend already returns nested structure (preferred)
         if (raw.length > 0 && Array.isArray((raw[0] as any).item)) {
             return (raw as LabOrder[]).map((order) => ({
                 ...order,
-                item: order.item || [],
+                item: (order.item || []).map((item) => ({
+                    ...item,
+                    result_file: toPublicUrl(
+                        item.result_file || (item as any).path || null,
+                    ),
+                })),
             }));
         }
 
@@ -2127,7 +2412,7 @@ export default function Laboratory() {
                 reference_range:
                     it.ref_low != null && it.ref_high != null
                         ? `${it.ref_low} - ${it.ref_high}`
-                        : null,
+                        : (it.reference_range ?? null),
                 unit: it.unit ?? null,
                 notes: it.notes ?? null,
                 performed_by: it.uploaded_by ?? it.performed_by ?? null,
@@ -2141,6 +2426,35 @@ export default function Laboratory() {
                 patient_id: it.patient_id,
                 lab_order_id: it.lab_order_id,
                 created_by: it.ordered_by ?? it.created_by ?? null,
+                // PDF / image report from lab_result_files
+                // DB path example: lab-results/eb127887-10c5-434d-9d36-0cbf183fc6ef.pdf
+                // Public URL:      /storage/lab-results/eb127887-10c5-434d-9d36-0cbf183fc6ef.pdf
+                result_file: (() => {
+                    const raw =
+                        typeof it.result_file === 'string'
+                            ? it.result_file
+                            : it.result_file?.path ||
+                              it.path ||
+                              it.result_file_url ||
+                              null;
+                    if (!raw) return null;
+                    // Already absolute or /storage/...
+                    if (
+                        raw.startsWith('http://') ||
+                        raw.startsWith('https://') ||
+                        raw.startsWith('/storage/')
+                    ) {
+                        return raw;
+                    }
+                    // Relative disk path → public URL
+                    const cleaned = raw.replace(/^\/+/, '');
+                    return `/storage/${cleaned}`;
+                })(),
+                result_file_name:
+                    it.result_file_name ??
+                    it.original_name ??
+                    it.result_file?.original_name ??
+                    null,
             });
         }
 
@@ -2334,7 +2648,8 @@ export default function Laboratory() {
                                                     (it) =>
                                                         it.status ===
                                                             'completed' &&
-                                                        it.result_value,
+                                                        (it.result_value ||
+                                                            it.result_file),
                                                 ),
                                             ).length
                                         }

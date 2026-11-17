@@ -6,7 +6,8 @@ use App\Models\Patients\Patient;
 
 class PatientRepository
 {
-    public  function search(array $searchDetails){
+    public  function search(array $searchDetails)
+    {
 
         $searchType  =  $searchDetails['search_type'];
         $searchValue =  $searchDetails['search_value'];
@@ -31,17 +32,27 @@ class PatientRepository
         }
 
         return $search;
-
     }
+    public function searchByNames(string $searchValue)
+    {
+        $names = array_filter(
+            preg_split('/\s+/', trim($searchValue))
+        );
 
-    public function searchByNames(array $searchValue){
-        $patients = Patient::query()
-            ->where(function ($query) use ($searchValue) {
-                $query->where('first_name', 'LIKE', "%{$searchValue}%")
-                ->orWhere('last_name', 'LIKE', "%{$searchValue}%");
+        if (empty($names)) {
+            return collect();
+        }
+
+        return Patient::query()
+            ->where(function ($query) use ($names) {
+                foreach ($names as $name) {
+                    $query->where(function ($subQuery) use ($name) {
+                        $subQuery->where('first_name', 'LIKE', "%{$name}%")
+                            ->orWhere('last_name', 'LIKE', "%{$name}%");
+                    });
+                }
             })
             ->get($this->allowedFields());
-        return $patients;
     }
     public function searchByPatientIdentity(string $searchValue)
     {
@@ -59,7 +70,7 @@ class PatientRepository
     {
         return Patient::findOrFail($id);
     }
-       public function update(int $id, array $data): bool
+    public function update(int $id, array $data): bool
     {
         $patient = Patient::ind($id);
         if ($patient) {
@@ -125,7 +136,8 @@ class PatientRepository
         return $patients;
     }
 
-    protected function allowedFields(){
+    protected function allowedFields()
+    {
         return [
             'patient_number',
             'first_name',
@@ -135,7 +147,9 @@ class PatientRepository
             'id',
             'profile_photo',
             'status',
-            'created_at'
+            'created_at',
+            'patient_uuid'
+
         ];
     }
 

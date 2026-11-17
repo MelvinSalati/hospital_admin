@@ -14,7 +14,6 @@ import {
     Download,
     FileText,
     LayoutGrid,
-    LogOut,
     PackageCheck,
     PackageMinus,
     Pill,
@@ -42,7 +41,6 @@ import { Badge } from '@/components/ui/badge';
 import {
     Sidebar,
     SidebarContent,
-    SidebarFooter,
     SidebarHeader,
     SidebarMenu,
     SidebarMenuButton,
@@ -50,6 +48,8 @@ import {
 } from '@/components/ui/sidebar';
 
 import routes from '@/constants/routes';
+import { useEncounterCount } from '@/hooks/use-encounter-count';
+import http from '@/utils/http';
 import type { NavItem } from '@/types';
 
 /* -------------------------------------------------------------------------- */
@@ -90,6 +90,12 @@ interface AuthUser {
 /** NavItem plus optional sub-links (used by the admin menu). */
 type NavEntry = NavItem & {
     children?: { title: string; href: string }[];
+    /**
+     * Shows the live encounter-count badge on this link.
+     * The badge follows this flag, not the title, so the link can be renamed freely.
+     * The count comes from /api/departments/{departmentId}/encounters/count.
+     */
+    badge?: 'encounters';
 };
 
 /* -------------------------------------------------------------------------- */
@@ -129,6 +135,7 @@ const roleNavItems: Record<string, NavEntry[]> = {
             title: 'Consultations',
             href: '/consultation/queue',
             icon: Stethoscope,
+            badge: 'encounters',
         },
         {
             title: 'Appointments',
@@ -210,24 +217,9 @@ const roleNavItems: Record<string, NavEntry[]> = {
             icon: LayoutGrid,
         },
         {
-            title: 'Search',
+            title: 'Search Registry',
             href: '/nurses/registry',
             icon: Search,
-        },
-        {
-            title: 'Appointments',
-            href: '/nurses/appointments',
-            icon: CalendarDays,
-        },
-        {
-            title: 'Queue & Check-in',
-            href: '/nurses/queue',
-            icon: ClipboardCheck,
-        },
-        {
-            title: 'In Patient',
-            href: '/nurses/in-patient',
-            icon: Stethoscope,
         },
         {
             title: 'Treatment Room',
@@ -235,15 +227,28 @@ const roleNavItems: Record<string, NavEntry[]> = {
             icon: PillBottle,
         },
         {
+            title: 'Appointments',
+            href: '/nurses/appointments',
+            icon: CalendarDays,
+        },
+        {
+            title: 'Encounters',
+            href: '/nurses/queue',
+            icon: ClipboardCheck,
+            badge: 'encounters',
+        },
+        {
+            title: 'In Patient',
+            href: '/nurses/in-patient',
+            icon: Stethoscope,
+        },
+
+        {
             title: 'Bulk Store',
             href: '/nurses/bulk-store',
             icon: Boxes,
         },
-        {
-            title: 'Users',
-            href: '/nurses/user-department',
-            icon: UserPlus,
-        },
+
         {
             title: 'Reports',
             href: '/nurses/reports',
@@ -263,14 +268,9 @@ const roleNavItems: Record<string, NavEntry[]> = {
             icon: LayoutGrid,
         },
         {
-            title: 'Search',
+            title: 'Search Registry',
             href: '/reception/registry',
             icon: Search,
-        },
-        {
-            title: 'Add Patient',
-            href: '/reception/create',
-            icon: UserPlus,
         },
         {
             title: 'Appointments',
@@ -278,10 +278,17 @@ const roleNavItems: Record<string, NavEntry[]> = {
             icon: CalendarDays,
         },
         {
-            title: 'Visits',
+            title: 'Add Patient',
+            href: '/reception/create',
+            icon: UserPlus,
+        },
+        {
+            title: 'Encounters',
             href: '/reception/visits',
             icon: Stethoscope,
+            badge: 'encounters',
         },
+
         {
             title: 'Add User',
             href: '/user/create',
@@ -309,6 +316,7 @@ const roleNavItems: Record<string, NavEntry[]> = {
             title: 'Prescriptions',
             href: '/pharmacy/prescriptions',
             icon: Pill,
+            badge: 'encounters',
         },
         {
             title: 'Bulk Store',
@@ -352,6 +360,7 @@ const roleNavItems: Record<string, NavEntry[]> = {
             title: 'Queue',
             href: '/maternal-child-health/queue',
             icon: Users,
+            badge: 'encounters',
         },
         {
             title: 'Attended',
@@ -390,6 +399,7 @@ const roleNavItems: Record<string, NavEntry[]> = {
             title: 'Theatre Queue',
             href: '/theatre/queue',
             icon: Users,
+            badge: 'encounters',
         },
         {
             title: 'Manage Billables',
@@ -428,6 +438,7 @@ const roleNavItems: Record<string, NavEntry[]> = {
             title: 'Manage Queue',
             href: '/dental/queue',
             icon: Users,
+            badge: 'encounters',
         },
         {
             title: 'Manage Billables',
@@ -467,6 +478,7 @@ const roleNavItems: Record<string, NavEntry[]> = {
             title: 'Manage Queue',
             href: '/opthalmology/queue',
             icon: Users,
+            badge: 'encounters',
         },
         {
             title: 'Bulk Store',
@@ -580,9 +592,10 @@ const roleNavItems: Record<string, NavEntry[]> = {
             icon: LayoutGrid,
         },
         {
-            title: 'Queues',
-            href: '/laboratory',
+            title: 'Encounters',
+            href: '/laboratory/queue',
             icon: Users,
+            badge: 'encounters',
         },
         {
             title: 'Processed',
@@ -613,20 +626,23 @@ const roleNavItems: Record<string, NavEntry[]> = {
             icon: LayoutGrid,
         },
         {
-            title: 'Queues',
+            // Rename this freely: the badge follows `badge`, not the title.
+            title: 'Encounters',
             href: '/radiology/queue',
             icon: Users,
+            badge: 'encounters',
         },
-        {
-            title: 'Images Seen',
-            href: '/radiology/processed',
-            icon: ArrowRightCircle,
-        },
+
         {
             title: 'Bulk Store Orders',
             href: '/radiology/bulk-orders',
             icon: ShoppingBag,
         },
+        // {
+        //     title: 'Manage Billables',
+        //     href: '/billables/department',
+        //     icon: TagIcon,
+        // },
         {
             title: 'Reports',
             href: '/radiology/reports',
@@ -734,6 +750,8 @@ const DEPARTMENT_HREF_RULES: Record<string, DepartmentHrefRule[]> = {
 
     lab_technician: [
         departmentRule('Dashboard', '/laboratory/dashboard'),
+        departmentRule('Encounters', '/laboratory/queue'),
+        departmentRule('Processed', '/laboratory/processed'), // add if needed
         departmentRule('Bulk Store Orders', '/laboratory/bulk-orders'),
         departmentRule('Reports', '/laboratory/reports'),
     ],
@@ -747,8 +765,9 @@ const DEPARTMENT_HREF_RULES: Record<string, DepartmentHrefRule[]> = {
 
     radiologist: [
         departmentRule('Dashboard', '/radiology/dashboard'),
-        departmentRule('Queues', '/radiology/queue'),
+        departmentRule('Encounters', '/radiology/queue'),
         departmentRule('Bulk Store Orders', '/radiology/bulk-orders'),
+        departmentRule('Manage Billables', '/billables/department'),
         departmentRule('Reports', '/radiology/reports'),
     ],
 
@@ -794,9 +813,9 @@ const DEPARTMENT_HREF_RULES: Record<string, DepartmentHrefRule[]> = {
 
     nurse: [
         departmentRule('Dashboard', '/nurses/dashboard'),
-        departmentRule('Search', '/nurses/registry'),
+        departmentRule('Search Registry', '/nurses/registry'),
         departmentRule('Appointments', '/nurses/appointments'),
-        departmentRule('Queue & Check-in', '/nurses/queue'),
+        departmentRule('Encounters', '/nurses/queue'),
         departmentRule('In Patient', '/nurses/in-patient'),
         departmentRule('Treatment Room', '/nurses/treatment-room'),
         departmentRule('Bulk Store', '/nurses/bulk-store'),
@@ -806,11 +825,11 @@ const DEPARTMENT_HREF_RULES: Record<string, DepartmentHrefRule[]> = {
 
     receptionist: [
         departmentRule('Dashboard', '/reception/dashboard'),
-        departmentRule('Search', '/reception/registry'),
+        departmentRule('Search Registry', '/reception/registry'),
         departmentRule('Add Patient', '/reception/create'),
         departmentRule('Appointments', '/reception/appointments'),
         departmentRule('View Queues', '/reception/queues'),
-        departmentRule('Visits', '/reception/visits'),
+        departmentRule('Encounters', '/reception/visits'),
         departmentRule('Reports', '/reception/reports'),
     ],
 };
@@ -830,14 +849,27 @@ const ORDER_BADGE_CONFIG: Record<string, OrderBadgeConfig> = {
         },
     },
 
-    lab_technician: {
-        countKey: 'labOrders',
-        href: '/laboratory/orders',
-        titleMapping: {
-            Orders: 'labOrders',
-            'Bulk Store Orders': 'labOrders',
+    lab_technician: [
+        { title: 'Dashboard', href: '/laboratory/dashboard', icon: LayoutGrid },
+        {
+            title: 'Encounters', // was 'Emcounters'
+            href: '/laboratory/queue',
+            icon: Users,
+            badge: 'encounters',
         },
-    },
+        {
+            title: 'Processed',
+            href: '/laboratory/processed',
+            icon: ArrowRightCircle,
+        },
+        {
+            title: 'Bulk Store Orders',
+            href: '/laboratory/bulk-orders',
+            icon: ShoppingBag,
+        },
+        { title: 'Reports', href: '/laboratory/reports', icon: BarChart3 },
+        { title: 'Account', href: ACCOUNT_HREF, icon: UserSquare },
+    ],
 
     pharmacist: {
         countKey: 'pharmacyOrders',
@@ -936,6 +968,7 @@ function patchDepartmentHrefs(
             return item;
         }
 
+        // `...item` keeps flags such as `badge` intact.
         return {
             ...item,
             href: rule.build(item, departmentId),
@@ -979,18 +1012,40 @@ function getRoleDashboard(
 }
 
 /* -------------------------------------------------------------------------- */
+/* ENCOUNTER BADGE                                                            */
+/* -------------------------------------------------------------------------- */
+
+/** Vibrant gradient pill with a soft ping ring, used for live encounter counts. */
+function EncounterBadge({ count }: { count: number }) {
+    return (
+        <span
+            className="relative ml-auto flex group-data-[collapsible=icon]:hidden"
+            aria-label={`${count} active encounters`}
+        >
+            <span className="absolute inset-0 animate-ping rounded-full bg-fuchsia-400 opacity-60 motion-reduce:animate-none" />
+
+            <Badge className="relative h-5 min-w-[22px] justify-center rounded-full border-0 bg-red-600 px-1.5 text-xs font-bold text-white shadow-md shadow-rose-500/40 hover:from-fuchsia-600 hover:via-rose-600 hover:to-orange-600">
+                {count > 99 ? '99+' : count}
+            </Badge>
+        </span>
+    );
+}
+
+/* -------------------------------------------------------------------------- */
 /* NAVIGATION LINK                                                            */
 /* -------------------------------------------------------------------------- */
 
 interface NavLinkProps {
     item: NavEntry;
     orderCount?: number | null;
+    encounterCount?: number | null;
     variant?: 'default' | 'settings';
 }
 
 function NavLink({
     item,
     orderCount = null,
+    encounterCount = null,
     variant = 'default',
 }: NavLinkProps) {
     const { url } = usePage();
@@ -1003,6 +1058,10 @@ function NavLink({
     const hasActiveChild =
         item.children?.some((child) => path.startsWith(child.href)) ?? false;
     const expanded = isActive || hasActiveChild;
+
+    const showEncounterBadge = encounterCount !== null && encounterCount > 0;
+    const showOrderBadge =
+        !showEncounterBadge && orderCount !== null && orderCount > 0;
 
     return (
         <div>
@@ -1024,7 +1083,11 @@ function NavLink({
                     </span>
                 </div>
 
-                {orderCount !== null && orderCount > 0 && (
+                {showEncounterBadge && (
+                    <EncounterBadge count={encounterCount} />
+                )}
+
+                {showOrderBadge && (
                     <Badge
                         variant="destructive"
                         className="ml-auto h-5 min-w-[20px] rounded-full bg-red-500 px-1.5 text-xs font-medium text-white group-data-[collapsible=icon]:hidden hover:bg-red-600"
@@ -1077,6 +1140,37 @@ export default function AppSidebar() {
     });
 
     /* ---------------------------------------------------------------------- */
+    /* DERIVED NAVIGATION                                                     */
+    /* (built first: the encounter badge depends on the `badge` flags)        */
+    /* ---------------------------------------------------------------------- */
+
+    const navItems = useMemo(() => {
+        const items = roleNavItems[userRole] ?? [];
+
+        return patchDepartmentHrefs(userRole, items, departmentId);
+    }, [userRole, departmentId]);
+
+    const { main, settings } = useMemo(() => {
+        return {
+            main: navItems.filter((item) => !isSettingsItem(item)),
+            settings: navItems.filter(isSettingsItem),
+        };
+    }, [navItems]);
+
+    /* ---------------------------------------------------------------------- */
+    /* ENCOUNTER COUNT (per department)                                       */
+    /* ---------------------------------------------------------------------- */
+
+    // Only poll the count when this role has a link flagged with `badge`.
+    const encounterBadgeEnabled = navItems.some(
+        (item) => item.badge === 'encounters',
+    );
+    const encounterCount = useEncounterCount(
+        encounterBadgeEnabled,
+        departmentId,
+    );
+
+    /* ---------------------------------------------------------------------- */
     /* FETCH ORDER COUNTS                                                     */
     /* ---------------------------------------------------------------------- */
 
@@ -1089,31 +1183,13 @@ export default function AppSidebar() {
             return;
         }
 
-        let cancelled = false;
+        const controller = new AbortController();
 
         const fetchOrderCounts = async () => {
             try {
-                const response = await fetch('/api/order-counts', {
-                    headers: {
-                        Accept: 'application/json',
-                        'X-CSRF-TOKEN':
-                            document
-                                .querySelector<HTMLMetaElement>(
-                                    'meta[name="csrf-token"]',
-                                )
-                                ?.getAttribute('content') ?? '',
-                    },
+                const { data } = await http.get('/api/order-counts', {
+                    signal: controller.signal,
                 });
-
-                if (!response.ok) {
-                    return;
-                }
-
-                const data = await response.json();
-
-                if (cancelled) {
-                    return;
-                }
 
                 setOrderCounts({
                     bulkOrders: Number(data.bulkOrders) || 0,
@@ -1122,14 +1198,16 @@ export default function AppSidebar() {
                     allOrders: Number(data.allOrders) || 0,
                 });
             } catch (error) {
-                console.error('Unable to fetch order counts:', error);
+                if (!controller.signal.aborted) {
+                    console.error('Unable to fetch order counts:', error);
+                }
             }
         };
 
         fetchOrderCounts();
 
         return () => {
-            cancelled = true;
+            controller.abort();
         };
     }, [rolesKey]);
 
@@ -1152,23 +1230,6 @@ export default function AppSidebar() {
             });
         }
     }, [userRole, departmentId]);
-
-    /* ---------------------------------------------------------------------- */
-    /* DERIVED NAVIGATION                                                     */
-    /* ---------------------------------------------------------------------- */
-
-    const navItems = useMemo(() => {
-        const items = roleNavItems[userRole] ?? [];
-
-        return patchDepartmentHrefs(userRole, items, departmentId);
-    }, [userRole, departmentId]);
-
-    const { main, settings } = useMemo(() => {
-        return {
-            main: navItems.filter((item) => !isSettingsItem(item)),
-            settings: navItems.filter(isSettingsItem),
-        };
-    }, [navItems]);
 
     /* ---------------------------------------------------------------------- */
     /* ORDER BADGES                                                           */
@@ -1222,6 +1283,11 @@ export default function AppSidebar() {
                                     orderCount={getOrderCountForItem(
                                         item.title,
                                     )}
+                                    encounterCount={
+                                        item.badge === 'encounters'
+                                            ? encounterCount
+                                            : null
+                                    }
                                 />
                             ))}
                         </div>
@@ -1244,35 +1310,6 @@ export default function AppSidebar() {
                     )}
                 </div>
             </SidebarContent>
-
-            <SidebarFooter className="border-t border-gray-200 pt-2 dark:border-gray-700">
-                <div className="flex items-center gap-3 px-3 py-2">
-                    <div className="flex-1 group-data-[collapsible=icon]:hidden">
-                        <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                            {authUser?.name ?? 'Guest'}
-                        </p>
-
-                        <p className="text-[10px] text-gray-400 capitalize dark:text-gray-500">
-                            {userRole.replaceAll('_', ' ')}
-                        </p>
-
-                        {departmentId !== null && (
-                            <p className="text-[10px] text-gray-400">
-                                Department ID: {departmentId}
-                            </p>
-                        )}
-                    </div>
-
-                    <button
-                        type="button"
-                        onClick={() => router.post('/logout')}
-                        className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
-                        title="Logout"
-                    >
-                        <LogOut className="h-4 w-4" />
-                    </button>
-                </div>
-            </SidebarFooter>
         </Sidebar>
     );
 }

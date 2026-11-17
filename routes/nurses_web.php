@@ -25,4 +25,4 @@ Route::prefix('nurses')->group(function () {
     Route::get('/in-patient/{departmentId}', [NursesController::class, 'inPatients']);
     Route::get('/treatment-room/{departmentId}', [NursesController::class, 'treatmentRoom']);
     Route::get('/user-department/{departmentId}', [NursesController::class, 'userDepartment']);
-})->middleware(['auth', 'verified']);
+})->middleware(['auth', 'verified', 'department']);

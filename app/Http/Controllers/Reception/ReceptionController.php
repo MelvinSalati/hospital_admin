@@ -64,32 +64,48 @@ class ReceptionController extends Controller
             'queue' => [],
         ]);
     }
-
-    public function visits()
+    public function visits(int $departmentId)
     {
-        $active = PatientVisit::with('patient')
-            ->whereDate('created_at', \Carbon\Carbon::today())
+        $queue = PatientVisit::with([
+            'patient',
+            'assignedStaff',
+            'assignedDepartment',   // eager load, avoids an N+1 query per row
+            'visitToken',
+        ])
+            ->where('department_id', $departmentId)
+            ->whereIn('status', [0, 1])   // 1 = In Progress, 0 = Completed
+            ->orderBy('created_at', 'asc')
             ->get()
-            ->groupBy('patient_id')
-            ->map(function ($visits) {
-                $first = $visits->first();
+            ->map(function ($visit) {
                 return [
-                    'patient_id'     => $first->patient_id,
-                    'patient'        => $first->patient,
-                    'visits'         => $visits->values(),
-                    'visit_count'    => $visits->count(),
-                    'latest_visit'   => $visits->sortByDesc('created_at')->first(),
-                    'first_seen_at'  => $visits->min('created_at'),
-                    'last_seen_at'   => $visits->max('created_at'),
-                    'total_billed'   => $visits->sum('amount_billed'),   // adjust to your column
-                    'total_paid'     => $visits->sum('amount_paid'),
-                    'created_at'    =>  \Carbon\Carbon::today()->format('d-m-Y'),    // adjust to your column
+                    'id'                      => $visit->id,
+                    'token'                   => $visit->visitToken?->token
+                        ?? 'T-' . str_pad($visit->id, 4, '0', STR_PAD_LEFT),
+                    'visit_token_id'          => $visit->visitToken?->id,
+                    'patient_id'              => $visit->patient_id,
+                    'patient_number'          => $visit->patient?->patient_number,
+                    'patient_name'            => $visit->patient
+                        ? trim($visit->patient->first_name . ' ' . $visit->patient->last_name)
+                        : 'Unknown',
+                    'contact'                 => $visit->patient?->phone ?? 'N/A',
+                    'gender'                  => $visit->patient?->gender ?? 'N/A',
+                    'payment_method'          => $visit->payment_method,
+                    'original_payment_method' => $visit->visitToken?->original_payment_method
+                        ?? $visit->original_payment_method,
+
+                    // The frontend splits the tabs on this: 1 = In Progress, 0 = Completed
+                    'status'                  => (int) $visit->status,
+
+                    'registered_at'           => ($visit->started_at ?? $visit->created_at)?->format('Y-m-d H:i:s'),
+                    'assigned_department'     => $visit->assignedDepartment?->department_name ?? 'Not assigned',
+                    'assigned_staff'          => $visit->assignedStaff?->name ?? 'Not assigned',
+                    'priority'                => $visit->priority ?? 'routine',
+                    'department_id'           => $visit->department_id,
                 ];
-            })
-            ->values(); // reset keys so JSON is an array, not an object
+            });
 
         return Inertia::render('receptions/visits', [
-            'active' => $active,
+            'queue' => $queue,
         ]);
     }
     public function queues()

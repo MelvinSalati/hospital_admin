@@ -13,9 +13,12 @@ import {
     FileText,
     FilePlus2,
     FileUp,
+    Building2,
+    LayoutDashboard,
 } from 'lucide-react';
 import Notiflix from 'notiflix';
 import { useState, useMemo, useEffect, useRef } from 'react';
+import type { FC } from 'react';
 import PageHeader from '@/components/PageHeader';
 import type { Column, Action } from '@/components/ReusableTable';
 import ReusableTable from '@/components/ReusableTable';
@@ -54,12 +57,119 @@ interface QueuePatient {
     patient_number?: string;
     ordered_by?: string;
     total_amount: number;
+    photo_url?: string | null;
+    /** true once results are uploaded and parsed (sent by LaboratoryController@index) */
+    processed?: boolean;
     tests: LabTest[];
 }
 
 interface Props {
     queue: QueuePatient[];
 }
+
+type QueueTab = 'in_queue' | 'completed';
+
+/**
+ * Completed tab: orders that are processed (backend `processed` flag).
+ * Falls back to status when the flag is missing. Everything else is In Progress.
+ */
+const isProcessed = (row: QueuePatient): boolean =>
+    row.processed ??
+    ['completed', 'cancelled'].includes((row.status || '').toLowerCase());
+
+const createdAt = (row: QueuePatient): number => {
+    const t = new Date((row.created_at || '').replace(' ', 'T')).getTime();
+    return Number.isNaN(t) ? 0 : t;
+};
+
+// ============ ILLUSTRATED AVATARS (DiceBear) ============
+const AVATAR_BASE_URL = 'https://api.dicebear.com/9.x/avataaars/svg';
+
+const AVATAR_STYLE = {
+    skinColor: '614335,ae5d29',
+    hairColor: '2c1b18,4a312c',
+    backgroundColor: 'dbeafe,e0e7ff',
+    maleTops:
+        'shortCurly,shortFlat,shortRound,frizzle,theCaesar,dreads01,dreads02,sides',
+    femaleTops: 'bob,bun,curly,curvy,dreads,fro,froBand,bigHair',
+    neutralTops: 'shortCurly,shortFlat,bob,curly,fro,frizzle',
+};
+
+const getAvatarUrl = (
+    patientId: number,
+    gender: string | null | undefined,
+    pixels: number,
+): string => {
+    const g = (gender || '').toLowerCase();
+    const isMale = g === 'male';
+    const isFemale = g === 'female';
+
+    const params = new URLSearchParams({
+        seed: `patient-${patientId}`,
+        size: String(pixels),
+        skinColor: AVATAR_STYLE.skinColor,
+        hairColor: AVATAR_STYLE.hairColor,
+        backgroundColor: AVATAR_STYLE.backgroundColor,
+        top: isMale
+            ? AVATAR_STYLE.maleTops
+            : isFemale
+              ? AVATAR_STYLE.femaleTops
+              : AVATAR_STYLE.neutralTops,
+        facialHairProbability: isMale ? '25' : '0',
+        facialHairColor: '2c1b18',
+        accessoriesProbability: '0',
+    });
+
+    return `${AVATAR_BASE_URL}?${params.toString()}`;
+};
+
+const PatientAvatar: FC<{
+    name: string;
+    patientId?: number;
+    gender?: string | null;
+    photoUrl?: string | null;
+    size?: 'sm' | 'lg';
+}> = ({ name, patientId, gender, photoUrl, size = 'sm' }) => {
+    const [failed, setFailed] = useState(false);
+
+    const dimension = size === 'lg' ? 'h-12 w-12 text-sm' : 'h-9 w-9 text-xs';
+    const pixels = size === 'lg' ? 96 : 72;
+
+    const src =
+        photoUrl ||
+        (patientId !== undefined
+            ? getAvatarUrl(patientId, gender, pixels)
+            : null);
+
+    const initials = (name || '')
+        .split(' ')
+        .filter(Boolean)
+        .map((n) => n[0])
+        .join('')
+        .toUpperCase()
+        .slice(0, 2);
+
+    if (!src || failed) {
+        return (
+            <div
+                className={`flex ${dimension} shrink-0 items-center justify-center rounded-full bg-blue-100 font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300`}
+            >
+                {initials || '?'}
+            </div>
+        );
+    }
+
+    return (
+        <img
+            src={src}
+            alt={name}
+            loading="lazy"
+            referrerPolicy="no-referrer"
+            onError={() => setFailed(true)}
+            className={`${dimension} shrink-0 rounded-full bg-blue-100 object-cover dark:bg-blue-900/40`}
+        />
+    );
+};
 
 // ============ HELPERS ============
 const formatMoney = (n: number | string) =>
@@ -68,36 +178,75 @@ const formatMoney = (n: number | string) =>
         maximumFractionDigits: 2,
     })}`;
 
+/** "M/34" → "male", "F/8" → "female", anything else → null. */
+const genderFromSexAge = (value: string | null | undefined): string | null => {
+    const first = (value || '').trim().charAt(0).toUpperCase();
+
+    if (first === 'M') return 'male';
+    if (first === 'F') return 'female';
+
+    return null;
+};
+
+const capitalize = (value: string): string =>
+    value ? value.charAt(0).toUpperCase() + value.slice(1).toLowerCase() : '';
+
 const getStatusConfig = (status: string) => {
     const map: Record<string, { label: string; badge: string; dot: string }> = {
         active: {
             label: 'In Queue',
-            badge: 'bg-blue-50 text-blue-700 border-blue-200',
+            badge: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
             dot: 'bg-blue-500',
         },
         pending: {
             label: 'Pending',
-            badge: 'bg-amber-50 text-amber-700 border-amber-200',
+            badge: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
             dot: 'bg-amber-500',
         },
         accepted: {
             label: 'Accepted — Awaiting Payment',
-            badge: 'bg-purple-50 text-purple-700 border-purple-200',
+            badge: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
             dot: 'bg-purple-500',
         },
         completed: {
             label: 'Completed',
-            badge: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+            badge: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
             dot: 'bg-emerald-500',
         },
         cancelled: {
             label: 'Cancelled',
-            badge: 'bg-slate-100 text-slate-600 border-slate-200',
-            dot: 'bg-slate-400',
+            badge: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
+            dot: 'bg-slate-500',
         },
     };
     return map[status] ?? map.pending;
 };
+
+const StatusBadge: FC<{ status: string }> = ({ status }) => {
+    const cfg = getStatusConfig(status);
+
+    return (
+        <span
+            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${cfg.badge}`}
+        >
+            <span className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`} />
+            {cfg.label}
+        </span>
+    );
+};
+
+const TestStatusBadge: FC<{ status: string }> = ({ status }) => (
+    <span
+        className={cn(
+            'shrink-0 rounded px-2 py-0.5 text-[10px] font-medium capitalize',
+            status === 'completed'
+                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+        )}
+    >
+        {status}
+    </span>
+);
 
 // ============ APPROVAL CODE PROMPT ============
 function AdminCodePrompt({
@@ -136,12 +285,12 @@ function AdminCodePrompt({
 
     return (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4">
-            <div className="w-full max-w-sm rounded-xl bg-white shadow-2xl">
-                <div className="flex items-start justify-between border-b border-slate-200 p-4">
+            <div className="w-full max-w-sm rounded-xl bg-white shadow-2xl dark:bg-slate-800">
+                <div className="flex items-start justify-between border-b border-slate-200 p-4 dark:border-slate-700">
                     <div className="flex items-center gap-2">
                         <KeyRound size={16} className="text-red-600" />
                         <div>
-                            <h3 className="text-sm font-semibold text-slate-900">
+                            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                                 Approval Code Required
                             </h3>
                             <p className="text-[11px] text-slate-500">
@@ -151,7 +300,7 @@ function AdminCodePrompt({
                     </div>
                     <button
                         onClick={handleCancel}
-                        className="rounded p-1 text-slate-400 hover:bg-slate-100"
+                        className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
                     >
                         <X size={16} />
                     </button>
@@ -168,10 +317,10 @@ function AdminCodePrompt({
                         placeholder="Approval code"
                         autoFocus
                         className={cn(
-                            'w-full rounded-md border px-3 py-2 font-mono text-sm tracking-widest focus:ring-2 focus:outline-none',
+                            'w-full rounded-md border px-3 py-2 font-mono text-sm tracking-widest focus:ring-2 focus:outline-none dark:bg-slate-900 dark:text-slate-100',
                             error
                                 ? 'border-red-400 focus:ring-red-100'
-                                : 'border-slate-200 focus:border-blue-400 focus:ring-blue-100',
+                                : 'border-slate-200 focus:border-blue-400 focus:ring-blue-100 dark:border-slate-700',
                         )}
                     />
                     {error && (
@@ -181,7 +330,7 @@ function AdminCodePrompt({
                         <button
                             onClick={handleCancel}
                             disabled={busy}
-                            className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                            className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-700"
                         >
                             Cancel
                         </button>
@@ -331,29 +480,34 @@ function UploadResultModal({
     if (!open || !order) return null;
 
     const allSelected = tests.length > 0 && selected.length === tests.length;
+    const fullName = `${order.first_name} ${order.last_name}`;
 
     return (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm">
-            <div className="flex h-[65vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
+            <div className="flex h-[65vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl dark:bg-slate-800">
                 {/* Header */}
-                <div className="flex items-start justify-between border-b border-slate-200 px-6 py-4">
+                <div className="flex items-start justify-between border-b border-slate-200 px-6 py-4 dark:border-slate-700">
                     <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-600 text-white">
-                            <FileUp size={20} />
-                        </div>
+                        <PatientAvatar
+                            name={fullName}
+                            patientId={order.id}
+                            gender={genderFromSexAge(order.gender)}
+                            photoUrl={order.photo_url}
+                            size="lg"
+                        />
                         <div>
-                            <h3 className="text-base font-semibold text-slate-900">
+                            <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
                                 Upload Results
                             </h3>
                             <p className="text-sm text-slate-500">
-                                {order.first_name} {order.last_name} ·{' '}
+                                {fullName} ·{' '}
                                 <span className="font-mono">{order.token}</span>
                             </p>
                         </div>
                     </div>
                     <button
                         onClick={onCancel}
-                        className="rounded-md p-2 text-slate-400 hover:bg-slate-100"
+                        className="rounded-md p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
                     >
                         <X size={18} />
                     </button>
@@ -364,7 +518,7 @@ function UploadResultModal({
                     {/* LEFT — files */}
                     <div className="flex min-h-0 flex-col">
                         <div className="mb-3 flex items-center justify-between">
-                            <label className="text-sm font-semibold text-slate-700">
+                            <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
                                 Result PDFs{' '}
                                 <span className="text-slate-400">
                                     ({files.length})
@@ -373,7 +527,7 @@ function UploadResultModal({
                             <button
                                 type="button"
                                 onClick={() => inputRef.current?.click()}
-                                className="inline-flex items-center gap-1.5 rounded-md bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-100"
+                                className="inline-flex items-center gap-1.5 rounded-md bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-100 dark:bg-blue-950/30 dark:text-blue-400"
                             >
                                 <FileUp size={14} /> Add
                             </button>
@@ -384,12 +538,12 @@ function UploadResultModal({
                             className={cn(
                                 'flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-8 text-center',
                                 errors.pdf || errors.pdfs
-                                    ? 'border-red-400 bg-red-50'
-                                    : 'border-slate-300 bg-slate-50 hover:border-blue-400 hover:bg-blue-50',
+                                    ? 'border-red-400 bg-red-50 dark:bg-red-950/20'
+                                    : 'border-slate-300 bg-slate-50 hover:border-blue-400 hover:bg-blue-50 dark:border-slate-600 dark:bg-slate-900 dark:hover:bg-slate-700',
                             )}
                         >
                             <FileUp size={28} className="text-slate-400" />
-                            <span className="text-sm font-medium text-slate-700">
+                            <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
                                 Click to add PDF(s)
                             </span>
                             <span className="text-xs text-slate-400">
@@ -416,13 +570,13 @@ function UploadResultModal({
                             {files.map((f, i) => (
                                 <li
                                     key={`${f.name}-${i}`}
-                                    className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm"
+                                    className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800"
                                 >
                                     <FileText
                                         size={18}
                                         className="shrink-0 text-red-500"
                                     />
-                                    <span className="flex-1 truncate text-slate-700">
+                                    <span className="flex-1 truncate text-slate-700 dark:text-slate-200">
                                         {f.name}
                                     </span>
                                     <span className="shrink-0 text-xs text-slate-400">
@@ -438,7 +592,7 @@ function UploadResultModal({
                                 </li>
                             ))}
                             {files.length === 0 && (
-                                <li className="rounded-lg border border-dashed border-slate-200 p-6 text-center text-sm text-slate-400">
+                                <li className="rounded-lg border border-dashed border-slate-200 p-6 text-center text-sm text-slate-400 dark:border-slate-700">
                                     No files added yet
                                 </li>
                             )}
@@ -448,7 +602,7 @@ function UploadResultModal({
                     {/* RIGHT — tests */}
                     <div className="flex min-h-0 flex-col">
                         <div className="mb-3 flex items-center justify-between">
-                            <label className="text-sm font-semibold text-slate-700">
+                            <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
                                 Tests covered{' '}
                                 <span className="text-slate-400">
                                     ({selected.length}/{tests.length})
@@ -457,7 +611,7 @@ function UploadResultModal({
                             <button
                                 type="button"
                                 onClick={toggleAll}
-                                className="text-sm font-medium text-blue-600 hover:underline"
+                                className="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400"
                             >
                                 {allSelected ? 'Clear all' : 'Select all'}
                             </button>
@@ -467,8 +621,8 @@ function UploadResultModal({
                             className={cn(
                                 'min-h-0 flex-1 space-y-1.5 overflow-y-auto rounded-lg border p-2',
                                 errors.tests
-                                    ? 'border-red-400 bg-red-50'
-                                    : 'border-slate-200 bg-slate-50',
+                                    ? 'border-red-400 bg-red-50 dark:bg-red-950/20'
+                                    : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900',
                             )}
                         >
                             {tests.map((t) => {
@@ -479,8 +633,8 @@ function UploadResultModal({
                                             className={cn(
                                                 'flex cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 text-sm',
                                                 checked
-                                                    ? 'bg-blue-100'
-                                                    : 'hover:bg-white',
+                                                    ? 'bg-blue-100 dark:bg-blue-900/30'
+                                                    : 'hover:bg-white dark:hover:bg-slate-800',
                                             )}
                                         >
                                             <input
@@ -491,19 +645,12 @@ function UploadResultModal({
                                                 }
                                                 className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                                             />
-                                            <span className="flex-1 truncate font-medium text-slate-800">
+                                            <span className="flex-1 truncate font-medium text-slate-800 dark:text-slate-200">
                                                 {t.test_name}
                                             </span>
-                                            <span
-                                                className={cn(
-                                                    'shrink-0 rounded px-2 py-0.5 text-[11px] font-medium capitalize',
-                                                    t.status === 'completed'
-                                                        ? 'bg-emerald-100 text-emerald-700'
-                                                        : 'bg-amber-100 text-amber-700',
-                                                )}
-                                            >
-                                                {t.status}
-                                            </span>
+                                            <TestStatusBadge
+                                                status={t.status}
+                                            />
                                         </label>
                                     </li>
                                 );
@@ -523,13 +670,13 @@ function UploadResultModal({
                 </div>
 
                 {/* Footer */}
-                <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-6 py-4">
-                    <p className="text-sm text-slate-600">
-                        <span className="font-semibold text-slate-800">
+                <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-6 py-4 dark:border-slate-700 dark:bg-slate-900">
+                    <p className="text-sm text-slate-600 dark:text-slate-400">
+                        <span className="font-semibold text-slate-800 dark:text-slate-100">
                             {files.length}
                         </span>{' '}
                         file(s) ·{' '}
-                        <span className="font-semibold text-slate-800">
+                        <span className="font-semibold text-slate-800 dark:text-slate-100">
                             {selected.length}
                         </span>{' '}
                         test(s) selected
@@ -538,7 +685,7 @@ function UploadResultModal({
                         <button
                             onClick={onCancel}
                             disabled={saving}
-                            className="rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                            className="rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                         >
                             Cancel
                         </button>
@@ -646,6 +793,8 @@ function OrderDetailDrawer({
 
     if (!order) return null;
 
+    const fullName = `${order.first_name} ${order.last_name}`;
+
     return (
         <>
             <div
@@ -658,17 +807,17 @@ function OrderDetailDrawer({
 
             <aside
                 className={cn(
-                    'fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col bg-white shadow-2xl transition-transform',
+                    'fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col bg-white shadow-2xl transition-transform dark:bg-slate-800',
                     isOpen ? 'translate-x-0' : 'translate-x-full',
                 )}
             >
-                <header className="flex items-center justify-between border-b border-slate-200 p-4">
+                <header className="flex items-center justify-between border-b border-slate-200 p-4 dark:border-slate-700">
                     <div className="flex items-center gap-3">
                         <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-600 text-white">
                             <Receipt size={18} />
                         </div>
                         <div>
-                            <h2 className="text-sm font-semibold text-slate-900">
+                            <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                                 Lab Order Details
                             </h2>
                             <p className="font-mono text-[11px] text-slate-500">
@@ -678,25 +827,29 @@ function OrderDetailDrawer({
                     </div>
                     <button
                         onClick={onClose}
-                        className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100"
+                        className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
                     >
                         <X size={18} />
                     </button>
                 </header>
 
-                <div className="flex items-center gap-3 border-b border-slate-100 bg-slate-50/60 p-4">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-md bg-blue-600 text-xs font-semibold text-white">
-                        {order.first_name?.[0]}
-                        {order.last_name?.[0]}
-                    </div>
+                <div className="flex items-center gap-3 border-b border-slate-100 bg-slate-50/60 p-4 dark:border-slate-700 dark:bg-slate-900/40">
+                    <PatientAvatar
+                        name={fullName}
+                        patientId={order.id}
+                        gender={genderFromSexAge(order.gender)}
+                        photoUrl={order.photo_url}
+                        size="lg"
+                    />
                     <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-slate-900">
-                            {order.first_name} {order.last_name}
+                        <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+                            {fullName}
                         </p>
-                        <p className="text-[11px] text-slate-500">
+                        <p className="text-[11px] text-slate-500 capitalize">
                             {order.gender || '—'} · {order.ordered_by}
                         </p>
                     </div>
+                    <StatusBadge status={order.status} />
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-4">
@@ -708,14 +861,14 @@ function OrderDetailDrawer({
                         {tests.map((t, idx) => (
                             <li
                                 key={`${t.test_name}-${idx}`}
-                                className="flex items-center justify-between rounded-lg border border-slate-200 bg-white p-3"
+                                className="flex items-center justify-between rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800"
                             >
                                 <div className="min-w-0 flex-1">
                                     <div className="flex items-center gap-2">
-                                        <span className="flex h-5 w-5 items-center justify-center rounded bg-blue-50 text-[10px] font-semibold text-blue-600">
+                                        <span className="flex h-5 w-5 items-center justify-center rounded bg-blue-50 text-[10px] font-semibold text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
                                             {idx + 1}
                                         </span>
-                                        <p className="truncate text-sm font-medium text-slate-800">
+                                        <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-200">
                                             {t.test_name}
                                         </p>
                                     </div>
@@ -725,23 +878,14 @@ function OrderDetailDrawer({
                                         <span className="font-mono">
                                             {formatMoney(t.unit_price)}
                                         </span>
-                                        <span
-                                            className={cn(
-                                                'rounded px-1.5 py-0.5 text-[10px] font-medium capitalize',
-                                                t.status === 'completed'
-                                                    ? 'bg-emerald-50 text-emerald-700'
-                                                    : 'bg-amber-50 text-amber-700',
-                                            )}
-                                        >
-                                            {t.status}
-                                        </span>
+                                        <TestStatusBadge status={t.status} />
                                     </div>
                                     {t.result_file && (
                                         <a
                                             href={t.result_file}
                                             target="_blank"
                                             rel="noreferrer"
-                                            className="mt-2 ml-7 inline-flex items-center gap-1 text-[11px] text-blue-600 hover:underline"
+                                            className="mt-2 ml-7 inline-flex items-center gap-1 text-[11px] text-blue-600 hover:underline dark:text-blue-400"
                                         >
                                             <FileText size={11} /> View result
                                             PDF
@@ -750,7 +894,7 @@ function OrderDetailDrawer({
                                 </div>
 
                                 <div className="flex items-center gap-1 pl-3">
-                                    <span className="font-mono text-xs font-semibold text-slate-900">
+                                    <span className="font-mono text-xs font-semibold text-slate-900 dark:text-slate-100">
                                         {formatMoney(t.amount ?? t.total_price)}
                                     </span>
                                     <button
@@ -766,24 +910,26 @@ function OrderDetailDrawer({
                         ))}
 
                         {tests.length === 0 && (
-                            <li className="rounded-lg border border-dashed border-slate-200 p-6 text-center text-xs text-slate-400">
+                            <li className="rounded-lg border border-dashed border-slate-200 p-6 text-center text-xs text-slate-400 dark:border-slate-700">
                                 No tests on this order
                             </li>
                         )}
                     </ul>
                 </div>
 
-                <footer className="border-t border-slate-200 bg-slate-50/60 p-4">
+                <footer className="border-t border-slate-200 bg-slate-50/60 p-4 dark:border-slate-700 dark:bg-slate-900/40">
                     <div className="flex items-center justify-between text-sm">
-                        <span className="text-slate-600">Total</span>
-                        <span className="font-mono text-base font-semibold text-blue-600">
+                        <span className="text-slate-600 dark:text-slate-400">
+                            Total
+                        </span>
+                        <span className="font-mono text-base font-semibold text-blue-600 dark:text-blue-400">
                             {formatMoney(overallTotal)}
                         </span>
                     </div>
 
                     <button
                         onClick={openInvoice}
-                        className="mt-3 flex w-full items-center justify-center gap-2 rounded-md border border-slate-200 bg-white py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        className="mt-3 flex w-full items-center justify-center gap-2 rounded-md border border-slate-200 bg-white py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                     >
                         <FilePlus2 size={14} />
                         Invoice
@@ -816,7 +962,7 @@ function OrderDetailDrawer({
 
                     <button
                         onClick={onClose}
-                        className="mt-2 w-full rounded-md border border-slate-200 bg-white py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        className="mt-2 w-full rounded-md border border-slate-200 bg-white py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                     >
                         Close
                     </button>
@@ -849,6 +995,26 @@ export default function Laboratory() {
 
     const [resultsOrder, setResultsOrder] = useState<QueuePatient | null>(null);
     const [resultsOpen, setResultsOpen] = useState(false);
+    const [activeTab, setActiveTab] = useState<QueueTab>('in_queue');
+
+    // In Progress: oldest first. Completed: most recent first.
+    const inQueue = useMemo(
+        () =>
+            queues
+                .filter((q) => !isProcessed(q))
+                .sort((a, b) => createdAt(a) - createdAt(b)),
+        [queues],
+    );
+
+    const completed = useMemo(
+        () =>
+            queues
+                .filter((q) => isProcessed(q))
+                .sort((a, b) => createdAt(b) - createdAt(a)),
+        [queues],
+    );
+
+    const tableData = activeTab === 'in_queue' ? inQueue : completed;
 
     const openDetails = (row: QueuePatient) => {
         setSelectedOrder(row);
@@ -903,7 +1069,7 @@ export default function Laboratory() {
             label: 'Token',
             sortable: true,
             format: (value) => (
-                <span className="font-mono text-xs font-semibold text-slate-800">
+                <span className="font-mono text-sm font-medium text-blue-600 dark:text-blue-400">
                     AMH-{value}
                 </span>
             ),
@@ -913,32 +1079,37 @@ export default function Laboratory() {
             label: 'Patient',
             sortable: true,
             filterable: true,
-            format: (_, row) => (
-                <div className="flex items-center gap-2">
-                    <div className="flex h-7 w-7 items-center justify-center rounded-md bg-blue-600 text-[10px] font-semibold text-white">
-                        {row.first_name?.[0]}
-                        {row.last_name?.[0]}
+            format: (_, row) => {
+                const fullName = `${row.first_name} ${row.last_name}`;
+                return (
+                    <div className="flex items-center gap-2.5">
+                        <PatientAvatar
+                            name={fullName}
+                            patientId={row.id}
+                            gender={genderFromSexAge(row.gender)}
+                            photoUrl={row.photo_url}
+                        />
+                        <div>
+                            <span className="font-medium text-slate-800 dark:text-slate-200">
+                                {fullName}
+                            </span>
+                            {row.patient_number && (
+                                <div className="text-xs text-slate-400">
+                                    EMR #: {row.patient_number}
+                                </div>
+                            )}
+                        </div>
                     </div>
-                    <div>
-                        <p className="text-sm font-medium">
-                            {row.first_name} {row.last_name}
-                        </p>
-                        {row.patient_number && (
-                            <p className="font-mono text-[11px] text-slate-400">
-                                {row.patient_number}
-                            </p>
-                        )}
-                    </div>
-                </div>
-            ),
+                );
+            },
         },
         {
             id: 'gender',
             label: 'Sex/Age',
             sortable: true,
             format: (value) => (
-                <span className="text-xs text-slate-600 capitalize">
-                    {value || '—'}
+                <span className="text-xs text-slate-600 dark:text-slate-400">
+                    {value ? capitalize(value) : '—'}
                 </span>
             ),
         },
@@ -953,7 +1124,7 @@ export default function Laboratory() {
                 return (
                     <button
                         onClick={() => openDetails(row)}
-                        className="inline-flex items-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-[11px] font-medium text-blue-700 hover:bg-blue-100"
+                        className="inline-flex items-center gap-1.5 rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400"
                     >
                         <FlaskConical size={12} />
                         {done}/{count} done
@@ -966,7 +1137,7 @@ export default function Laboratory() {
             label: 'Total',
             sortable: true,
             format: (value) => (
-                <span className="font-mono text-xs font-semibold text-slate-800">
+                <span className="font-mono text-xs font-semibold text-slate-800 dark:text-slate-200">
                     {formatMoney(value)}
                 </span>
             ),
@@ -984,39 +1155,34 @@ export default function Laboratory() {
                 completed: 'success',
                 cancelled: 'error',
             },
-            format: (value) => {
-                const config = getStatusConfig(value);
-                return (
-                    <span
-                        className={cn(
-                            'inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11px] font-medium',
-                            config.badge,
-                        )}
-                    >
-                        <span
-                            className={cn(
-                                'h-1.5 w-1.5 rounded-full',
-                                config.dot,
-                            )}
-                        />
-                        {config.label}
-                    </span>
-                );
-            },
+            format: (value) => <StatusBadge status={value} />,
         },
         {
             id: 'ordered_by',
             label: 'Ordered By',
             sortable: true,
             format: (value) => (
-                <span className="text-xs text-slate-600 capitalize">
+                <div className="flex items-center gap-1.5 text-sm text-slate-700 capitalize dark:text-slate-300">
+                    <Building2 size={14} className="text-slate-400" />
                     {value || '—'}
-                </span>
+                </div>
             ),
         },
     ];
 
     const actions: Action<QueuePatient>[] = [
+        ...(activeTab === 'completed'
+            ? [
+                  {
+                      label: 'View Dashboard',
+                      icon: <LayoutDashboard size={16} />,
+                      color: 'primary',
+                      show: (row: QueuePatient) => !!row.id,
+                      onClick: (row: QueuePatient) =>
+                          router.visit(`/patients/dashboard/${row.id}`),
+                  } as Action<QueuePatient>,
+              ]
+            : []),
         {
             label: 'Upload Results',
             icon: <FileUp size={16} />,
@@ -1054,17 +1220,28 @@ export default function Laboratory() {
                 { href: '', title: 'Queue' },
             ]}
         >
-            <div className="h-full space-y-4 bg-blue-50 p-4">
-                <PageHeader
-                    icon={<Microscope className="h-5 w-5" />}
-                    title="Laboratory Department"
-                    subtitle="Manage patient queue, samples, and laboratory workflow"
-                />
-
+            <PageHeader
+                icon={<Microscope className="h-5 w-5" />}
+                title="Laboratory Department"
+                subtitle="Manage patient queue, samples, and laboratory workflow"
+                actions={[
+                    {
+                        label: `In Progress (${inQueue.length})`,
+                        onClick: () => setActiveTab('in_queue'),
+                        variant: activeTab === 'in_queue' ? 'cyan' : 'default',
+                    },
+                    {
+                        label: `Completed (${completed.length})`,
+                        onClick: () => setActiveTab('completed'),
+                        variant: activeTab === 'completed' ? 'cyan' : 'default',
+                    },
+                ]}
+            />
+            <div className="flex h-full min-h-screen flex-1 flex-col gap-4 bg-blue-50 p-4 dark:bg-slate-900">
                 <ReusableTable
-                    title="Patient Queue"
+                    key={activeTab}
                     columns={columns}
-                    data={queues}
+                    data={tableData}
                     actions={actions}
                     loading={false}
                     filterPlaceholder="Search by name or token..."
@@ -1073,18 +1250,22 @@ export default function Laboratory() {
                     rowsPerPageOptions={[8, 15, 25, 50]}
                     defaultRowsPerPage={8}
                     defaultOrderBy="created_at"
-                    defaultOrderDirection="asc"
-                    emptyMessage="No patients in the queue"
+                    defaultOrderDirection={
+                        activeTab === 'in_queue' ? 'asc' : 'desc'
+                    }
+                    emptyMessage={
+                        activeTab === 'in_queue'
+                            ? 'No lab orders in progress'
+                            : 'No completed lab orders found'
+                    }
                     className="shadow-sm"
                 />
             </div>
-
             <OrderDetailDrawer
                 order={selectedOrder}
                 isOpen={drawerOpen}
                 onClose={closeDetails}
             />
-
             <UploadResultModal
                 open={resultsOpen}
                 order={resultsOrder}

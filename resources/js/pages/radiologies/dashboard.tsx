@@ -361,7 +361,7 @@ function QueueTable({
                                     </button>
                                 </td>
                                 <td className="py-2 pr-3 font-medium tracking-wider text-slate-800">
-                                    {maskName(p.name)}
+                                    {p.name}
                                 </td>
                                 <td className="py-2 pr-3 text-slate-600">
                                     {p.patientCode}
@@ -630,7 +630,7 @@ export default function ImagingDashboard({
     return (
         <AppLayout
             breadcrumbs={[
-                { href: '/dashboard', title: 'Dashboard' },
+                { href: '/dashboard', title: 'Altaf Memorial Hospital' },
                 { href: '', title: 'Imaging' },
                 { href: '', title: 'Overview' },
             ]}
@@ -643,7 +643,7 @@ export default function ImagingDashboard({
                 />
             )}
 
-            <div className="bg-blue-100 p-2">
+            <div className="bg-blue-100">
                 <PageHeader
                     icon={<MicroscopeIcon className="h-5 w-5" />}
                     title="Radiology and Imaging Department"

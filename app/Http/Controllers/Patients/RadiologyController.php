@@ -35,16 +35,34 @@ class RadiologyController extends Controller
      */
     public function index(int $patientId)
     {
+        $radiology = collect();
+        $imagingOrders = collect();
+        $errors = [];
+
+        // 1. Services: never allowed to block the orders
         try {
-            // Get active visit token for payment scheme
             $activeToken = VisitTokenHelper::getActiveTokenArray($patientId);
-            $schemeSelected = PatientVisitScheme::where('token', $activeToken['token'])
-                ->value('scheme_id');
+            $token = $activeToken['token'] ?? null;
 
-            $radiology = Service::where('scheme_type', $schemeSelected)
-                ->where('service_category', 'Imaging')
-                ->get();
+            $schemeSelected = $token
+                ? PatientVisitScheme::where('token', $token)->value('scheme_id')
+                : null;
 
+            if ($schemeSelected !== null) {
+                $radiology = Service::where('scheme_type', $schemeSelected)
+                    ->where('service_category', 'Imaging')
+                    ->get();
+            }
+        } catch (\Throwable $e) {
+            Log::error('Radiology services error', [
+                'patient_id' => $patientId,
+                'error' => $e->getMessage(),
+            ]);
+            $errors[] = 'Unable to load services.';
+        }
+
+        // 2. Orders: loaded independently
+        try {
             $imagingOrders = ImagingOrder::with(['items', 'resultFiles'])
                 ->where('patient_id', $patientId)
                 ->orderByDesc('created_at')
@@ -83,8 +101,6 @@ class RadiologyController extends Controller
                         'findings'         => $order->findings,
                         'impression'       => $order->impression,
                         'recommendations'  => $order->recommendations,
-
-                        // Line items — used by RadiologyBundleModal
                         'items' => $order->items->map(fn(ImagingOrderItem $i) => [
                             'id'           => $i->id,
                             'service_name' => $i->service_name
@@ -98,38 +114,31 @@ class RadiologyController extends Controller
                             'notes'        => $i->notes ?? null,
                             'status'       => $i->status,
                         ])->values()->all(),
-
-                        // Files — used by RadiologyImagesDrawer
                         'files' => $files,
                     ];
-                });
-
-            // Get admission number if patient is admitted
-            $admission = Admission::where('patient_id', $patientId)
-                ->where('status', 'active')
-                ->first();
-
-            $patient = Patient::find($patientId);
-
-            return Inertia::render('patients/radiology', [
-                'patientId'      => $patientId,
-                'services'       => $radiology,
-                'previousOrders' => $imagingOrders,
-                'patient'        => $patient,
-                'admissionNumber' => $admission?->admission_number,
+                })
+                ->values();
+        } catch (\Throwable $e) {
+            Log::error('Radiology orders error', [
+                'patient_id' => $patientId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
-        } catch (\Exception $e) {
-            Log::error('Radiology Index Error: ' . $e->getMessage());
-
-            return Inertia::render('patients/radiology', [
-                'patientId'       => $patientId,
-                'services'        => [],
-                'previousOrders'  => [],
-                'patient'         => null,
-                'admissionNumber' => null,
-                'error'           => 'Unable to load radiology data. Please try again.',
-            ]);
+            $errors[] = 'Unable to load previous orders.';
         }
+
+        $admission = Admission::where('patient_id', $patientId)
+            ->where('status', 'active')
+            ->first();
+
+        return Inertia::render('patients/radiology', [
+            'patientId'       => $patientId,
+            'services'        => $radiology,
+            'previousOrders'  => $imagingOrders,
+            'patient'         => Patient::find($patientId),
+            'admissionNumber' => $admission?->admission_number,
+            'error'           => $errors ? implode(' ', $errors) : null,
+        ]);
     }
 
     /**
@@ -332,7 +341,7 @@ class RadiologyController extends Controller
                     'total'            => $payload['total'],
                     'priority'         => $payload['priority'],
                     'status'           => 'pending',
-                    
+
                 ]);
             }
 

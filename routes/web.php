@@ -37,7 +37,6 @@ use App\Http\Controllers\Patients\TheaterController as PatientTheater;
 use App\Http\Controllers\Patients\MartenalChildHealthController;
 use App\Http\Controllers\Patients\PaymentsController;
 use App\Http\Controllers\Pharmacies\OrderController;
-use App\Http\Controllers\Laboratories\LaboratoryController as MainLaboratoryController;
 // routes/web.php
 use App\Models\Patients\ImagingOrder;
 
@@ -52,33 +51,38 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/dashboard', function () {
         $user = auth()->user();
         $roles = $user->profile?->roles ?? [];
-        $departmentId = $user->profile?->department_id; // adjust to your schema
-
         if (in_array('receptionist', $roles)) {
-            abort_if(! $departmentId, 403, 'No department assigned to this user.');
-            return redirect("/reception/dashboard/{$departmentId}");
+            return redirect('/reception/dashboard/{deaprtementId}');
         }
-        if (in_array('lab_technician', $roles)) {
-            abort_if(! $departmentId, 403, 'No department assigned to this user.');
-            return redirect("/laboratory/dashboard/{$departmentId}");
-        }
+        // Keep adding roles here
         if (in_array('bulkstore', $roles)) {
             return redirect('/bulkstore/dashboard');
         }
-        if (in_array('pharmacy', $roles)) {
-            return redirect('/pharmacy/dashboard/1');
+        if (in_array('receptionist', $roles)) {
+            return redirect('/reception/dashboard/{deaprtementId}');
         }
-        if (in_array('radiology', $roles)) {
-            return redirect('/radiology/dashboard/1');
-        }
-        if (in_array('nurses', $roles)) {
-            return redirect('/nurses/dashboard');
-        }
-        if (in_array('admin', $roles)) {
-            return redirect('/admin/dashboard');
+        if (in_array('laboratory/dashoard', $roles)) {
+            return redirect('/laboratory/dashboard/{deaprtementId}');
         }
 
-        return app(MetricsController::class)->dashboard();
+        if (in_array('pharmacy', $roles)) {
+            return redirect('/pharmacy/dashboard/{deaprtementId}');
+        }
+
+        if (in_array('radiology', $roles)) {
+            return redirect('/radiology/dashboard/{deaprtementId}');
+        }
+        if (in_array('nurses', $roles)) {
+            return redirect('/nurses/dashboard/{deaprtementId}');
+        }
+
+        if (in_array('admin', $roles)) {
+            return redirect('/admin/dashboard/{deaprtementId}');
+        }
+
+        // Existing logic
+        return app(\App\Http\Controllers\Dashboard\MetricsController::class)
+            ->dashboard();
     })->name('dashboard');
     Route::get('/patients', function () {
         return Inertia::render('patients/registry');
@@ -229,41 +233,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
     });
 });
 
-Route::middleware(['auth', 'verified'])->group(function () {
-    Route::prefix('/laboratory')->group(function () {
-        Route::get('/', [LaboratoriesLaboratoryController::class, 'index']);
-        Route::get('/dashboard', [MainLaboratoryController::class, 'dashboard']);
-        Route::get('/processed', [MainLaboratoryController::class, 'processed']);
-        Route::get('/logistics', [MainLaboratoryController::class, 'logistics']);
-        Route::get('/orders', [MainLaboratoryController::class, 'orders']);
-        Route::get('/reports', [MainLaboratoryController::class, 'reports']);
-        Route::get('/manage-tests', [MainLaboratoryController::class, 'settings']);
-        Route::get('/bulk-store', [LaboratoryBulkStoreController::class, 'index']);
-    });
-
-    Route::prefix("user")->group(function () {
-        Route::get('/create', function () {
-            return Inertia::render('users/register', [
-                'departments' => \App\Models\Department::all()
-            ]);
-        });
-    });
-
-
-
-    /**
-     *  Users managemert routes
-     */
-
-    Route::prefix('admin')->group(function () {
-        Route::get('/users', [AdminController::class, 'create']);
-        Route::get('/users/list', [AdminController::class, 'index']);
-    });
-
-    Route::prefix('users')->group(function () {
-        Route::get('/manage-account', [UserController::class, 'index']);
-    });
-});
 
 
 Route::get('/api/imaging/recent-notifications', function () {

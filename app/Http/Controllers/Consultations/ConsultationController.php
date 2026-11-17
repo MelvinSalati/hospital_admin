@@ -12,129 +12,86 @@ use Inertia\Inertia;
 use Illuminate\Support\Facades\Auth;
 use App\Models\Patients\VisitToken;
 use Illuminate\Support\Facades\Log;
+use App\Services\Consultation\ConsultationDashboardService;
 
 class ConsultationController extends Controller
 {
     protected AppointmentService $appointmentService;
+    protected ConsultationDashboardService $service;
 
-    public function __construct(AppointmentService $appointmentService)
+    public function __construct(AppointmentService $appointmentService, ConsultationDashboardService $service)
     {
         $this->appointmentService = $appointmentService;
+        $this->service = $service;
     }
 
-    public function dashboard()
+    public function dashboard(int $departmentId)
     {
-        $trendRangeDays = 7;
-        $departmentId   = 2;
+        return Inertia::render('consultations/dashboard', $this->service->getDashboardData($departmentId));
+    }
 
-        $department = Department::findOrFail($departmentId);
+    public function queue(int $departmentId)
+    {
+        $base = fn() => PatientVisit::where('department_id', $departmentId);
 
-        // ── Today's snapshot for department 6 ───────────────────
-        $base = PatientVisit::query()
-            ->where('patient_visits.department_id', $departmentId)
-            ->whereDate('patient_visits.created_at', today());
+        $with = ['patient', 'assignedDepartment', 'assignedStaff', 'visitToken'];
 
-        $seenQuery = (clone $base)->where('patient_visits.status', 0);
+        // In Progress: status 1 (the patient is still in the queue)
+        $inProgress = $base()
+            ->with($with)
+            ->where('status', 1)
+            ->orderBy('created_at', 'asc')
+            ->get();
 
-        $males = (clone $seenQuery)
-            ->join('patients', 'patients.id', '=', 'patient_visits.patient_id')
-            ->where('patients.gender', 'Male')
-            ->count();
+        // Seen: anything that is not status 1 (status 0 = out of the queue).
+        // Capped to the latest 200 so the payload stays small.
+        $seen = $base()
+            ->with($with)
+            ->where(function ($q) {
+                $q->where('status', '!=', 1)->orWhereNull('status');
+            })
+            ->orderByDesc('updated_at')
+            ->limit(200)
+            ->get();
 
-        $females = (clone $seenQuery)
-            ->join('patients', 'patients.id', '=', 'patient_visits.patient_id')
-            ->where('patients.gender', 'Female')
-            ->count();
-
-        $departmentStats = collect([[
-            'department_name'      => $department->name,
-            'seen_today'           => (clone $seenQuery)->count(),
-            'males'                => $males,
-            'females'              => $females,
-            'in_queue'             => (clone $base)->where('patient_visits.status', 1)->count(),
-            'average_wait_minutes' => null,
-            'completed_today'      => (clone $base)->where('patient_visits.status', 1)->count(),
-        ]]);
-
-        // ── Last N days for department 6 ────────────────────────
-        $departmentTrend = collect(range($trendRangeDays - 1, 0))
-            ->map(function (int $offset) use ($departmentId, $department) {
-                $date = now()->subDays($offset);
+        $queue = $inProgress->concat($seen)
+            ->map(function ($visit) {
+                $isInProgress = (int) $visit->status === 1;
 
                 return [
-                    'date'            => $date->format('D'),
-                    $department->name => PatientVisit::where('patient_visits.department_id', $departmentId)
-                        ->whereDate('patient_visits.created_at', $date)
-                        ->count(),
+                    'id' => $visit->id,
+                    'token' => $visit->visitToken?->token ?? $visit->visit_token,
+                    'visit_token_id' => $visit->visitToken?->id,
+                    'patient_id' => $visit->patient_id,
+                    'patient_number' => $visit->patient?->patient_number,
+                    'patient_name' => $visit->patient
+                        ? $visit->patient->first_name . ' ' . $visit->patient->last_name
+                        : 'Unknown',
+                    'contact' => $visit->patient?->phone ?? 'N/A',
+                    'gender' => $visit->patient?->gender ?? 'N/A',
+                    'payment_method' => $visit->payment_method,
+                    'original_payment_method' => $visit->visitToken?->original_payment_method
+                        ?? $visit->original_payment_method,
+                    'status' => $isInProgress ? 1 : 0,
+                    'visit_status' => $isInProgress ? 'in_progress' : 'completed',
+                    'registered_at' => ($visit->started_at ?? $visit->created_at)
+                        ->format('Y-m-d H:i:s'),
+                    'assigned_department' => $visit->assignedDepartment?->department_name ?? 'Not assigned',
+                    'assigned_staff' => $visit->assignedStaff?->name ?? 'Not assigned',
+                    'priority' => $visit->priority ?? 'routine',
+                    'department_id' => $visit->department_id,
                 ];
             })
             ->values();
 
-        // ── Totals ──────────────────────────────────────────────
-        $totals = [
-            'seen_today' => $departmentStats->sum('seen_today'),
-            'males'      => $departmentStats->sum('males'),
-            'females'    => $departmentStats->sum('females'),
-            'in_queue'   => $departmentStats->sum('in_queue'),
-        ];
-
-        return Inertia::render('nurses/dashboard', [
-            'departmentStats' => $departmentStats,
-            'departmentTrend' => $departmentTrend,
-            'totals'          => $totals,
-            'trendRangeDays'  => $trendRangeDays,
-            'currentUser'     => [
-                'name'        => $department->name,
-                'role'        => null,
-                'departments' => [$department->name],
-            ],
-        ]);
-    }
-
-    public function queue()
-    {
-        // Get all queued patients for department 2
-        $queuedPatients = PatientVisit::with(['patient', 'assignedDepartment', 'assignedStaff', 'visitToken'])
-            ->where('department_id', 2)
-            ->where('status', 1) // 1 = queued/active
-            ->orderBy('created_at', 'asc')
-            ->get()
-            ->map(function ($visit) {
-                return [
-                    'id' => $visit->id,
-                    'token' => $visit->visitToken?->token ?? $visit->visit_token, // Get token from visitToken relationship
-                    'visit_token_id' => $visit->visitToken?->id,
-                    'patient_id' => $visit->patient_id,
-                    'patient_name' => $visit->patient ? $visit->patient->first_name . ' ' . $visit->patient->last_name : 'Unknown',
-                    'contact' => $visit->patient?->phone ?? 'N/A',
-                    'gender' => $visit->patient?->gender ?? 'N/A',
-                    'payment_method' => $visit->payment_method,
-                    'original_payment_method' => $visit->visitToken?->original_payment_method ?? $visit->original_payment_method, // Get original_payment from visitToken
-                    'status' => $visit->status,
-                    'registered_at' => $visit->started_at ? $visit->started_at->format('Y-m-d H:i:s') : $visit->created_at->format('Y-m-d H:i:s'),
-                    'assigned_department' => $visit->assignedDepartment?->department_name ?? 'Not assigned',
-                    'assigned_staff' => $visit->assignedStaff?->name ?? 'Not assigned',
-                    'visit_status' => $this->mapVisitStatus($visit->status),
-                    'priority' => $visit->priority ?? 'routine',
-                    'department_id' => $visit->department_id,
-                ];
-            }); // Get statistics for department 2
         $stats = [
-            'total_in_queue' => PatientVisit::where('department_id', 2)
-                ->where('status', 1)
-                ->count(),
-            'pending_assignment' => PatientVisit::where('department_id', 2)
-                ->where('status', 1)
-                ->whereNull('to_queue')
-                ->count(),
-            'assigned_today' => PatientVisit::where('department_id', 2)
-                ->whereDate('created_at', today())
-                ->where('status', 1)
-                ->count(),
+            'total_in_queue' => $inProgress->count(),
+            'pending_assignment' => $base()->where('status', 1)->whereNull('to_queue')->count(),
+            'assigned_today' => $base()->whereDate('created_at', today())->where('status', 1)->count(),
         ];
 
         return Inertia::render('consultations/queue', [
-            'queue' => $queuedPatients,
+            'queue' => $queue,
             'stats' => $stats,
         ]);
     }

@@ -13,6 +13,7 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
+use Illuminate\Support\Facades\DB;
 
 class RadiologyController extends Controller
 {
@@ -39,15 +40,29 @@ class RadiologyController extends Controller
      */
     public function index()
     {
-        $orders = ImagingOrder::query()
-            ->with(['patient', 'items', 'orderedBy'])
+        $inProgress = ImagingOrder::query()
+            ->with(['patient', 'items', 'orderedBy', 'resultFiles'])
             ->whereIn('status', ['pending', 'scheduled', 'in_progress'])
             ->orderBy('ordered_date', 'asc')
             ->limit(50)
             ->get();
 
+        // Separate query, so a long completed history can never push pending
+        // orders out of the limit.
+        $completed = ImagingOrder::query()
+            ->with(['patient', 'items', 'orderedBy', 'resultFiles'])
+            ->whereIn('status', ['completed', 'reported', 'performed'])
+            ->orderByDesc('reported_date')
+            ->orderByDesc('performed_date')
+            ->orderByDesc('updated_at')
+            ->limit(100)
+            ->get();
+
         return Inertia::render('radiologies/queue', [
-            'radiologyQueue' => $orders->map(fn(ImagingOrder $o) => $this->mapQueueRow($o)),
+            'radiologyQueue' => $inProgress
+                ->concat($completed)
+                ->map(fn(ImagingOrder $o) => $this->mapQueueRow($o))
+                ->values(),
         ]);
     }
     /**
@@ -84,24 +99,27 @@ class RadiologyController extends Controller
      * Stages the uploaded files on the `staging` disk and queues
      * ProcessImagingUpload to move them into public storage.
      */
+
+
     public function uploadResult(Request $request, ImagingOrder $imagingOrder)
     {
         $validated = $request->validate([
-            'files'                 => ['required', 'array', 'min:1', 'max:20'],
-            'files.*'               => ['required', 'file', 'max:20480'],   // 20 MB each
-            'imaging_order_item_id' => ['nullable', 'integer', 'exists:imaging_order_items,id'],
-            'file_type'             => ['nullable', 'in:image,dicom,pdf,report,other'],
-            'notes'                 => ['nullable', 'string', 'max:2000'],
-               'uploaded_by'              => 'nullable|exists:users,id'
+            'files'                    => ['required', 'array', 'min:1', 'max:20'],
+            'files.*'                  => ['required', 'file', 'max:20480'],   // 20 MB each
+            'imaging_order_item_ids'   => ['nullable', 'array'],
+            'imaging_order_item_ids.*' => ['integer', 'exists:imaging_order_items,id'],
+            'file_type'                => ['nullable', 'in:image,dicom,pdf,report,other'],
+            'notes'                    => ['nullable', 'string', 'max:2000'],
+            'uploaded_by'              => ['nullable', 'exists:users,id'],
         ]);
 
-        // Guard: the item must belong to this order.
-        if (!empty($validated['imaging_order_item_id'])) {
-            $belongs = $imagingOrder->items()
-                ->whereKey($validated['imaging_order_item_id'])
-                ->exists();
+        $itemIds = array_map('intval', $validated['imaging_order_item_ids'] ?? []);
 
-            abort_unless($belongs, 422, 'The selected item does not belong to this imaging order.');
+        // Guard: every selected item must belong to this order.
+        if ($itemIds) {
+            $belongs = $imagingOrder->items()->whereIn('id', $itemIds)->count() === count(array_unique($itemIds));
+
+            abort_unless($belongs, 422, 'One or more selected items do not belong to this imaging order.');
         }
 
         $stagingFolder = 'uploads/' . $imagingOrder->id . '/' . Str::uuid()->toString();
@@ -122,14 +140,32 @@ class RadiologyController extends Controller
             ];
         }
 
-        JobsProcessImagingUpload::dispatch(
-            $imagingOrder->id,
-            $staged,
-            $validated['imaging_order_item_id'] ?? null,
-            $validated['file_type'] ?? 'image',
-            $validated['notes'] ?? null,
-            $request->user()?->uploaded_by,
-        );
+        $uploadedBy = $validated['uploaded_by'] ?? $request->user()?->id;
+
+        DB::transaction(function () use ($imagingOrder, $itemIds, $staged, $validated, $uploadedBy) {
+            JobsProcessImagingUpload::dispatch(
+                $imagingOrder->id,
+                $staged,
+                $itemIds,
+                $validated['file_type'] ?? 'image',
+                $validated['notes'] ?? null,
+                $uploadedBy,
+            )->afterCommit();
+
+            // Items covered by this upload (or every item when none were selected).
+            $imagingOrder->items()
+                ->when($itemIds, fn($q) => $q->whereIn('id', $itemIds))
+                ->update(['status' => 'completed']);
+
+            // The order is completed once no item is left pending.
+            $stillPending = $imagingOrder->items()
+                ->where('status', '!=', 'completed')
+                ->exists();
+
+            if (! $stillPending) {
+                $imagingOrder->update(['status' => 'completed']);
+            }
+        });
 
         return response()->json([
             'message'  => count($staged) . ' file(s) queued for processing.',
@@ -138,7 +174,6 @@ class RadiologyController extends Controller
             'staged'   => count($staged),
         ], 202);
     }
-
     /**
      * POST /radiology/results/{imagingResultFile}/remove
      *
@@ -216,7 +251,7 @@ class RadiologyController extends Controller
             'patient_no'        => $o->patient?->patient_no,
             'first_name'        => $o->patient?->first_name,
             'last_name'         => $o->patient?->last_name,
-            'name'              => $o->patient?->name ?? $o->patient?->first_name.' '.$o->patient?->last_name,
+            'name'              => $o->patient?->name ?? $o->patient?->first_name . ' ' . $o->patient?->last_name,
             'gender'            => trim((ucfirst($o->patient?->gender) ?? '-') . '/' . (Carbon::parse($o->patient?->date_of_birth)->age ?? '-')),
             'priority'          => $o->priority ?? 'routine',
             'modality'          => $o->modality,

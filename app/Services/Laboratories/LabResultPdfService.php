@@ -545,7 +545,77 @@ class LabResultPdfService
             $ocrText === null ? 'failed' : mb_strlen($ocrText) . ' chars'
         ));
     }
+    /**
+     * Save the PDF and mark the records as processed.
+     * No text extraction, OCR or parsing.
+     */
+    public function storeAndComplete(
+        UploadedFile $pdf,
+        int $labOrderId,
+        int $uploadedBy,
+        ?array $selectedTests = null
+    ): LabResultFile {
+        if (strtolower($pdf->getClientOriginalExtension()) !== 'pdf') {
+            throw new RuntimeException('Only PDF files are supported.');
+        }
 
+        $labOrder = LabOrder::findOrFail($labOrderId);
+
+        $filename = Str::uuid() . '.pdf';
+        $path     = 'lab-results/' . $filename;
+
+        if (!Storage::disk('public')->putFileAs('lab-results', $pdf, $filename)) {
+            throw new RuntimeException('Could not store the uploaded PDF.');
+        }
+
+        try {
+            return DB::transaction(function () use ($pdf, $labOrder, $uploadedBy, $selectedTests, $path) {
+                $now = now();
+
+                $file = new LabResultFile();
+                $file->forceFill([
+                    'lab_order_id'            => $labOrder->id,
+                    'patient_id'              => $labOrder->patient_id,
+                    'uploaded_by'             => $uploadedBy,
+                    'original_name'           => $pdf->getClientOriginalName(),
+                    'path'                    => $path,
+                    'mime_type'               => $pdf->getClientMimeType() ?: 'application/pdf',
+                    'size'                    => $pdf->getSize(),
+                    'report_no'               => $this->extractReportNumberFromFilename($pdf->getClientOriginalName()),
+                    'processing_status'       => 'completed',
+                    'processing_error'        => null,
+                    'processing_started_at'   => $now,
+                    'processing_completed_at' => $now,
+                    'ocr_engine'              => null,
+                ])->save();
+
+                // Mark the tests this PDF covers as completed
+                $items = DB::table('lab_order_items')->where('lab_order_id', $labOrder->id);
+                if (!empty($selectedTests)) {
+                    $items->whereIn('test_name', $selectedTests);
+                }
+                $items->update(['status' => 'completed', 'updated_at' => $now]);
+
+                // The order is complete once every test on it is completed
+                $remaining = DB::table('lab_order_items')
+                    ->where('lab_order_id', $labOrder->id)
+                    ->where('status', '!=', 'completed')
+                    ->count();
+
+                if ($remaining === 0) {
+                    $labOrder->update([
+                        'status'          => 'completed',
+                        'processing_date' => $now,
+                    ]);
+                }
+
+                return $file;
+            });
+        } catch (Throwable $e) {
+            Storage::disk('public')->delete($path);
+            throw $e;
+        }
+    }
     public function persistParsedItemsForFile(
         LabResultFile $file,
         string $text,

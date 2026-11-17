@@ -88,18 +88,19 @@ export default function PageHeader({
     };
 
     // Button variant styles
-    const variantStyles = {
-        primary: 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500',
-        secondary:
-            'bg-gray-600 text-white hover:bg-gray-700 focus:ring-gray-500',
-        success:
-            'bg-green-600 text-white hover:bg-green-700 focus:ring-green-500',
-        danger: 'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500',
-        warning:
-            'bg-yellow-600 text-white hover:bg-yellow-700 focus:ring-yellow-500',
-        outline:
-            'border border-gray-300 text-gray-700 hover:bg-gray-50 focus:ring-gray-500 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700',
-    };
+ const variantStyles = {
+    primary: 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500',
+    secondary:
+        'bg-gray-600 text-white hover:bg-gray-700 focus:ring-gray-500',
+    success:
+        'bg-green-600 text-white hover:bg-green-700 focus:ring-green-500',
+    danger: 'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500',
+    warning:
+        'bg-yellow-600 text-white hover:bg-yellow-700 focus:ring-yellow-500',
+    cyan: 'bg-cyan-600 text-white hover:bg-cyan-700 focus:ring-cyan-500',
+    outline:
+        'border border-gray-300 text-gray-700 hover:bg-gray-50 focus:ring-gray-500 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700',
+};
 
     const sizeStyles = {
         sm: 'px-3 py-1.5 text-xs',

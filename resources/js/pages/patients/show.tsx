@@ -162,7 +162,20 @@ interface Props {
     departments: Department[];
     users: StaffMember[];
     insuranceProviders?: { id: number | string; name: string }[];
-    auth?: { user?: { id: number; name: string; email: string } };
+    auth?: {
+        user?: {
+            id: number;
+            name: string;
+            email: string;
+            role?: unknown;
+            profile?: { role?: unknown; [key: string]: any } | null;
+            [key: string]: any;
+        };
+        users?: {
+            profile?: { role?: unknown; [key: string]: any } | null;
+            [key: string]: any;
+        };
+    };
     visit_status?: VisitStatus;
 }
 
@@ -239,6 +252,103 @@ const extractError = (error: any, fallback: string): string => {
     }
     return fallback;
 };
+
+/* ----------------------------- role storage ------------------------------ */
+
+const ROLE_KEY = 'userRole'; // primary role, kept for getUserRole() compatibility
+const ROLES_KEY = 'userRoles'; // full list of roles as JSON
+const ROLE_EVENT = 'userRole:changed';
+
+/** Accepts ['nurse'], 'nurse', 'nurse,doctor', '["nurse"]' or [{ name: 'nurse' }]. */
+const normalizeRoles = (raw: unknown): string[] => {
+    let list: unknown[] = [];
+
+    if (Array.isArray(raw)) {
+        list = raw;
+    } else if (typeof raw === 'string') {
+        const text = raw.trim();
+        if (text.startsWith('[')) {
+            try {
+                const parsed = JSON.parse(text);
+                list = Array.isArray(parsed) ? parsed : [text];
+            } catch {
+                list = text.split(',');
+            }
+        } else {
+            list = text.split(',');
+        }
+    }
+
+    const names = list.map((item) =>
+        typeof item === 'string'
+            ? item
+            : ((item as any)?.name ?? (item as any)?.role ?? ''),
+    );
+
+    return Array.from(
+        new Set(
+            names.map((n) => String(n).trim().toLowerCase()).filter(Boolean),
+        ),
+    );
+};
+
+const sameRoles = (a: string[], b: string[]): boolean =>
+    [...a].sort().join('|') === [...b].sort().join('|');
+
+const readStoredRoles = (): string[] => {
+    if (typeof window === 'undefined') return [];
+    try {
+        const json = window.localStorage.getItem(ROLES_KEY);
+        if (json) {
+            const parsed = normalizeRoles(JSON.parse(json));
+            if (parsed.length) return parsed;
+        }
+        return normalizeRoles(window.localStorage.getItem(ROLE_KEY));
+    } catch {
+        return [];
+    }
+};
+
+/** Write the roles and notify every listener in this tab. */
+const writeStoredRoles = (roles: string[]) => {
+    if (typeof window === 'undefined') return;
+    try {
+        if (roles.length) {
+            window.localStorage.setItem(ROLE_KEY, roles[0]);
+            window.localStorage.setItem(ROLES_KEY, JSON.stringify(roles));
+        } else {
+            window.localStorage.removeItem(ROLE_KEY);
+            window.localStorage.removeItem(ROLES_KEY);
+        }
+    } catch {
+        // storage unavailable (private mode, quota): in-memory state still works
+    }
+    window.dispatchEvent(new Event(ROLE_EVENT));
+};
+
+/** Find the roles in the shared auth props, trying every shape we have seen. */
+const pickServerRoles = (auth: Props['auth']): string[] => {
+    const user: any = auth?.user;
+    const users: any = auth?.users;
+
+    const candidates: unknown[] = [
+        user?.profile?.roles,
+        user?.profile?.role,
+        users?.profile?.roles,
+        users?.profile?.role,
+        user?.roles,
+        user?.role,
+    ];
+
+    for (const candidate of candidates) {
+        const roles = normalizeRoles(candidate);
+        if (roles.length) return roles;
+    }
+    return [];
+};
+
+const isReceptionRole = (role: string): boolean =>
+    isReceptionist(role) || /reception/i.test(role);
 
 const STATUS_TONE: Record<string, string> = {
     Dispensed: 'bg-emerald-100 text-emerald-800',
@@ -488,7 +598,7 @@ function ChoiceRow({
 
 export default function PatientPage() {
     const { props } = usePage<Props>();
-    console.log(props);
+
     const {
         departments = [],
         users = [],
@@ -503,11 +613,65 @@ export default function PatientPage() {
     const patientId = patient?.id;
     const authenticatedUserId = auth?.user?.id;
 
-    const [userRole, setUserRole] = useState<string | null>(null);
+    /* ------------------------------ role syncing ----------------------------- */
+
+    // The server is the source of truth: auth.user.profile.roles, e.g. ['receptionist']
+    const serverRoles = useMemo(() => pickServerRoles(auth), [auth]);
+    const serverRolesKey = serverRoles.join('|');
+
+    // First render already uses the server roles, so there is no flicker
+    const [userRoles, setUserRoles] = useState<string[]>(() => {
+        if (serverRoles.length) return serverRoles;
+        const stored = readStoredRoles();
+        if (stored.length) return stored;
+        return normalizeRoles(getUserRole());
+    });
+
+    // 1. On first run and whenever the server roles change: compare with what is
+    //    stored and overwrite it if it is missing or different
     useEffect(() => {
-        setUserRole(getUserRole());
+        if (serverRoles.length === 0) return;
+        if (!sameRoles(serverRoles, readStoredRoles())) {
+            writeStoredRoles(serverRoles);
+        }
+        setUserRoles((prev) =>
+            sameRoles(prev, serverRoles) ? prev : serverRoles,
+        );
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [serverRolesKey]);
+
+    // 2. Follow stored changes from this tab (custom event) and other tabs (storage)
+    useEffect(() => {
+        const sync = () => {
+            const stored = readStoredRoles();
+            if (stored.length) {
+                setUserRoles((prev) =>
+                    sameRoles(prev, stored) ? prev : stored,
+                );
+            }
+        };
+        window.addEventListener(ROLE_EVENT, sync);
+        window.addEventListener('storage', sync);
+        return () => {
+            window.removeEventListener(ROLE_EVENT, sync);
+            window.removeEventListener('storage', sync);
+        };
     }, []);
-    const canStartVisit = isReceptionist(userRole);
+
+    // 3. Re-check the role with the server whenever the tab becomes visible again
+    useEffect(() => {
+        const refresh = () => {
+            if (document.visibilityState === 'visible') {
+                router.reload({ only: ['auth'] });
+            }
+        };
+        document.addEventListener('visibilitychange', refresh);
+        return () => document.removeEventListener('visibilitychange', refresh);
+    }, []);
+
+    const canStartVisit = userRoles.some(isReceptionRole);
+
+    /* ------------------------------ visit state ------------------------------ */
 
     const [hasActiveVisit, setHasActiveVisit] = useState(
         visit_status?.has_active_visit ?? false,

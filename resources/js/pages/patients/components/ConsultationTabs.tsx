@@ -133,7 +133,7 @@ const sections = [
   { id: 'clinicalAnalysis', label: 'Clinical Analysis', icon: Activity, color: 'purple', description: 'Review of systems' },
   { id: 'physicalExam', label: 'Physical Exam', icon: Heart, color: 'red', description: 'Physical examination findings' },
   { id: 'drugHistory', label: 'Drug Hx', icon: Pill, color: 'green', description: 'Current and past medications' },
-  { id: 'medicalConditions', label: 'Medical Conditions', icon: ClipboardList, color: 'orange', description: 'Past medical history' },
+  { id: 'medicalConditions', label: 'Md/Surg/Obs&Gyn Conditions', icon: ClipboardList, color: 'orange', description: 'Past medical history' },
 { id: 'healthEducation', label: 'Health Education', icon: BookOpen, color: 'yellow', description: 'Patient education' }
 
 ];
@@ -852,9 +852,9 @@ const MedicalConditionsSection = ({ data, onChange }: any) => {
 
   return (
     <div className="space-y-4">
-      <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-4">
-        <h3 className="font-semibold text-orange-900">Medical Conditions</h3>
-        <p className="text-sm text-orange-700">Past medical history and chronic conditions</p>
+      <div className="bg-orange-50 border border-orange-100 rounded-lg p-4 mb-4">
+        <h3 className="font-semibold text-orange-900">Medical, Surgical,  and Obs & Gyn</h3>
+        <p className="text-sm text-orange-700">Past medical, surgical, Obs and Gyn history</p>
       </div>
 
       {data.map((item: any) => (

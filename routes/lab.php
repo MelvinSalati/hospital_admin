@@ -3,6 +3,8 @@
 use App\Http\Controllers\Patients\LabOrderController;
 use App\Http\Controllers\Laboratories\LaboratoryController;
 use App\Http\Controllers\Reports\LaboratoryReportController;
+
+use App\Http\Controllers\Laboratories\LaboratoryController as MainLaboratoryController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {

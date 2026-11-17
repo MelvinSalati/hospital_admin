@@ -268,23 +268,21 @@ export default function BulkStore() {
                 { title: 'Bulk Store', href: '' },
             ]}
         >
+            <PageHeader
+                icon={<BarcodeIcon className="h-5 w-5" />}
+                title="Bulk Store"
+                subtitle="Order from bulk store"
+                tabVariant="underline"
+                actions={[
+                    {
+                        label: 'Order from Bulk Store',
+                        onClick: () => setIsModalOpen(true),
+                    },
+                ]}
+                defaultTabId="overview"
+            />
             <div className="h-full space-y-4 bg-blue-50 p-4">
-                <PageHeader
-                    icon={<BarcodeIcon className="h-5 w-5" />}
-                    title="Bulk Store"
-                    subtitle="Order from bulk store"
-                    tabVariant="underline"
-                    actions={[
-                        {
-                            label: 'Order from Bulk Store',
-                            onClick: () => setIsModalOpen(true),
-                        },
-                    ]}
-                    defaultTabId="overview"
-                />
-
                 <ReusableTable
-                    title="Ordered Items"
                     columns={columns}
                     data={orderedItems ?? []}
                     actions={actions}

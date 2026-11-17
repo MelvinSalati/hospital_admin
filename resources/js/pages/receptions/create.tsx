@@ -178,13 +178,24 @@ const MAX_PHOTO_BYTES = 2 * 1024 * 1024;
 const hasValue = (value: unknown): boolean =>
     value !== null && value !== undefined && value !== '';
 
-const formatDate = (dateString: string): string => {
-    if (!dateString) return '—';
-    return new Date(dateString).toLocaleDateString('en-ZM', {
-        year: 'numeric',
-        month: 'short',
+// const formatDate = (dateString: string): string => {
+//     if (!dateString) return '—';
+//     return new Date(dateString).toLocaleDateString('en-ZM', {
+//         year: 'numeric',
+//         month: 'short',
+//         day: 'numeric',
+//     });
+// };
+const formatDate = (value?: string | null): string => {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '—';
+
+    return new Intl.DateTimeFormat('en-GB', {
         day: 'numeric',
-    });
+        month: 'long',
+        year: 'numeric',
+    }).format(date);
 };
 
 const getAge = (dateOfBirth: string): number | null => {
@@ -473,9 +484,7 @@ const recentPatientColumns = [
         sortable: true,
         render: (patient: RecentPatient) => (
             <span className="text-sm text-gray-500 dark:text-slate-400">
-                {hasValue(patient.created_at)
-                    ? formatDate(patient.created_at)
-                    : '—'}
+                {formatDate(patient.created_at)}
             </span>
         ),
     },
@@ -700,14 +709,13 @@ export default function Create() {
                 setImagePreview(null);
                 setActiveTab('personal');
                 setIsModalOpen(false);
-              
             } else {
                 toast.error(
                     response.data.message ?? 'Couldn’t register the patient.',
                 );
             }
         } catch (error: any) {
-            console.log(error)
+            console.log(error);
             const res = error?.response;
             if (res?.status === 422 && res.data?.errors) {
                 const mapped = Object.fromEntries(
@@ -769,7 +777,7 @@ export default function Create() {
     ];
 
     const breadcrumbs = [
-        { title: 'Dashboard', href: '/dashboard' },
+        { href: '/dashboard', title: 'Altaf Memorial Hospital' },
         { title: 'Reception', href: '/reception' },
         { title: 'Register patient' },
     ];

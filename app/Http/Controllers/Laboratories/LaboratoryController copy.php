@@ -67,41 +67,131 @@ class LaboratoryController extends Controller
         ]);
     }
 
+
     public function index()
     {
-        $laboratoryItems = LabOrder::join('lab_order_items', 'lab_orders.id', '=', 'lab_order_items.lab_order_id')
-            ->join('patients', 'patients.id', '=', 'lab_orders.patient_id')
-            ->limit(4)
+        $orders = LabOrder::query()
+            ->with([
+                'patient:id,first_name,last_name,gender,date_of_birth,patient_number',
+                'orderedBy:id,name',
+            ])
+            ->orderBy('created_at')
             ->get();
 
+        $orderIds = $orders->pluck('id');
+
+        // Ordered tests per order
+        $itemsByOrder = DB::table('lab_order_items')
+            ->whereIn('lab_order_id', $orderIds)
+            ->get()
+            ->groupBy('lab_order_id');
+
+        // Orders that already have parsed results
+        $resultItemsByOrder = DB::table('lab_result_files as lrf')
+            ->join('lab_result_items as lri', 'lri.lab_result_id', '=', 'lrf.id')
+            ->whereIn('lrf.lab_order_id', $orderIds)
+            ->select('lrf.lab_order_id', 'lri.test_name')
+            ->get()
+            ->groupBy('lab_order_id');
+
+        // -------------------------------------------------
+        // Load related patient visits
+        // Supports both visit_id and token matching
+        // -------------------------------------------------
+        $visitIds = $orders->pluck('visit_id')->filter()->unique()->values();
+        $tokens   = $orders->pluck('token')
+            ->merge($orders->pluck('visit_token'))
+            ->filter()
+            ->unique()
+            ->values();
+
+        $visits = DB::table('patient_visits')
+            ->when($visitIds->isNotEmpty(), function ($q) use ($visitIds) {
+                $q->whereIn('id', $visitIds);
+            })
+            ->when($tokens->isNotEmpty(), function ($q) use ($tokens) {
+                $q->orWhereIn('token', $tokens)
+                    ->orWhereIn('visit_token', $tokens);
+            })
+            ->get()
+            ->keyBy(function ($visit) {
+                // Prefer ID key, fall back to token
+                return $visit->id ?? $visit->token ?? $visit->visit_token;
+            });
+
+        $queue = $orders->map(function ($order) use ($itemsByOrder, $resultItemsByOrder, $visits) {
+
+            $items       = $itemsByOrder->get($order->id, collect());
+            $resultItems = $resultItemsByOrder->get($order->id, collect());
+
+            // Find related visit (by visit_id first, then by token)
+            $visit = null;
+            if (!empty($order->visit_id) && isset($visits[$order->visit_id])) {
+                $visit = $visits[$order->visit_id];
+            } else {
+                $token = $order->token ?? $order->visit_token;
+                if ($token && isset($visits[$token])) {
+                    $visit = $visits[$token];
+                }
+            }
+
+            $tests = $items->isNotEmpty()
+                ? $items->map(fn($item) => [
+                    'test_name'   => $item->test_name,
+                    'unit_price'  => $item->unit_price,
+                    'quantity'    => $item->quantity,
+                    'total_price' => $item->total_price,
+                    'status'      => $item->status,
+                    'amount'      => (float) $item->total_price,
+                ])->values()
+                : $resultItems->unique('test_name')->map(fn($item) => [
+                    'test_name'   => $item->test_name,
+                    'unit_price'  => 0,
+                    'quantity'    => 1,
+                    'total_price' => 0,
+                    'status'      => 'completed',
+                    'amount'      => 0.0,
+                ])->values();
+
+            // Existing processed logic + optional visit status
+            $processed = in_array($order->status, ['completed', 'cancelled'], true)
+                || $resultItems->isNotEmpty();
+
+            // Optional: also mark as processed if the visit itself is closed
+            // Uncomment if you want this behaviour
+            // if ($visit && in_array(strtolower($visit->status ?? ''), ['completed', 'discharged', 'closed', 'cancelled'])) {
+            //     $processed = true;
+            // }
+
+            $patient = $order->patient;
+            $gender  = $patient?->gender ? ucfirst($patient->gender) : null;
+
+            return [
+                'id'             => $patient?->id ?? $order->patient_id,
+                'lab_order_id'   => $order->id,
+                'first_name'     => $patient?->first_name,
+                'last_name'      => $patient?->last_name,
+                'gender'         => $gender && $patient?->date_of_birth
+                    ? $gender[0] . '/' . \Carbon\Carbon::parse($patient->date_of_birth)->age
+                    : $gender,
+                'patient_number' => $patient?->patient_number,
+                'token'          => $order->token ?? $order->visit_token ?? $visit?->token,
+                'status'         => $processed ? 'completed' : ($order->status ?: 'pending'),
+                'processed'      => $processed,
+                'created_at'     => (string) $order->created_at,
+                'tests'          => $tests,
+                'total_amount'   => $tests->sum('amount') ?: (float) ($order->total_amount ?? 0),
+                'ordered_by'     => $order->orderedBy?->name ?? 'system',
+
+                // Extra visit info (optional – useful for frontend)
+                'visit_id'       => $visit->id ?? $order->visit_id ?? null,
+                'visit_status'   => $visit->status ?? null,
+                'visit_token'    => $visit->token ?? $visit->visit_token ?? null,
+            ];
+        })->values();
+
         return Inertia::render('laboratories/laboratory', [
-            'queue' => $laboratoryItems->map(function ($items) use ($laboratoryItems) {
-                $gender = ucFirst($items->gender);
-
-                $tests = $laboratoryItems
-                    ->where('lab_order_id', $items->lab_order_id)
-                    ->map(fn($item) => [
-                        'test_name'   => $item->test_name,
-                        'unit_price'  => $item->unit_price,
-                        'quantity'    => $item->quantity,
-                        'total_price' => $item->total_price,
-                        'status'      => $item->status,
-                        'amount'      => (float) $item->total_price, // per-test amount
-                    ])
-                    ->values();
-
-                return [
-                    'id'           => $items->patient_id,
-                    'first_name'   => $items->first_name,
-                    'last_name'    => $items->last_name,
-                    'gender'       => $gender[0] . '/' . \Carbon\Carbon::parse($items->date_of_birth)->age,
-                    'tests'        => $tests,
-                    'token'        => $items->visit_token,
-                    'lab_order_id' => $items->lab_order_id,
-                    'total_amount' => $tests->sum('amount'), // per-order subtotal
-                    'ordered_by'   => 'system',
-                ];
-            }),
+            'queue' => $queue,
         ]);
     }
 

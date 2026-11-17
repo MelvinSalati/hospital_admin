@@ -1,26 +1,42 @@
+// resources/js/pages/radiology/queue.tsx
+
 import { router, usePage } from '@inertiajs/react';
 import {
+    Clock,
+    Eye,
+    FileUp,
+    Hourglass,
+    Image as ImageIcon,
     Microscope,
     ScanLine,
-    X,
-    Receipt,
-    CheckCircle2,
     Upload,
-    FileText,
-    FileUp,
-    Image as ImageIcon,
-    AlertTriangle,
+    X,
 } from 'lucide-react';
 import Notiflix from 'notiflix';
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { FC, ReactNode } from 'react';
 import PageHeader from '@/components/PageHeader';
-import type { Column, Action } from '@/components/ReusableTable';
 import ReusableTable from '@/components/ReusableTable';
+import type { Action, Column } from '@/components/ReusableTable';
+import { Button } from '@/components/ui/button';
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
 import AppLayout from '@/layouts/app-layout';
 import { cn } from '@/lib/utils';
 import Http from '@/utils/Http';
 
-// ============ TYPES (match RadiologyController::mapQueueRow) ============
+// ============================================================================
+// Types (match RadiologyController::mapQueueRow)
+// ============================================================================
+
+/** In Progress = still has studies to report, Completed = every study done. */
+type OrderStatus = 'in_progress' | 'completed';
+
 interface ImagingTest {
     test_name: string;
     modality: string | null;
@@ -45,12 +61,18 @@ interface ImagingQueueRow {
     name: string;
     gender: string; // already "M/34" or "-/-"
     tests: ImagingTest[];
-    priority: 'routine' | 'urgent' | string;
+    priority: string;
     modality: string | null;
     body_part: string | null;
     total_amount: number;
     ordered_by: string;
     ordered_date: string | null;
+    /** Optional order status from the backend: 1 = In Progress, 0 = Completed. */
+    status?: number | string | boolean | null;
+}
+
+interface QueueOrder extends ImagingQueueRow {
+    order_status: OrderStatus;
 }
 
 interface AuthUser {
@@ -60,25 +82,348 @@ interface AuthUser {
 }
 
 interface Props {
-    radiologyQueue: ImagingQueueRow[];
+    [key: string]: unknown;
+    radiologyQueue?: ImagingQueueRow[];
     auth: {
         user: AuthUser;
     };
 }
 
-// ============ HELPERS ============
-const formatMoney = (n: number | string) =>
-    `ZMW ${Number(n).toLocaleString('en-US', {
+type QueueTab = 'in_queue' | 'completed';
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+/** How often the queue refreshes and wait times recalculate. */
+const REFRESH_MS = 30_000;
+
+// ============================================================================
+// Illustrated avatars (DiceBear)
+// ============================================================================
+
+const AVATAR_BASE_URL = 'https://api.dicebear.com/9.x/avataaars/svg';
+
+const AVATAR_STYLE = {
+    skinColor: '614335,ae5d29',
+    hairColor: '2c1b18,4a312c',
+    backgroundColor: 'dbeafe,e0e7ff',
+    maleTops:
+        'shortCurly,shortFlat,shortRound,frizzle,theCaesar,dreads01,dreads02,sides',
+    femaleTops: 'bob,bun,curly,curvy,dreads,fro,froBand,bigHair',
+    neutralTops: 'shortCurly,shortFlat,bob,curly,fro,frizzle',
+};
+
+const getAvatarUrl = (
+    seedId: number | string,
+    gender: string | null | undefined,
+    pixels: number,
+): string => {
+    const g = (gender || '').toLowerCase();
+    const isMale = g === 'male';
+    const isFemale = g === 'female';
+
+    const params = new URLSearchParams({
+        seed: `patient-${seedId}`,
+        size: String(pixels),
+        skinColor: AVATAR_STYLE.skinColor,
+        hairColor: AVATAR_STYLE.hairColor,
+        backgroundColor: AVATAR_STYLE.backgroundColor,
+        top: isMale
+            ? AVATAR_STYLE.maleTops
+            : isFemale
+              ? AVATAR_STYLE.femaleTops
+              : AVATAR_STYLE.neutralTops,
+        facialHairProbability: isMale ? '25' : '0',
+        facialHairColor: '2c1b18',
+        accessoriesProbability: '0',
+    });
+
+    return `${AVATAR_BASE_URL}?${params.toString()}`;
+};
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+const formatMoney = (value: number | string): string =>
+    `ZMW ${Number(value || 0).toLocaleString('en-US', {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
     })}`;
 
-const priorityBadge = (p: string) =>
-    p === 'urgent'
-        ? 'bg-red-50 text-red-700 border-red-200'
-        : 'bg-slate-50 text-slate-600 border-slate-200';
+const parseDate = (value?: string | null): Date | null => {
+    if (!value) {
+        return null;
+    }
 
-// ============ UPLOAD MODAL ============
+    const date = new Date(value.replace(' ', 'T'));
+
+    return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const formatDate = (value?: string | null): string => {
+    const date = parseDate(value);
+
+    return date
+        ? date.toLocaleDateString('en-GB', {
+              day: '2-digit',
+              month: 'short',
+              year: 'numeric',
+          })
+        : 'N/A';
+};
+
+const formatTime = (value?: string | null): string => {
+    const date = parseDate(value);
+
+    return date
+        ? date.toLocaleTimeString('en-GB', {
+              hour: '2-digit',
+              minute: '2-digit',
+          })
+        : '';
+};
+
+const formatDateTime = (value?: string | null): string =>
+    parseDate(value) ? `${formatDate(value)}, ${formatTime(value)}` : 'N/A';
+
+/** Minutes between the order and `now`, or null when the date is unusable. */
+const minutesWaiting = (value: string | null, now: number): number | null => {
+    const date = parseDate(value);
+
+    if (!date) {
+        return null;
+    }
+
+    return Math.max(0, Math.floor((now - date.getTime()) / 60_000));
+};
+
+const formatWait = (minutes: number): string => {
+    if (minutes < 1) {
+        return '<1m';
+    }
+
+    if (minutes < 60) {
+        return `${minutes}m`;
+    }
+
+    const hours = Math.floor(minutes / 60);
+    const rest = String(minutes % 60).padStart(2, '0');
+
+    return `${hours}h ${rest}m`;
+};
+
+/** "M/34" → "male", "F/8" → "female", anything else → null. */
+const genderFromSexAge = (value: string | null | undefined): string | null => {
+    const first = (value || '').trim().charAt(0).toUpperCase();
+
+    if (first === 'M') {
+        return 'male';
+    }
+
+    if (first === 'F') {
+        return 'female';
+    }
+
+    return null;
+};
+
+/**
+ * Backend `status` wins when it is 0 or 1 (1 → In Progress, 0 → Completed).
+ * Otherwise the order is Completed once every study on it is completed.
+ */
+const resolveOrderStatus = (row: ImagingQueueRow): OrderStatus => {
+    const raw = row.status;
+
+    if (raw !== null && raw !== undefined && raw !== '') {
+        const numeric = Number(raw);
+
+        if (numeric === 1) {
+            return 'in_progress';
+        }
+
+        if (numeric === 0) {
+            return 'completed';
+        }
+    }
+
+    const tests = row.tests ?? [];
+
+    return tests.length > 0 &&
+        tests.every((t) => String(t.status).toLowerCase() === 'completed')
+        ? 'completed'
+        : 'in_progress';
+};
+
+const normalizeRow = (row: ImagingQueueRow): QueueOrder => ({
+    ...row,
+    name: row.name?.trim() || 'Unknown patient',
+    priority: (row.priority || 'routine').toLowerCase(),
+    ordered_by: row.ordered_by || 'N/A',
+    tests: row.tests ?? [],
+    order_status: resolveOrderStatus(row),
+});
+
+const orderedAt = (row: QueueOrder): number =>
+    parseDate(row.ordered_date)?.getTime() ?? 0;
+
+const isUrgent = (priority: string): boolean =>
+    ['stat', 'emergency', 'urgent'].includes(priority);
+
+// ============================================================================
+// Badge components
+// ============================================================================
+
+const STATUS_CONFIG: Record<
+    OrderStatus,
+    { label: string; color: string; dot: string }
+> = {
+    in_progress: {
+        label: 'In Progress',
+        color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+        dot: 'bg-emerald-500',
+    },
+    completed: {
+        label: 'Completed',
+        color: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
+        dot: 'bg-slate-500',
+    },
+};
+
+const StatusBadge: FC<{ status: OrderStatus }> = ({ status }) => {
+    const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.in_progress;
+
+    return (
+        <span
+            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${cfg.color}`}
+        >
+            <span className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`} />
+            {cfg.label}
+        </span>
+    );
+};
+
+const PriorityBadge: FC<{ priority: string }> = ({ priority }) => {
+    const config: Record<string, { label: string; color: string }> = {
+        routine: {
+            label: 'Routine',
+            color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+        },
+        urgent: {
+            label: 'Urgent',
+            color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+        },
+        emergency: {
+            label: 'Emergency',
+            color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+        },
+        stat: {
+            label: 'STAT',
+            color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+        },
+    };
+
+    const cfg = config[priority] || config.routine;
+
+    return (
+        <span
+            className={`inline-flex items-center rounded px-2 py-0.5 text-[10px] font-medium ${cfg.color}`}
+        >
+            {cfg.label}
+        </span>
+    );
+};
+
+const ModalityBadge: FC<{ modality: string | null }> = ({ modality }) =>
+    modality ? (
+        <span className="inline-flex items-center rounded bg-cyan-100 px-2 py-0.5 text-[10px] font-medium text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400">
+            {modality}
+        </span>
+    ) : (
+        <span className="text-xs text-slate-400">—</span>
+    );
+
+/** Live wait time. Turns amber after 30 minutes and red after an hour. */
+const WaitBadge: FC<{ minutes: number | null }> = ({ minutes }) => {
+    if (minutes === null) {
+        return <span className="text-xs text-slate-400">—</span>;
+    }
+
+    const tone =
+        minutes >= 60
+            ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+            : minutes >= 30
+              ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+              : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
+
+    return (
+        <span
+            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${tone}`}
+        >
+            <Hourglass size={12} />
+            {formatWait(minutes)}
+        </span>
+    );
+};
+
+const PatientAvatar: FC<{
+    name: string;
+    seedId: number | string;
+    gender?: string | null;
+    size?: 'sm' | 'lg';
+}> = ({ name, seedId, gender, size = 'sm' }) => {
+    const [failed, setFailed] = useState(false);
+
+    const dimension = size === 'lg' ? 'h-12 w-12 text-sm' : 'h-9 w-9 text-xs';
+    const pixels = size === 'lg' ? 96 : 72;
+
+    const initials = (name || '')
+        .split(' ')
+        .filter(Boolean)
+        .map((n) => n[0])
+        .join('')
+        .toUpperCase()
+        .slice(0, 2);
+
+    if (failed) {
+        return (
+            <div
+                className={`flex ${dimension} shrink-0 items-center justify-center rounded-full bg-blue-100 font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300`}
+            >
+                {initials || '?'}
+            </div>
+        );
+    }
+
+    return (
+        <img
+            src={getAvatarUrl(seedId, gender, pixels)}
+            alt={name}
+            loading="lazy"
+            referrerPolicy="no-referrer"
+            onError={() => setFailed(true)}
+            className={`${dimension} shrink-0 rounded-full bg-blue-100 object-cover dark:bg-blue-900/40`}
+        />
+    );
+};
+
+const DetailField: FC<{ label: string; children: ReactNode }> = ({
+    label,
+    children,
+}) => (
+    <div>
+        <Label className="text-xs text-slate-500">{label}</Label>
+        <div className="mt-0.5 text-sm text-slate-800 dark:text-slate-200">
+            {children}
+        </div>
+    </div>
+);
+
+// ============================================================================
+// Upload results modal (original structure and styling)
+// ============================================================================
+
 function UploadResultModal({
     open,
     order,
@@ -479,189 +824,93 @@ function UploadResultModal({
         </div>
     );
 }
-// ============ DRAWER ============
-function OrderDetailDrawer({
-    order,
-    isOpen,
-    onClose,
-}: {
-    order: ImagingQueueRow | null;
-    isOpen: boolean;
-    onClose: () => void;
-}) {
-    const tests = order?.tests ?? [];
-    const total = useMemo(
-        () => tests.reduce((s, t) => s + Number(t.amount ?? 0), 0),
-        [tests],
-    );
 
-    if (!order) return null;
+// ============================================================================
+// Main component
+// ============================================================================
 
-    return (
-        <>
-            <div
-                className={cn(
-                    'fixed inset-0 z-40 bg-slate-900/40 transition-opacity',
-                    isOpen ? 'opacity-100' : 'pointer-events-none opacity-0',
-                )}
-                onClick={onClose}
-            />
-            <aside
-                className={cn(
-                    'fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col bg-white shadow-2xl transition-transform',
-                    isOpen ? 'translate-x-0' : 'translate-x-full',
-                )}
-            >
-                <header className="flex items-center justify-between border-b border-slate-200 p-4">
-                    <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-600 text-white">
-                            <Receipt size={18} />
-                        </div>
-                        <div>
-                            <h2 className="text-sm font-semibold text-slate-900">
-                                Imaging Order
-                            </h2>
-                            <p className="font-mono text-[11px] text-slate-500">
-                                {order.order_number}
-                            </p>
-                        </div>
-                    </div>
-                    <button
-                        onClick={onClose}
-                        className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100"
-                    >
-                        <X size={18} />
-                    </button>
-                </header>
-
-                <div className="flex items-center gap-3 border-b border-slate-100 bg-slate-50/60 p-4">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-md bg-purple-600 text-xs font-semibold text-white">
-                        {order.first_name?.[0] ?? '?'}
-                        {order.last_name?.[0] ?? ''}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-slate-900">
-                            {order.name}
-                        </p>
-                        <p className="text-[11px] text-slate-500">
-                            {order.gender} · ordered by {order.ordered_by}
-                        </p>
-                    </div>
-                    <span
-                        className={cn(
-                            'inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-medium capitalize',
-                            priorityBadge(order.priority),
-                        )}
-                    >
-                        {order.priority === 'urgent' && (
-                            <AlertTriangle size={11} />
-                        )}
-                        {order.priority}
-                    </span>
-                </div>
-
-                <div className="flex-1 overflow-y-auto p-4">
-                    <h3 className="mb-2 text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
-                        Studies ({tests.length})
-                    </h3>
-
-                    <ul className="space-y-2">
-                        {tests.map((t, idx) => (
-                            <li
-                                key={`${t.test_name}-${idx}`}
-                                className="rounded-lg border border-slate-200 bg-white p-3"
-                            >
-                                <div className="flex items-center justify-between gap-2">
-                                    <p className="truncate text-sm font-medium text-slate-800">
-                                        {t.test_name}
-                                    </p>
-                                    <span className="rounded bg-white px-2 py-0.5 text-[10px] text-slate-600 capitalize">
-                                        {t.status}
-                                    </span>
-                                </div>
-                                <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-500">
-                                    <ScanLine size={11} />
-                                    <span>{t.modality ?? '-'}</span>
-                                    <span>·</span>
-                                    <span>{t.body_part ?? '-'}</span>
-                                    <span>· Qty {t.quantity}</span>
-                                </div>
-                                <div className="mt-1 flex justify-between text-[11px] text-slate-500">
-                                    <span>× {formatMoney(t.unit_price)}</span>
-                                    <span className="font-mono font-semibold text-slate-900">
-                                        {formatMoney(t.amount)}
-                                    </span>
-                                </div>
-                            </li>
-                        ))}
-                        {tests.length === 0 && (
-                            <li className="rounded-lg border border-dashed border-slate-200 p-6 text-center text-xs text-slate-400">
-                                No items on this order
-                            </li>
-                        )}
-                    </ul>
-                </div>
-
-                <footer className="border-t border-slate-200 bg-slate-50/60 p-4">
-                    <div className="flex items-center justify-between text-sm">
-                        <span className="text-slate-600">Total</span>
-                        <span className="font-mono text-base font-semibold text-purple-600">
-                            {formatMoney(total || order.total_amount)}
-                        </span>
-                    </div>
-                    <button
-                        onClick={onClose}
-                        className="mt-3 w-full rounded-md border border-slate-200 bg-white py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                    >
-                        Close
-                    </button>
-                </footer>
-            </aside>
-        </>
-    );
-}
-
-// ============ MAIN ============
 export default function RadiologyQueue() {
-    const { props } = usePage<Props>();
-    const rows = props.radiologyQueue || [];
-    const auth = props.auth;
+    const { radiologyQueue = [], auth } = usePage<Props>().props;
+    console.log(radiologyQueue);
+    const [detailsId, setDetailsId] = useState<number | null>(null);
+    const [uploadId, setUploadId] = useState<number | null>(null);
+    const [activeTab, setActiveTab] = useState<QueueTab>('in_queue');
+    const [now, setNow] = useState(() => Date.now());
 
-    const [selectedOrder, setSelectedOrder] = useState<ImagingQueueRow | null>(
-        null,
+    // Keep wait times ticking and the queue fresh while the tab is visible.
+    useEffect(() => {
+        const timer = setInterval(() => {
+            setNow(Date.now());
+
+            if (document.visibilityState === 'visible') {
+                router.reload({ only: ['radiologyQueue'] });
+            }
+        }, REFRESH_MS);
+
+        return () => clearInterval(timer);
+    }, []);
+
+    const processedQueue = useMemo<QueueOrder[]>(
+        () => radiologyQueue.map(normalizeRow),
+        [radiologyQueue],
     );
-    const [drawerOpen, setDrawerOpen] = useState(false);
-    const [uploadOrder, setUploadOrder] = useState<ImagingQueueRow | null>(
-        null,
+
+    // In Progress: oldest order first. Completed: most recent first.
+    const inQueue = useMemo(
+        () =>
+            processedQueue
+                .filter((o) => o.order_status === 'in_progress')
+                .sort((a, b) => orderedAt(a) - orderedAt(b)),
+        [processedQueue],
     );
-    const [uploadOpen, setUploadOpen] = useState(false);
 
-    const openDetails = (row: ImagingQueueRow) => {
-        setSelectedOrder(row);
-        setDrawerOpen(true);
-    };
-    const closeDetails = () => {
-        setDrawerOpen(false);
-        setTimeout(() => setSelectedOrder(null), 250);
-    };
+    const completed = useMemo(
+        () =>
+            processedQueue
+                .filter((o) => o.order_status === 'completed')
+                .sort((a, b) => orderedAt(b) - orderedAt(a)),
+        [processedQueue],
+    );
 
-    const openUpload = (row: ImagingQueueRow) => {
-        setUploadOrder(row);
-        setUploadOpen(true);
-    };
-    const closeUpload = () => {
-        setUploadOpen(false);
-        setTimeout(() => setUploadOrder(null), 200);
-    };
+    const tableData = activeTab === 'in_queue' ? inQueue : completed;
 
-    const columns: Column<ImagingQueueRow>[] = [
+    // Look the open order up by id so refreshes keep the dialog current.
+    const detailsOrder =
+        processedQueue.find((o) => o.imaging_order_id === detailsId) ?? null;
+    const uploadOrder =
+        processedQueue.find((o) => o.imaging_order_id === uploadId) ?? null;
+
+    const detailsTotal = useMemo(
+        () =>
+            (detailsOrder?.tests ?? []).reduce(
+                (sum, t) => sum + Number(t.amount ?? 0),
+                0,
+            ),
+        [detailsOrder],
+    );
+
+    // ------------------------------------------------------------------------
+    // Columns
+    // ------------------------------------------------------------------------
+
+    const columns: Column<QueueOrder>[] = [
         {
             id: 'order_number',
             label: 'Order',
             sortable: true,
-            format: (value) => (
-                <span className="font-mono text-xs font-semibold text-slate-800">
-                    {value}
+            format: (value, row) => (
+                <span className="inline-flex items-center gap-2">
+                    {isUrgent(row.priority) &&
+                        row.priority !== 'urgent' &&
+                        row.order_status === 'in_progress' && (
+                            <span className="relative flex h-2 w-2">
+                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75 motion-reduce:animate-none" />
+                                <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+                            </span>
+                        )}
+                    <span className="font-mono text-sm font-medium text-blue-600 dark:text-blue-400">
+                        {(value as string) || 'N/A'}
+                    </span>
                 </span>
             ),
         },
@@ -670,52 +919,52 @@ export default function RadiologyQueue() {
             label: 'Patient',
             sortable: true,
             filterable: true,
-            format: (_, row) => (
-                <div className="flex items-center gap-2">
-                    <div className="flex h-7 w-7 items-center justify-center rounded-md bg-purple-600 text-[10px] font-semibold text-white">
-                        {row.first_name?.[0] ?? '?'}
-                        {row.last_name?.[0] ?? ''}
-                    </div>
+            format: (_value, row) => (
+                <div className="flex items-center gap-2.5">
+                    <PatientAvatar
+                        name={row.name}
+                        seedId={row.patient_id ?? row.id}
+                        gender={genderFromSexAge(row.gender)}
+                    />
                     <div>
-                        <p className="text-sm font-medium">{row.name}</p>
-                        {row.patient_no && (
-                            <p className="font-mono text-[11px] text-slate-400">
-                                {row.patient_no}
-                            </p>
-                        )}
+                        <span className="font-medium text-slate-800 dark:text-slate-200">
+                            {row.name}
+                        </span>
+                        <div className="flex items-center gap-2 text-xs text-slate-400">
+                            {row.patient_no && (
+                                <span>EMR #: {row.patient_no}</span>
+                            )}
+                            {row.gender && row.gender !== '-/-' && (
+                                <>
+                                    {row.patient_no && <span>•</span>}
+                                    <span>{row.gender}</span>
+                                </>
+                            )}
+                        </div>
                     </div>
                 </div>
             ),
         },
         {
-            id: 'gender',
-            label: 'Sex/Age',
-            sortable: true,
-            format: (value) => (
-                <span className="text-xs text-slate-600">{value}</span>
-            ),
-        },
-        {
             id: 'modality',
             label: 'Modality',
-            format: (value) => (
-                <span className="rounded bg-purple-50 px-2 py-0.5 text-[11px] font-medium text-purple-700">
-                    {value ?? '—'}
-                </span>
-            ),
+            sortable: true,
+            format: (_value, row) => <ModalityBadge modality={row.modality} />,
         },
         {
             id: 'tests',
             label: 'Studies',
-            format: (_, row) => {
-                const count = row.tests?.length ?? 0;
-                const done =
-                    row.tests?.filter((t) => t.status === 'completed').length ??
-                    0;
+            format: (_value, row) => {
+                const count = row.tests.length;
+                const done = row.tests.filter(
+                    (t) => String(t.status).toLowerCase() === 'completed',
+                ).length;
+
                 return (
                     <button
-                        onClick={() => openDetails(row)}
-                        className="inline-flex items-center gap-1.5 rounded-md border border-purple-200 bg-purple-50 px-2 py-1 text-[11px] font-medium text-purple-700 hover:bg-purple-100"
+                        type="button"
+                        onClick={() => setDetailsId(row.imaging_order_id)}
+                        className="inline-flex items-center gap-1.5 rounded-md bg-blue-50 px-2 py-1 text-[11px] font-medium text-blue-600 transition-colors hover:bg-blue-100 dark:bg-blue-950/30 dark:text-blue-400"
                     >
                         <ScanLine size={12} />
                         {done}/{count} done
@@ -726,16 +975,33 @@ export default function RadiologyQueue() {
         {
             id: 'priority',
             label: 'Priority',
-            format: (value) => (
-                <span
-                    className={cn(
-                        'inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-medium capitalize',
-                        priorityBadge(String(value)),
+            sortable: true,
+            format: (_value, row) => <PriorityBadge priority={row.priority} />,
+        },
+        {
+            id: 'order_status',
+            label: 'Status',
+            sortable: true,
+            format: (_value, row) => <StatusBadge status={row.order_status} />,
+        },
+        {
+            id: 'ordered_date',
+            label: activeTab === 'in_queue' ? 'Waiting' : 'Ordered',
+            sortable: true,
+            format: (value, row) => (
+                <div className="flex flex-col gap-1">
+                    {row.order_status === 'in_progress' && (
+                        <WaitBadge
+                            minutes={minutesWaiting(row.ordered_date, now)}
+                        />
                     )}
-                >
-                    {String(value) === 'urgent' && <AlertTriangle size={11} />}
-                    {String(value)}
-                </span>
+                    <div className="flex items-center gap-1.5">
+                        <Clock size={12} className="text-slate-400" />
+                        <span className="text-xs text-slate-500 dark:text-slate-400">
+                            {formatDateTime(value as string)}
+                        </span>
+                    </div>
+                </div>
             ),
         },
         {
@@ -743,80 +1009,290 @@ export default function RadiologyQueue() {
             label: 'Total',
             sortable: true,
             format: (value) => (
-                <span className="font-mono text-xs font-semibold text-slate-800">
-                    {formatMoney(value)}
+                <span className="font-mono text-xs font-semibold text-slate-800 dark:text-slate-200">
+                    {formatMoney(value as number)}
                 </span>
             ),
         },
         {
             id: 'ordered_by',
             label: 'Ordered By',
+            sortable: true,
             format: (value) => (
-                <span className="text-xs text-slate-600 capitalize">
-                    {value || '—'}
+                <span className="text-sm text-slate-700 capitalize dark:text-slate-300">
+                    {(value as string) || '—'}
                 </span>
             ),
         },
     ];
 
-    const actions: Action<ImagingQueueRow>[] = [
-        {
-            label: 'Upload Images',
-            icon: <FileUp size={16} />,
-            color: 'success',
-            onClick: (row) => openUpload(row),
-        },
+    // ------------------------------------------------------------------------
+    // Actions (Upload only makes sense while the order is in progress)
+    // ------------------------------------------------------------------------
+
+    const actions: Action<QueueOrder>[] = [
+        ...(activeTab === 'in_queue'
+            ? [
+                  {
+                      label: 'Upload Images',
+                      icon: <FileUp size={16} />,
+                      color: 'primary',
+                      onClick: (row: QueueOrder) =>
+                          setUploadId(row.imaging_order_id),
+                  } as Action<QueueOrder>,
+              ]
+            : [
+                  {
+                      label: 'View Dashboard',
+                      icon: <Eye size={16} />,
+                      color: 'primary',
+                      show: (row: QueueOrder) => !!row.patient_id,
+                      onClick: (row: QueueOrder) =>
+                          router.visit(`/patients/dashboard/${row.patient_id}`),
+                  } as Action<QueueOrder>,
+              ]),
         {
             label: 'View Order',
-            icon: <Receipt size={16} />,
+            icon: <Eye size={16} />,
             color: 'info',
-            onClick: (row) => openDetails(row),
+            onClick: (row) => setDetailsId(row.imaging_order_id),
         },
     ];
+
+    // ------------------------------------------------------------------------
+    // Render
+    // ------------------------------------------------------------------------
 
     return (
         <AppLayout
             breadcrumbs={[
-                { href: '', title: 'Radiology' },
-                { href: '', title: 'Queue' },
+                { href: '/dashboard', title: 'Altaf Memorial Hospital' },
+                { href: '', title: 'Department' },
+                { href: '/radiology/queue', title: 'Radiology' },
             ]}
         >
-            <div className="h-full space-y-4 bg-blue-100 p-4">
-                <PageHeader
-                    icon={<Microscope className="h-5 w-5" />}
-                    title="Radiology Department"
-                    subtitle="Review pending imaging studies and upload results for clinician review"
-                />
+            <PageHeader
+                icon={<Microscope />}
+                title="Radiology Encounter Queue"
+                subtitle="Review imaging studies and upload results for clinician review"
+                actions={[
+                    {
+                        label: `In Progress (${inQueue.length})`,
+                        onClick: () => setActiveTab('in_queue'),
+                        variant: activeTab === 'in_queue' ? 'cyan' : 'default',
+                    },
+                    {
+                        label: `Completed (${completed.length})`,
+                        onClick: () => setActiveTab('completed'),
+                        variant: activeTab === 'completed' ? 'cyan' : 'default',
+                    },
+                ]}
+            />
 
+            <div className="flex h-full min-h-screen flex-1 flex-col gap-4 bg-blue-50 p-4 dark:bg-slate-900">
                 <ReusableTable
-                    title="Imaging Queue"
+                    key={activeTab}
                     columns={columns}
-                    data={rows}
+                    data={tableData}
                     actions={actions}
                     loading={false}
-                    filterPlaceholder="Search by name, order number, or token..."
+                    filterPlaceholder="Search by patient name, order number, or token..."
                     rowsPerPageOptions={[8, 15, 25, 50]}
                     defaultRowsPerPage={8}
                     defaultOrderBy="ordered_date"
-                    defaultOrderDirection="asc"
-                    emptyMessage="No pending imaging studies"
+                    defaultOrderDirection={
+                        activeTab === 'in_queue' ? 'asc' : 'desc'
+                    }
+                    emptyMessage={
+                        activeTab === 'in_queue'
+                            ? 'No imaging studies in progress'
+                            : 'No completed imaging studies found'
+                    }
                     className="shadow-sm"
                 />
+
+                {/* Order details modal */}
+                <Dialog
+                    open={detailsOrder !== null}
+                    onOpenChange={(open) => {
+                        if (!open) {
+                            setDetailsId(null);
+                        }
+                    }}
+                >
+                    <DialogContent className="max-w-md">
+                        <DialogHeader>
+                            <DialogTitle className="text-sm">
+                                Imaging Order
+                            </DialogTitle>
+                        </DialogHeader>
+
+                        {detailsOrder && (
+                            <div className="space-y-4">
+                                <div className="flex items-center gap-3">
+                                    <PatientAvatar
+                                        name={detailsOrder.name}
+                                        seedId={
+                                            detailsOrder.patient_id ??
+                                            detailsOrder.id
+                                        }
+                                        gender={genderFromSexAge(
+                                            detailsOrder.gender,
+                                        )}
+                                        size="lg"
+                                    />
+                                    <div>
+                                        <p className="text-sm font-medium">
+                                            {detailsOrder.name}
+                                        </p>
+                                        <p className="font-mono text-xs text-slate-500">
+                                            {detailsOrder.order_number}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <DetailField label="EMR number">
+                                        {detailsOrder.patient_no || 'N/A'}
+                                    </DetailField>
+                                    <DetailField label="Sex / Age">
+                                        {detailsOrder.gender || 'N/A'}
+                                    </DetailField>
+                                    <DetailField label="Priority">
+                                        <PriorityBadge
+                                            priority={detailsOrder.priority}
+                                        />
+                                    </DetailField>
+                                    <DetailField label="Status">
+                                        <StatusBadge
+                                            status={detailsOrder.order_status}
+                                        />
+                                    </DetailField>
+                                    <DetailField label="Modality">
+                                        <ModalityBadge
+                                            modality={detailsOrder.modality}
+                                        />
+                                    </DetailField>
+                                    <DetailField label="Visit token">
+                                        {detailsOrder.visit_token || 'N/A'}
+                                    </DetailField>
+                                    <DetailField label="Ordered by">
+                                        <span className="capitalize">
+                                            {detailsOrder.ordered_by}
+                                        </span>
+                                    </DetailField>
+                                    <DetailField label="Ordered">
+                                        {formatDateTime(
+                                            detailsOrder.ordered_date,
+                                        )}
+                                    </DetailField>
+                                </div>
+
+                                <div>
+                                    <Label className="text-xs text-slate-500">
+                                        Studies ({detailsOrder.tests.length})
+                                    </Label>
+                                    <ul className="mt-1 max-h-56 space-y-2 overflow-y-auto pr-1">
+                                        {detailsOrder.tests.map((t, idx) => (
+                                            <li
+                                                key={`${t.test_name}-${idx}`}
+                                                className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800"
+                                            >
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">
+                                                        {t.test_name}
+                                                    </p>
+                                                    <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600 capitalize dark:bg-slate-700 dark:text-slate-300">
+                                                        {t.status}
+                                                    </span>
+                                                </div>
+                                                <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-500">
+                                                    <ScanLine size={11} />
+                                                    <span>
+                                                        {t.modality ?? '-'}
+                                                    </span>
+                                                    <span>·</span>
+                                                    <span>
+                                                        {t.body_part ?? '-'}
+                                                    </span>
+                                                    <span>
+                                                        · Qty {t.quantity}
+                                                    </span>
+                                                </div>
+                                                <div className="mt-1 flex justify-between text-[11px] text-slate-500">
+                                                    <span>
+                                                        ×{' '}
+                                                        {formatMoney(
+                                                            t.unit_price,
+                                                        )}
+                                                    </span>
+                                                    <span className="font-mono font-semibold text-slate-900 dark:text-slate-100">
+                                                        {formatMoney(t.amount)}
+                                                    </span>
+                                                </div>
+                                            </li>
+                                        ))}
+                                        {detailsOrder.tests.length === 0 && (
+                                            <li className="rounded-lg border border-dashed border-slate-200 p-4 text-center text-xs text-slate-400 dark:border-slate-700">
+                                                No items on this order
+                                            </li>
+                                        )}
+                                    </ul>
+                                </div>
+
+                                <div className="flex items-center justify-between border-t pt-3 text-sm">
+                                    <span className="text-slate-600 dark:text-slate-300">
+                                        Total
+                                    </span>
+                                    <span className="font-mono text-base font-semibold text-blue-600 dark:text-blue-400">
+                                        {formatMoney(
+                                            detailsTotal ||
+                                                detailsOrder.total_amount,
+                                        )}
+                                    </span>
+                                </div>
+
+                                <div className="flex justify-end gap-2">
+                                    {detailsOrder.order_status ===
+                                        'in_progress' && (
+                                        <Button
+                                            size="sm"
+                                            className="text-xs"
+                                            onClick={() => {
+                                                const id =
+                                                    detailsOrder.imaging_order_id;
+
+                                                setDetailsId(null);
+                                                setUploadId(id);
+                                            }}
+                                        >
+                                            <FileUp className="mr-1 h-3.5 w-3.5" />
+                                            Upload images
+                                        </Button>
+                                    )}
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="text-xs"
+                                        onClick={() => setDetailsId(null)}
+                                    >
+                                        Close
+                                    </Button>
+                                </div>
+                            </div>
+                        )}
+                    </DialogContent>
+                </Dialog>
+
+                {/* Upload results modal */}
+                <UploadResultModal
+                    open={uploadOrder !== null}
+                    order={uploadOrder}
+                    onCancel={() => setUploadId(null)}
+                    onSaved={() => setUploadId(null)}
+                    auth={auth}
+                />
             </div>
-
-            <OrderDetailDrawer
-                order={selectedOrder}
-                isOpen={drawerOpen}
-                onClose={closeDetails}
-            />
-
-            <UploadResultModal
-                open={uploadOpen}
-                order={uploadOrder}
-                onCancel={closeUpload}
-                onSaved={closeUpload}
-                auth={auth}
-            />
         </AppLayout>
     );
 }

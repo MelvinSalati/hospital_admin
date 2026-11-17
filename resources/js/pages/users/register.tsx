@@ -1,17 +1,19 @@
 // pages/Register.tsx
 
-import { useForm, usePage } from '@inertiajs/react';
+import { useForm } from '@inertiajs/react';
 import {
+    AlertCircle,
+    Check,
     ChevronLeft,
     ChevronRight,
-    User,
-    Phone,
-    Shield,
-    Save,
-    Users,
     Loader2,
-    X,
+    Phone,
+    Save,
+    Shield,
+    User,
+    Users,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import Notiflix from 'notiflix';
 import { useState } from 'react';
 import PageHeader from '@/components/PageHeader';
@@ -25,6 +27,10 @@ import ContactTab from './components/tabs/ContactTab';
 import DemographicsTab from './components/tabs/DemographicsTab';
 import DepartmentsTab from './components/tabs/DepartmentsTab';
 import RolesTab from './components/tabs/RolesTab';
+
+// ============================================
+// TYPES & CONFIG
+// ============================================
 
 interface RegisterFormData {
     first_name: string;
@@ -45,18 +51,45 @@ interface RegisterFormData {
     department_id: number | string;
 }
 
-interface DepartmentsTabProps {
-    data: RegisterFormData;
-    setData: (key: keyof RegisterFormData, value: any) => void;
-    errors?: Record<string, string>;
-    required?: boolean;
+type TabId = 'demographics' | 'contact' | 'roles' | 'departments';
+
+interface TabConfig {
+    id: TabId;
+    label: string;
+    description: string;
+    icon: LucideIcon;
+    step: number;
 }
 
-const tabs = [
-    { id: 'demographics', label: 'Demographics', icon: User, step: 1 },
-    { id: 'contact', label: 'Contact Info', icon: Phone, step: 2 },
-    { id: 'roles', label: 'Roles & Access', icon: Shield, step: 3 },
-    { id: 'departments', label: 'Departments', icon: Users, step: 4 },
+const tabs: TabConfig[] = [
+    {
+        id: 'demographics',
+        label: 'Demographics',
+        description: 'Personal and professional details',
+        icon: User,
+        step: 1,
+    },
+    {
+        id: 'contact',
+        label: 'Contact Info',
+        description: 'Phone number and email address',
+        icon: Phone,
+        step: 2,
+    },
+    {
+        id: 'roles',
+        label: 'Roles & Access',
+        description: 'Permissions for this user',
+        icon: Shield,
+        step: 3,
+    },
+    {
+        id: 'departments',
+        label: 'Departments',
+        description: 'Where the user will work',
+        icon: Users,
+        step: 4,
+    },
 ];
 
 const defaultFormValues: RegisterFormData = {
@@ -200,35 +233,86 @@ const handleHttpError = (error: any): void => {
     }
 };
 
-/**
- * Get validation errors as an object for displaying on specific fields
- */
-const getValidationErrorsForFields = (
-    errors: any,
-): Record<string, string[]> => {
-    if (!errors) return {};
+// ============================================
+// PRESENTATION COMPONENTS
+// ============================================
 
-    const fieldErrors: Record<string, string[]> = {};
+/** One row in the vertical stepper. */
+const StepItem: React.FC<{
+    tab: TabConfig;
+    isActive: boolean;
+    isDone: boolean;
+    hasError: boolean;
+    isLast: boolean;
+    disabled: boolean;
+    onSelect: () => void;
+}> = ({ tab, isActive, isDone, hasError, isLast, disabled, onSelect }) => {
+    const Icon = tab.icon;
 
-    // Handle Laravel MessageBag
-    if (errors['Illuminate\\Support\\MessageBag']) {
-        const messageBag = errors['Illuminate\\Support\\MessageBag'];
-        Object.keys(messageBag).forEach((field) => {
-            fieldErrors[field] = Array.isArray(messageBag[field])
-                ? messageBag[field]
-                : [messageBag[field]];
-        });
-    }
-    // Handle standard object
-    else if (typeof errors === 'object') {
-        Object.keys(errors).forEach((field) => {
-            fieldErrors[field] = Array.isArray(errors[field])
-                ? errors[field]
-                : [errors[field]];
-        });
-    }
+    const circle = hasError
+        ? 'border-red-300 bg-red-50 text-red-600'
+        : isActive
+          ? 'border-blue-600 bg-blue-600 text-white'
+          : isDone
+            ? 'border-emerald-200 bg-emerald-100 text-emerald-700'
+            : 'border-gray-200 bg-white text-gray-400';
 
-    return fieldErrors;
+    const status = hasError
+        ? { text: 'Needs attention', color: 'text-red-600' }
+        : isDone
+          ? { text: 'Complete', color: 'text-emerald-600' }
+          : isActive
+            ? { text: 'In progress', color: 'text-blue-600' }
+            : { text: 'Not started', color: 'text-gray-400' };
+
+    return (
+        <li className="relative">
+            {!isLast && (
+                <span
+                    aria-hidden="true"
+                    className={`absolute top-11 left-[1.375rem] h-[calc(100%-2rem)] w-px ${
+                        isDone && !hasError ? 'bg-emerald-200' : 'bg-gray-200'
+                    }`}
+                />
+            )}
+            <button
+                type="button"
+                onClick={onSelect}
+                disabled={disabled}
+                aria-current={isActive ? 'step' : undefined}
+                className={`flex min-h-[44px] w-full cursor-pointer items-start gap-3 rounded-lg px-2 py-2.5 text-left transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${
+                    isActive ? 'bg-blue-50' : 'hover:bg-gray-50'
+                }`}
+            >
+                <span
+                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition-colors ${circle}`}
+                >
+                    {hasError ? (
+                        <AlertCircle className="h-4 w-4" />
+                    ) : isDone && !isActive ? (
+                        <Check className="h-4 w-4" />
+                    ) : (
+                        <Icon className="h-4 w-4" />
+                    )}
+                </span>
+                <span className="min-w-0">
+                    <span
+                        className={`block text-sm font-medium ${
+                            isActive ? 'text-blue-700' : 'text-gray-800'
+                        }`}
+                    >
+                        {tab.label}
+                    </span>
+                    <span className="hidden text-xs text-gray-500 sm:block">
+                        {tab.description}
+                    </span>
+                    <span className={`text-xs font-medium ${status.color}`}>
+                        {status.text}
+                    </span>
+                </span>
+            </button>
+        </li>
+    );
 };
 
 // ============================================
@@ -236,10 +320,12 @@ const getValidationErrorsForFields = (
 // ============================================
 
 export default function Register() {
-    const [activeTab, setActiveTab] = useState('demographics');
+    const [activeTab, setActiveTab] = useState<TabId>('demographics');
     const [tabErrors, setTabErrors] = useState<Record<string, boolean>>({});
+    const [completedTabs, setCompletedTabs] = useState<Record<string, boolean>>(
+        {},
+    );
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const { departments } = usePage().props;
 
     const { data, setData, processing, errors, clearErrors, reset } =
         useForm<RegisterFormData>(defaultFormValues);
@@ -249,59 +335,48 @@ export default function Register() {
         reset(defaultFormValues);
         setActiveTab('demographics');
         setTabErrors({});
+        setCompletedTabs({});
         clearErrors();
         setIsSubmitting(false);
     };
 
-    // Validate current tab before switching
+    // Validate a tab's required fields (rules unchanged)
     const validateTab = (tabId: string): boolean => {
-        const tabValidationErrors: Record<string, boolean> = {};
         let isValid = true;
 
         switch (tabId) {
             case 'demographics':
-                if (!data.first_name) {
+                if (
+                    !data.first_name ||
+                    !data.surname ||
+                    !data.date_of_birth ||
+                    !data.gender
+                ) {
                     isValid = false;
-                    tabValidationErrors.first_name = true;
-                }
-                if (!data.surname) {
-                    isValid = false;
-                    tabValidationErrors.surname = true;
-                }
-                if (!data.date_of_birth) {
-                    isValid = false;
-                    tabValidationErrors.date_of_birth = true;
-                }
-                if (!data.gender) {
-                    isValid = false;
-                    tabValidationErrors.gender = true;
                 }
                 break;
 
             case 'contact':
-                if (!data.mobile_phone_number) {
+                if (!data.mobile_phone_number || !data.email) {
                     isValid = false;
-                    tabValidationErrors.mobile_phone_number = true;
-                }
-                if (!data.email) {
-                    isValid = false;
-                    tabValidationErrors.email = true;
                 }
                 break;
 
             case 'roles':
                 if (data.roles.length === 0) {
                     isValid = false;
-                    tabValidationErrors.roles = true;
                 }
                 break;
         }
 
         setTabErrors((prev) => ({ ...prev, [tabId]: !isValid }));
+        if (isValid) {
+            setCompletedTabs((prev) => ({ ...prev, [tabId]: true }));
+        }
         return isValid;
     };
 
-    const handleTabChange = (tabId: string) => {
+    const handleTabChange = (tabId: TabId) => {
         setActiveTab(tabId);
     };
 
@@ -322,12 +397,16 @@ export default function Register() {
     };
 
     const handleSubmit = async () => {
-        // Final validation before submission
-        if (
-            !validateTab('demographics') ||
-            !validateTab('contact') ||
-            !validateTab('roles')
-        ) {
+        // Final validation of every required step; jump to the first one that fails
+        const requiredTabs: TabId[] = ['demographics', 'contact', 'roles'];
+        const results = requiredTabs.map((id) => ({
+            id,
+            valid: validateTab(id),
+        }));
+        const firstInvalid = results.find((r) => !r.valid);
+
+        if (firstInvalid) {
+            setActiveTab(firstInvalid.id);
             Notiflix.Notify.warning(
                 'Please complete all required fields before submitting',
             );
@@ -345,17 +424,9 @@ export default function Register() {
             } else {
                 // Handle backend validation errors
                 if (user.data.errors) {
-                    // Show specific validation errors
-                    const errorMessages = extractValidationErrors(
-                        user.data.errors,
+                    Notiflix.Notify.failure(
+                        extractValidationErrors(user.data.errors),
                     );
-                    Notiflix.Notify.failure(errorMessages);
-
-                    // Optional: Highlight fields with errors
-                    const fieldErrors = getValidationErrorsForFields(
-                        user.data.errors,
-                    );
-                    console.log('Field-specific errors:', fieldErrors);
                 } else {
                     Notiflix.Notify.failure(
                         user.data.message || 'Failed to create user!',
@@ -371,97 +442,143 @@ export default function Register() {
     };
 
     const currentIndex = tabs.findIndex((t) => t.id === activeTab);
-    const progress = ((currentIndex + 1) / tabs.length) * 100;
-    console.log('departments', departments);
+    const currentTab = tabs[currentIndex];
+    const CurrentIcon = currentTab.icon;
+    const isLastStep = currentIndex === tabs.length - 1;
+    const completedCount = tabs.filter(
+        (t) => completedTabs[t.id] && !tabErrors[t.id],
+    ).length;
+    const progress = Math.round((completedCount / tabs.length) * 100);
+
+    // Live, read-only preview of who is being registered
+    const fullName = `${data.first_name} ${data.surname}`.trim();
+    const initials =
+        `${data.first_name.charAt(0)}${data.surname.charAt(0)}`.toUpperCase();
 
     return (
         <AppLayout
             breadcrumbs={[
+                { href: '/dashboard', title: 'Altaf Memorial Hospital' },
                 { href: '', title: 'Admin' },
                 { href: '', title: 'User Registration' },
             ]}
         >
-            <div className="h-full bg-blue-50 p-4">
-                <div className="">
-                    {/* Header Section */}
-                    <PageHeader
-                        icon={<Users className="h-6 w-6" />}
-                        title="User Registration"
-                        subtitle={'Add a new user to the system'}
-                    />
-
-                    {/* Form Container */}
-                    <div className="mt-6 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
-                        {/* Progress Bar */}
-                        <div className="border-b border-gray-100 px-8 pt-6 pb-4">
+            {' '}
+            <PageHeader
+                icon={<Users className="h-6 w-6" />}
+                title="User Registration"
+                subtitle="Add a new user to the system"
+            />
+            <div className="h-full min-h-screen bg-blue-50 p-4">
+                <div className="mt-6 grid items-start gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
+                    {/* ───────── Stepper sidebar ───────── */}
+                    <aside className="space-y-4 lg:sticky lg:top-4">
+                        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
                             <div className="mb-3 flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                    <span className="text-sm font-medium text-gray-700">
-                                        Step {currentIndex + 1} of {tabs.length}
-                                    </span>
-                                    {isSubmitting && (
-                                        <span className="flex items-center gap-1 text-xs text-gray-500">
-                                            <Loader2 className="h-3 w-3 animate-spin" />
-                                            Submitting...
-                                        </span>
-                                    )}
-                                </div>
-                                <span className="text-xs text-gray-400">
-                                    {Math.round(progress)}% Complete
+                                <h2 className="text-sm font-semibold text-gray-900">
+                                    Registration progress
+                                </h2>
+                                <span className="text-xs font-medium text-gray-500">
+                                    {progress}%
                                 </span>
                             </div>
-                            <div className="h-1 overflow-hidden rounded-full bg-gray-100">
+                            <div
+                                className="mb-4 h-1.5 overflow-hidden rounded-full bg-gray-100"
+                                role="progressbar"
+                                aria-valuenow={progress}
+                                aria-valuemin={0}
+                                aria-valuemax={100}
+                                aria-label="Registration progress"
+                            >
                                 <div
-                                    className="h-full bg-blue-600 transition-all duration-300 ease-out"
+                                    className="h-full rounded-full bg-blue-600 transition-all duration-300 ease-out"
                                     style={{ width: `${progress}%` }}
                                 />
                             </div>
-                        </div>
 
-                        {/* Tab Navigation */}
-                        <div className="border-b border-gray-100">
-                            <nav className="flex overflow-x-auto px-4">
-                                {tabs.map((tab) => {
-                                    const Icon = tab.icon;
-                                    const hasError = tabErrors[tab.id];
-                                    const isActive = activeTab === tab.id;
-
-                                    return (
-                                        <button
+                            <nav aria-label="Registration steps">
+                                <ol className="space-y-1">
+                                    {tabs.map((tab, index) => (
+                                        <StepItem
                                             key={tab.id}
-                                            onClick={() =>
+                                            tab={tab}
+                                            isActive={activeTab === tab.id}
+                                            isDone={Boolean(
+                                                completedTabs[tab.id],
+                                            )}
+                                            hasError={Boolean(
+                                                tabErrors[tab.id],
+                                            )}
+                                            isLast={index === tabs.length - 1}
+                                            disabled={isSubmitting}
+                                            onSelect={() =>
                                                 handleTabChange(tab.id)
                                             }
-                                            disabled={isSubmitting}
-                                            className={`relative flex items-center gap-2 px-5 py-4 text-sm font-medium transition-all ${
-                                                isActive
-                                                    ? 'border-b-2 border-blue-600 text-blue-600'
-                                                    : 'text-gray-500 hover:text-gray-700'
-                                            } ${hasError ? 'text-red-600' : ''} ${
-                                                isSubmitting
-                                                    ? 'cursor-not-allowed opacity-50'
-                                                    : ''
-                                            }`}
-                                        >
-                                            <Icon className="h-4 w-4" />
-                                            <span>{tab.label}</span>
-                                            <span
-                                                className={`rounded-full px-2 py-0.5 text-xs ${
-                                                    isActive
-                                                        ? 'bg-blue-100 text-blue-600'
-                                                        : 'bg-gray-50 text-gray-400'
-                                                }`}
-                                            >
-                                                {tab.step}
-                                            </span>
-                                        </button>
-                                    );
-                                })}
+                                        />
+                                    ))}
+                                </ol>
                             </nav>
                         </div>
 
-                        {/* Form Content */}
-                        <div className="p-8">
+                        {/* New user preview */}
+                        <div className="hidden items-center gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm lg:flex">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100 text-sm font-medium text-blue-700">
+                                {initials || <User className="h-4 w-4" />}
+                            </div>
+                            <div className="min-w-0">
+                                <p className="truncate text-sm font-medium text-gray-900">
+                                    {fullName || 'New user'}
+                                </p>
+                                <p className="truncate text-xs text-gray-500">
+                                    {data.email || 'Email not entered yet'}
+                                </p>
+                            </div>
+                        </div>
+                    </aside>
+
+                    {/* ───────── Step content ───────── */}
+                    <section className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+                        <header className="flex items-start justify-between gap-4 border-b border-gray-100 px-6 py-5 md:px-8">
+                            <div className="flex items-start gap-3">
+                                <div className="mt-0.5 rounded-lg bg-blue-50 p-2">
+                                    <CurrentIcon className="h-5 w-5 text-blue-600" />
+                                </div>
+                                <div>
+                                    <h2 className="text-lg font-semibold text-gray-900">
+                                        {currentTab.label}
+                                    </h2>
+                                    <p className="text-sm text-gray-500">
+                                        {currentTab.description}
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-2">
+                                {isSubmitting && (
+                                    <span className="flex items-center gap-1 text-xs text-gray-500">
+                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                        Submitting...
+                                    </span>
+                                )}
+                                <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">
+                                    Step {currentIndex + 1} of {tabs.length}
+                                </span>
+                            </div>
+                        </header>
+
+                        <div className="px-6 py-6 md:px-8 md:py-8">
+                            {tabErrors[activeTab] && (
+                                <div
+                                    role="alert"
+                                    className="mb-6 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+                                >
+                                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                                    <span>
+                                        Complete the required fields on this
+                                        step to continue.
+                                    </span>
+                                </div>
+                            )}
+
                             {activeTab === 'demographics' && (
                                 <DemographicsTab
                                     data={data}
@@ -490,55 +607,53 @@ export default function Register() {
                                     errors={errors}
                                 />
                             )}
+                        </div>
 
-                            {/* Navigation Buttons */}
-                            <div className="mt-8 flex justify-between border-t border-gray-100 pt-6">
+                        {/* Navigation */}
+                        <footer className="flex items-center justify-between border-t border-gray-100 bg-gray-50 px-6 py-4 md:px-8">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={handlePrevious}
+                                disabled={currentIndex === 0 || isSubmitting}
+                                className="cursor-pointer border-gray-200 bg-white px-5 text-gray-600 hover:border-gray-300 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                <ChevronLeft className="mr-2 h-4 w-4" />
+                                Previous
+                            </Button>
+
+                            {isLastStep ? (
                                 <Button
                                     type="button"
-                                    variant="outline"
-                                    onClick={handlePrevious}
-                                    disabled={
-                                        currentIndex === 0 || isSubmitting
-                                    }
-                                    className="border-gray-200 px-6 text-gray-600 hover:border-gray-300 hover:text-gray-900 disabled:opacity-50"
+                                    onClick={handleSubmit}
+                                    disabled={isSubmitting || processing}
+                                    className="min-w-[200px] cursor-pointer bg-blue-600 px-5 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                                 >
-                                    <ChevronLeft className="mr-2 h-4 w-4" />
-                                    Previous
+                                    {isSubmitting ? (
+                                        <>
+                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                            Creating Account...
+                                        </>
+                                    ) : (
+                                        <>
+                                            Complete Registration
+                                            <Save className="ml-2 h-4 w-4" />
+                                        </>
+                                    )}
                                 </Button>
-
-                                {currentIndex === tabs.length - 1 ? (
-                                    <Button
-                                        onClick={handleSubmit}
-                                        type="button"
-                                        disabled={isSubmitting || processing}
-                                        className="min-w-[180px] bg-blue-600 px-6 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-                                    >
-                                        {isSubmitting ? (
-                                            <>
-                                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                                Creating Account...
-                                            </>
-                                        ) : (
-                                            <>
-                                                Complete Registration
-                                                <Save className="ml-2 h-4 w-4" />
-                                            </>
-                                        )}
-                                    </Button>
-                                ) : (
-                                    <Button
-                                        type="button"
-                                        onClick={handleNext}
-                                        disabled={isSubmitting}
-                                        className="bg-blue-600 px-6 text-white hover:bg-blue-700 disabled:opacity-50"
-                                    >
-                                        Next
-                                        <ChevronRight className="ml-2 h-4 w-4" />
-                                    </Button>
-                                )}
-                            </div>
-                        </div>
-                    </div>
+                            ) : (
+                                <Button
+                                    type="button"
+                                    onClick={handleNext}
+                                    disabled={isSubmitting}
+                                    className="cursor-pointer bg-blue-600 px-5 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    Next
+                                    <ChevronRight className="ml-2 h-4 w-4" />
+                                </Button>
+                            )}
+                        </footer>
+                    </section>
                 </div>
             </div>
         </AppLayout>

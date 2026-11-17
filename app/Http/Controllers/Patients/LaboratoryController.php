@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\Validator;
 use App\Models\Patients\PatientVisitScheme;
 use Illuminate\Support\Facades\Str;
 use App\Models\Patients\LabOrder;
+use Illuminate\Support\Facades\Storage;
 
 class LaboratoryController extends Controller
 {
@@ -49,7 +50,7 @@ class LaboratoryController extends Controller
             return Inertia::render('patients/laboratory', [
                 'patientId' => $patientId,
                 'services' => $laboratoryServices,
-                'previousOrders' => $labOrders,
+                'previousOrders' => $previousOrders,
             ]);
         } catch (\Exception $e) {
             Log::error('Laboratory Index Error: ' . $e->getMessage(), [
@@ -69,73 +70,52 @@ class LaboratoryController extends Controller
     /**
      * Get grouped previous orders - DISTINCT by order_number or grouped by order
      */
-    private function getGroupedPreviousOrders($patientId)
+    private function getGroupedPreviousOrders(int $patientId)
     {
-        $orders = [];
+        $labOrders = LabOrder::where('patient_id', $patientId)
+            ->orderByDesc('created_at')
+            ->get();
 
-        // Try to get from lab_order table first (more complete)
-        if (DB::getSchemaBuilder()->hasTable('lab_order')) {
-            $labOrders = DB::table('lab_order')
-                ->where('patient_id', $patientId)
-                ->orderByDesc('created_at')
-                ->get();
+        $filesByOrder = $labOrders->isEmpty()
+            ? collect()
+            : DB::table('lab_result_files')
+            ->whereIn('lab_order_id', $labOrders->pluck('id'))
+            ->orderByDesc('created_at')
+            ->get(['id', 'lab_order_id', 'original_name', 'path', 'mime_type', 'size', 'processing_status'])
+            ->groupBy('lab_order_id');
 
-            // ✅ Return each row as-is — do NOT deduplicate by order_number
-            $orders = $labOrders->map(function ($order) {
-                return [
-                    'id' => $order->id,
-                    'order_number' => $order->order_number ?? 'LAB-' . $order->id,
-                    'service_name' => $order->service_name ?? 'Laboratory Test',
-                    'service_category' => $order->service_category ?? 'Laboratory',
-                    'quantity' => $order->quantity ?? 1,
-                    'unit_price' => $order->unit_price ?? 0,
-                    'total_price' => $order->total_price ?? 0,
-                    'status' => $order->status ?? 'pending',
-                    'priority' => $order->priority ?? 'routine',
-                    'created_at' => $order->created_at ?? now(),
-                    'result_value' => $order->result_value ?? null,
-                    'performed_by' => $order->performed_by ?? null,
-                    'result_date' => $order->result_date ?? null,
-                    'rejection_reason' => $order->rejection_reason ?? null,
-                ];
-            })->all();
-        }
+        return $labOrders->map(function ($order) use ($filesByOrder) {
+            $files = ($filesByOrder[$order->id] ?? collect())->map(fn($f) => [
+                'id'                => $f->id,
+                'original_name'     => $f->original_name,
+                'path'              => $f->path,
+                'url'               => Storage::url($f->path),
+                'mime_type'         => $f->mime_type,
+                'size'              => $f->size,
+                'processing_status' => $f->processing_status,
+            ])->values();
 
-        // If no orders found, fall back to LabOrderItem
-        if (empty($orders)) {
-            $labOrderItems = \App\Models\Patients\LabOrderItem::where('patient_id', $patientId)
-                ->latest()
-                ->get();
-
-            // ✅ Return each item individually — no grouping, no concatenation
-            $orders = $labOrderItems->map(function ($item) {
-                return [
-                    'id' => $item->id,
-                    'order_number' => $item->order_number ?? 'LAB-' . $item->id,
-                    'service_name' => $item->service_name ?? 'Laboratory Test',
-                    'service_category' => $item->service_category ?? 'Laboratory',
-                    'quantity' => $item->quantity ?? 1,
-                    'unit_price' => $item->unit_price ?? 0,
-                    'total_price' => $item->total_price ?? 0,
-                    'status' => $item->status ?? 'pending',
-                    'priority' => $item->priority ?? 'routine',
-                    'created_at' => $item->created_at ?? now(),
-                    'result_value' => $item->result_value ?? null,
-                    'performed_by' => $item->performed_by ?? null,
-                    'result_date' => $item->result_date ?? null,
-                    'rejection_reason' => $item->rejection_reason ?? null,
-                ];
-            })->all();
-        }
-
-        // ✅ Sort by newest first
-        usort($orders, function ($a, $b) {
-            return strtotime($b['created_at']) <=> strtotime($a['created_at']);
-        });
-
-        return collect($orders);
+            return [
+                'id'               => $order->id,
+                'order_number'     => $order->order_number ?? 'LAB-' . $order->id,
+                'service_name'     => $order->service_name ?? $order->test_name ?? 'Laboratory Test',
+                'service_category' => $order->service_category ?? 'Laboratory',
+                'quantity'         => $order->quantity ?? 1,
+                'unit_price'       => $order->unit_price ?? 0,
+                'total_price'      => $order->total_price ?? 0,
+                'status'           => $order->status ?? 'pending',
+                'priority'         => $order->priority ?? 'routine',
+                'created_at'       => $order->created_at ?? now(),
+                'result_value'     => $order->result_value ?? null,
+                'performed_by'     => $order->performed_by ?? null,
+                'result_date'      => $order->result_date ?? null,
+                'rejection_reason' => $order->rejection_reason ?? null,
+                'result_files'     => $files,
+                'result_file_path' => $files->first()['path'] ?? null,
+                'result_file_url'  => $files->first()['url'] ?? null,
+            ];
+        })->values();
     }
-
     /**
      * Store laboratory orders.
      */

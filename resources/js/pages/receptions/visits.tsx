@@ -1,1116 +1,970 @@
-// resources/js/pages/receptions/queues.tsx
-import { usePage, router } from '@inertiajs/react';
+// resources/js/pages/consultation/department.tsx
+
+import { Link, usePage, router } from '@inertiajs/react';
 import {
-    Clock,
-    Stethoscope,
-    AlertCircle,
-    CheckCircle,
-    XCircle,
-    Timer,
-    FileText,
-    Activity,
-    User,
-    Phone,
-    Users,
-    Receipt,
-    X,
-    Printer,
-    Download,
-    Mail,
-    CreditCard,
+    AlertTriangle,
     Building2,
-    Package,
-    Users2,
+    CheckCircle2,
+    Clock,
+    Eye,
+    Hourglass,
+    Loader2,
+    PlayCircle,
+    Phone,
+    Stethoscope,
+    User,
+    Users,
 } from 'lucide-react';
 import Notiflix from 'notiflix';
-import React, { useState, useEffect, useRef } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import type { FC, ReactNode } from 'react';
 import PageHeader from '@/components/PageHeader';
 import ReusableTable from '@/components/ReusableTable';
-import type { Column, Action } from '@/components/ReusableTable';
-import { Badge } from '@/components/ui/badge';
+import type { Action, Column } from '@/components/ReusableTable';
 import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from '@/components/ui/table';
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
 import AppLayout from '@/layouts/app-layout';
-import { cn } from '@/lib/utils';
+import Http from '@/utils/Http';
 
-// ============================================
-// TYPES
-// ============================================
+// ============================================================================
+// Types
+// ============================================================================
 
-interface InvoiceItem {
-    id?: number;
-    service_id?: number;
-    name?: string;
-    price: number | string;
-    total: number;
-    quantity?: number;
-    type?: string;
-    category?: string;
-    service_name?: string;
-    service_code?: string;
-    description?: string;
-    notes?: string;
-    dosage?: string;
-    route?: string;
-    frequency?: string;
-    duration?: string;
-    drug_id?: number;
-    test_id?: number;
-}
+/** Queue status: 1 = In Progress, 0 = Completed. */
+type VisitStatus = 'in_progress' | 'completed';
 
-interface Invoice {
+interface QueueRecord {
     id: number;
-    invoice_number: string;
+    token: string | null;
     patient_id: number;
-    customer_name: string;
-    customer_phone: string;
-    customer_email: string;
-    customer_address: string;
-    subtotal: number;
-    tax: number;
-    discount: number;
-    total: number;
-    paid_amount: number;
-    balance: number;
-    due_amount: number;
-    status: 'paid' | 'unpaid' | 'partial' | 'draft' | 'cancelled';
-    payment_scheme: string;
-    issue_date: string;
-    due_date: string;
-    paid_date: string;
-    items: InvoiceItem[];
-    created_at: string;
-    updated_at: string;
+    patient_number?: string | null;
+    patient_name: string | null;
+    contact: string | null;
+    gender: string | null;
+    payment_method: string | null;
+    original_payment_method?: string | null;
+    status: number | string | boolean | null;
+    registered_at: string | null;
+    assigned_department?: string | null;
+    assigned_staff?: string | null;
+    visit_status?: string | null;
+    priority: string | null;
+    department_id?: number | null;
+    photo_url?: string | null;
 }
 
-interface PatientVisit {
-    id: number;
-    queue_number: string;
-    patient: {
-        id: number;
-        name: string;
-        phone?: string;
-        email?: string;
-    };
-    department: {
-        id: number;
-        name: string;
-    };
-    status: string;
+interface QueuePatient extends Omit<
+    QueueRecord,
+    | 'token'
+    | 'patient_number'
+    | 'patient_name'
+    | 'contact'
+    | 'gender'
+    | 'payment_method'
+    | 'visit_status'
+    | 'priority'
+    | 'assigned_department'
+    | 'assigned_staff'
+> {
+    token: string;
+    patient_number: string;
+    patient_name: string;
+    contact: string;
+    gender: string;
+    payment_method: string;
+    visit_status: VisitStatus;
     priority: string;
-    arrived_at: string;
-    started_at?: string;
-    completed_at?: string;
-    estimated_wait_time?: number;
-    notes?: string;
-    total_unpaid?: number;
-    unpaid_invoices?: Invoice[];
-    all_invoices_count?: number;
+    assigned_department: string;
+    assigned_staff: string;
 }
 
-interface QueuesProps {
-    active: PatientVisit[];
-    completed: PatientVisit[];
+interface Props {
+    [key: string]: unknown;
+    queue?: QueueRecord[];
+    stats?: Record<string, number>;
 }
 
-// ============================================
-// HELPERS
-// ============================================
+type QueueTab = 'in_queue' | 'completed';
 
-const formatCurrency = (amount: number): string => {
-    return new Intl.NumberFormat('en-ZM', {
-        style: 'currency',
-        currency: 'ZMW',
-        minimumFractionDigits: 2,
-    }).format(amount);
+// ============================================================================
+// Constants
+// ============================================================================
+
+/** How often the queue refreshes and wait times recalculate. */
+const REFRESH_MS = 30_000;
+
+/** Lower rank = seen first. */
+const PRIORITY_RANK: Record<string, number> = {
+    stat: 0,
+    emergency: 1,
+    urgent: 2,
+    high: 2,
+    routine: 3,
+    medium: 3,
+    low: 4,
 };
 
-const formatDate = (date: string | null): string => {
-    if (!date) return 'N/A';
-    try {
-        return new Date(date).toLocaleDateString('en-US', {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric',
-        });
-    } catch {
-        return 'N/A';
+// ============================================================================
+// Illustrated avatars (DiceBear)
+// ============================================================================
+
+const AVATAR_BASE_URL = 'https://api.dicebear.com/9.x/avataaars/svg';
+
+const AVATAR_STYLE = {
+    skinColor: '614335,ae5d29',
+    hairColor: '2c1b18,4a312c',
+    backgroundColor: 'dbeafe,e0e7ff',
+    maleTops:
+        'shortCurly,shortFlat,shortRound,frizzle,theCaesar,dreads01,dreads02,sides',
+    femaleTops: 'bob,bun,curly,curvy,dreads,fro,froBand,bigHair',
+    neutralTops: 'shortCurly,shortFlat,bob,curly,fro,frizzle',
+};
+
+const getAvatarUrl = (
+    patientId: number,
+    gender: string | null | undefined,
+    pixels: number,
+): string => {
+    const g = (gender || '').toLowerCase();
+    const isMale = g === 'male';
+    const isFemale = g === 'female';
+
+    const params = new URLSearchParams({
+        seed: `patient-${patientId}`,
+        size: String(pixels),
+        skinColor: AVATAR_STYLE.skinColor,
+        hairColor: AVATAR_STYLE.hairColor,
+        backgroundColor: AVATAR_STYLE.backgroundColor,
+        top: isMale
+            ? AVATAR_STYLE.maleTops
+            : isFemale
+              ? AVATAR_STYLE.femaleTops
+              : AVATAR_STYLE.neutralTops,
+        facialHairProbability: isMale ? '25' : '0',
+        facialHairColor: '2c1b18',
+        accessoriesProbability: '0',
+    });
+
+    return `${AVATAR_BASE_URL}?${params.toString()}`;
+};
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+/**
+ * The queue's `status` column is the source of truth:
+ *   1 → In Progress, 0 → Completed.
+ * Numeric strings ("0", "1") and booleans are accepted too. Anything else
+ * falls back to the text status, and finally to in progress so nobody disappears.
+ */
+const resolveStatus = (record: QueueRecord): VisitStatus => {
+    const raw = record.status;
+
+    if (raw !== null && raw !== undefined && raw !== '') {
+        const numeric = Number(raw);
+
+        if (numeric === 1) {
+            return 'in_progress';
+        }
+
+        if (numeric === 0) {
+            return 'completed';
+        }
     }
+
+    const text = String(record.visit_status ?? raw ?? '')
+        .toLowerCase()
+        .replace(/[\s-]+/g, '_');
+
+    return ['completed', 'done', 'cancelled', 'no_show'].includes(text)
+        ? 'completed'
+        : 'in_progress';
 };
 
-const formatTime = (date: string | null): string => {
-    if (!date) return 'N/A';
-    try {
-        return new Date(date).toLocaleTimeString('en-US', {
-            hour: '2-digit',
-            minute: '2-digit',
-        });
-    } catch {
-        return 'N/A';
+const capitalize = (value: string): string =>
+    value ? value.charAt(0).toUpperCase() + value.slice(1).toLowerCase() : '';
+
+const parseDate = (value?: string | null): Date | null => {
+    if (!value) {
+        return null;
     }
+
+    const date = new Date(value.replace(' ', 'T'));
+
+    return Number.isNaN(date.getTime()) ? null : date;
 };
 
-const getStatusConfig = (status: any) => {
-    const statusStr = String(status || '').toLowerCase();
+const formatDate = (value?: string | null): string => {
+    const date = parseDate(value);
 
-    const configs: Record<
-        string,
-        {
-            label: string;
-            color: string;
-            icon: React.ElementType;
-        }
-    > = {
-        waiting: {
-            label: 'Waiting',
-            color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-            icon: Clock,
-        },
-        in_progress: {
-            label: 'In Progress',
-            color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-            icon: Activity,
-        },
-        completed: {
-            label: 'Completed',
-            color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-            icon: CheckCircle,
-        },
-        cancelled: {
-            label: 'Cancelled',
-            color: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400',
-            icon: XCircle,
-        },
-        no_show: {
-            label: 'No Show',
-            color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-            icon: AlertCircle,
-        },
-        paid: {
-            label: 'Paid',
-            color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
-            icon: CheckCircle,
-        },
-        unpaid: {
-            label: 'Unpaid',
-            color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-            icon: AlertCircle,
-        },
-        partial: {
-            label: 'Partial',
-            color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-            icon: Clock,
-        },
-        draft: {
-            label: 'Draft',
-            color: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400',
-            icon: FileText,
-        },
-        cancelled_invoice: {
-            label: 'Cancelled',
-            color: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400',
-            icon: XCircle,
-        },
-    };
+    return date
+        ? date.toLocaleDateString('en-GB', {
+              day: '2-digit',
+              month: 'short',
+              year: 'numeric',
+          })
+        : 'N/A';
+};
+
+const formatTime = (value?: string | null): string => {
+    const date = parseDate(value);
+
+    return date
+        ? date.toLocaleTimeString('en-GB', {
+              hour: '2-digit',
+              minute: '2-digit',
+          })
+        : '';
+};
+
+const formatDateTime = (value?: string | null): string =>
+    parseDate(value) ? `${formatDate(value)}, ${formatTime(value)}` : 'N/A';
+
+/** Minutes between arrival and `now`, or null when the date is unusable. */
+const minutesWaiting = (value: string | null, now: number): number | null => {
+    const date = parseDate(value);
+
+    if (!date) {
+        return null;
+    }
+
+    return Math.max(0, Math.floor((now - date.getTime()) / 60_000));
+};
+
+const formatWait = (minutes: number): string => {
+    if (minutes < 1) {
+        return '<1m';
+    }
+
+    if (minutes < 60) {
+        return `${minutes}m`;
+    }
+
+    const hours = Math.floor(minutes / 60);
+    const rest = String(minutes % 60).padStart(2, '0');
+
+    return `${hours}h ${rest}m`;
+};
+
+const isUrgent = (priority: string): boolean =>
+    ['stat', 'emergency', 'urgent', 'high'].includes(priority);
+
+const arrivalTime = (patient: QueuePatient): number =>
+    parseDate(patient.registered_at)?.getTime() ?? 0;
+
+const normalizeRecord = (record: QueueRecord): QueuePatient => ({
+    ...record,
+    token: record.token || `T-${String(record.id).padStart(4, '0')}`,
+    patient_number: record.patient_number || 'N/A',
+    patient_name: record.patient_name?.trim() || 'Unknown patient',
+    contact: record.contact || 'N/A',
+    gender: record.gender ? capitalize(record.gender) : 'N/A',
+    payment_method:
+        record.payment_method ||
+        record.original_payment_method ||
+        'Not specified',
+    visit_status: resolveStatus(record),
+    priority: (record.priority || 'routine').toLowerCase(),
+    assigned_department: record.assigned_department || 'Consultation',
+    assigned_staff: record.assigned_staff || 'Not assigned',
+});
+
+// ============================================================================
+// Badge components
+// ============================================================================
+
+const STATUS_CONFIG: Record<
+    VisitStatus,
+    { label: string; color: string; dot: string }
+> = {
+    in_progress: {
+        label: 'In Progress',
+        color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+        dot: 'bg-emerald-500',
+    },
+    completed: {
+        label: 'Completed',
+        color: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
+        dot: 'bg-slate-500',
+    },
+};
+
+const StatusBadge: FC<{ status: VisitStatus }> = ({ status }) => {
+    const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.active;
 
     return (
-        configs[statusStr] || {
-            label:
-                statusStr.charAt(0).toUpperCase() + statusStr.slice(1) ||
-                'Unknown',
-            color: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400',
-            icon: AlertCircle,
-        }
-    );
-};
-
-const getPriorityConfig = (priority: any) => {
-    const priorityStr = String(priority || '').toLowerCase();
-
-    const configs: Record<string, { label: string; color: string }> = {
-        emergency: { label: 'Emergency', color: 'bg-red-600 text-white' },
-        high: { label: 'High', color: 'bg-orange-500 text-white' },
-        medium: { label: 'Medium', color: 'bg-blue-500 text-white' },
-        low: { label: 'Low', color: 'bg-gray-400 text-white' },
-    };
-
-    return (
-        configs[priorityStr] || {
-            label:
-                priorityStr.charAt(0).toUpperCase() + priorityStr.slice(1) ||
-                'Normal',
-            color: 'bg-gray-400 text-white',
-        }
-    );
-};
-
-const getInvoiceStatusConfig = (status: string) => {
-    const configs: Record<
-        string,
-        { label: string; color: string; icon: React.ReactNode }
-    > = {
-        paid: {
-            label: 'Paid',
-            color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
-            icon: <CheckCircle className="h-3.5 w-3.5" />,
-        },
-        unpaid: {
-            label: 'Unpaid',
-            color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-            icon: <AlertCircle className="h-3.5 w-3.5" />,
-        },
-        partial: {
-            label: 'Partial',
-            color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-            icon: <Clock className="h-3.5 w-3.5" />,
-        },
-        draft: {
-            label: 'Draft',
-            color: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400',
-            icon: <FileText className="h-3.5 w-3.5" />,
-        },
-        cancelled: {
-            label: 'Cancelled',
-            color: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400',
-            icon: <X className="h-3.5 w-3.5" />,
-        },
-    };
-    return configs[status] || configs.draft;
-};
-
-// ============================================
-// INVOICE MODAL COMPONENT (Shows all invoices with totals)
-// ============================================
-
-interface InvoiceModalProps {
-    isOpen: boolean;
-    onClose: () => void;
-    invoices: Invoice[];
-    patientName: string;
-}
-
-const InvoiceModal: React.FC<InvoiceModalProps> = ({
-    isOpen,
-    onClose,
-    invoices,
-    patientName,
-}) => {
-    const modalRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        const handleEsc = (e: KeyboardEvent) => {
-            if (e.key === 'Escape' && isOpen) {
-                onClose();
-            }
-        };
-        window.addEventListener('keydown', handleEsc);
-        return () => window.removeEventListener('keydown', handleEsc);
-    }, [isOpen, onClose]);
-
-    const handleOverlayClick = (e: React.MouseEvent<HTMLDivElement>) => {
-        if (e.target === e.currentTarget) {
-            onClose();
-        }
-    };
-
-    useEffect(() => {
-        if (isOpen) {
-            document.body.style.overflow = 'hidden';
-        } else {
-            document.body.style.overflow = 'unset';
-        }
-        return () => {
-            document.body.style.overflow = 'unset';
-        };
-    }, [isOpen]);
-
-    if (!isOpen || !invoices || invoices.length === 0) return null;
-
-    // Calculate totals across all invoices
-    const totalSubtotal = invoices.reduce(
-        (sum, inv) => sum + (inv.subtotal || 0),
-        0,
-    );
-    const totalTax = invoices.reduce((sum, inv) => sum + (inv.tax || 0), 0);
-    const totalDiscount = invoices.reduce(
-        (sum, inv) => sum + (inv.discount || 0),
-        0,
-    );
-    const totalAmount = invoices.reduce(
-        (sum, inv) => sum + (inv.total || 0),
-        0,
-    );
-    const totalPaid = invoices.reduce(
-        (sum, inv) => sum + (inv.paid_amount || 0),
-        0,
-    );
-    const totalBalance = invoices.reduce(
-        (sum, inv) => sum + (inv.balance || 0),
-        0,
-    );
-
-    return (
-        <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm transition-opacity duration-300"
-            onClick={handleOverlayClick}
+        <span
+            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${cfg.color}`}
         >
-            <div
-                ref={modalRef}
-                className="relative flex h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl dark:bg-slate-900"
-            >
-                {/* Header - Fixed */}
-                <div className="flex-shrink-0 border-b border-slate-200 bg-white px-6 py-4 dark:border-slate-700 dark:bg-slate-800">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                            <div className="rounded-lg bg-blue-50 p-2 dark:bg-blue-900/20">
-                                <Receipt className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                            </div>
-                            <div>
-                                <h2 className="text-lg font-bold text-slate-900 dark:text-white">
-                                    {patientName}
-                                </h2>
-                                <div className="flex items-center gap-2">
-                                    <span className="text-sm text-slate-500 dark:text-slate-400">
-                                        {invoices.length} invoice
-                                        {invoices.length > 1 ? 's' : ''}
-                                    </span>
-                                    <span className="h-3 w-px bg-slate-300 dark:bg-slate-600" />
-                                    <span className="text-sm font-medium text-red-600">
-                                        Total: {formatCurrency(totalAmount)}
-                                    </span>
-                                    {totalBalance > 0 && (
-                                        <>
-                                            <span className="h-3 w-px bg-slate-300 dark:bg-slate-600" />
-                                            <span className="text-sm font-medium text-amber-600">
-                                                Balance:{' '}
-                                                {formatCurrency(totalBalance)}
-                                            </span>
-                                        </>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={onClose}
-                            className="h-8 w-8 p-0"
-                        >
-                            <X className="h-4 w-4" />
-                        </Button>
-                    </div>
-                </div>
-
-                {/* Body - Scrollable */}
-                <ScrollArea className="flex-1 p-4">
-                    <div className="space-y-6">
-                        {/* Patient Details */}
-                        <div className="grid grid-cols-2 gap-3 rounded-lg bg-slate-50 p-3 dark:bg-slate-800/50">
-                            <div>
-                                <p className="text-xs text-slate-500 dark:text-slate-400">
-                                    Patient
-                                </p>
-                                <p className="text-sm font-medium text-slate-900 dark:text-white">
-                                    {patientName}
-                                </p>
-                                {invoices[0]?.customer_phone && (
-                                    <p className="text-xs text-slate-600 dark:text-slate-300">
-                                        <Phone className="mr-1 inline h-3 w-3" />
-                                        {invoices[0].customer_phone}
-                                    </p>
-                                )}
-                                {invoices[0]?.customer_email && (
-                                    <p className="text-xs text-slate-600 dark:text-slate-300">
-                                        <Mail className="mr-1 inline h-3 w-3" />
-                                        {invoices[0].customer_email}
-                                    </p>
-                                )}
-                            </div>
-                            <div>
-                                <p className="text-xs text-slate-500 dark:text-slate-400">
-                                    Summary
-                                </p>
-                                <div className="space-y-0.5">
-                                    <div className="flex justify-between text-xs">
-                                        <span className="text-slate-500">
-                                            Total Invoices:
-                                        </span>
-                                        <span className="font-medium text-slate-900 dark:text-white">
-                                            {invoices.length}
-                                        </span>
-                                    </div>
-                                    <div className="flex justify-between text-xs">
-                                        <span className="text-slate-500">
-                                            Total Amount:
-                                        </span>
-                                        <span className="font-medium text-slate-900 dark:text-white">
-                                            {formatCurrency(totalAmount)}
-                                        </span>
-                                    </div>
-                                    <div className="flex justify-between text-xs">
-                                        <span className="text-slate-500">
-                                            Total Paid:
-                                        </span>
-                                        <span className="font-medium text-emerald-600">
-                                            {formatCurrency(totalPaid)}
-                                        </span>
-                                    </div>
-                                    <div className="flex justify-between text-xs">
-                                        <span className="text-slate-500">
-                                            Total Balance:
-                                        </span>
-                                        <span
-                                            className={cn(
-                                                'font-medium',
-                                                totalBalance > 0
-                                                    ? 'text-red-600'
-                                                    : 'text-emerald-600',
-                                            )}
-                                        >
-                                            {formatCurrency(totalBalance)}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Invoices List */}
-                        {invoices.map((invoice, invoiceIndex) => {
-                            const statusConfig = getInvoiceStatusConfig(
-                                invoice.status,
-                            );
-                            const isOverdue =
-                                invoice.due_date &&
-                                new Date(invoice.due_date) < new Date() &&
-                                invoice.status !== 'paid';
-
-                            return (
-                                <div
-                                    key={invoice.id}
-                                    className="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700"
-                                >
-                                    {/* Invoice Header */}
-                                    <div className="bg-slate-50 px-4 py-2 dark:bg-slate-800/50">
-                                        <div className="flex items-center justify-between">
-                                            <div className="flex items-center gap-3">
-                                                <span className="font-mono text-sm font-bold text-slate-900 dark:text-white">
-                                                    {invoice.invoice_number}
-                                                </span>
-                                                <Badge
-                                                    className={cn(
-                                                        'flex items-center gap-1 text-xs',
-                                                        statusConfig.color,
-                                                    )}
-                                                >
-                                                    {statusConfig.icon}
-                                                    {statusConfig.label}
-                                                </Badge>
-                                                {isOverdue && (
-                                                    <Badge
-                                                        variant="destructive"
-                                                        className="flex items-center gap-1 text-xs"
-                                                    >
-                                                        <AlertCircle className="h-3 w-3" />
-                                                        Overdue
-                                                    </Badge>
-                                                )}
-                                            </div>
-                                            <div className="flex items-center gap-4 text-sm">
-                                                <span className="text-slate-500">
-                                                    Total:{' '}
-                                                    <span className="font-bold text-slate-900">
-                                                        {formatCurrency(
-                                                            invoice.total || 0,
-                                                        )}
-                                                    </span>
-                                                </span>
-                                                {invoice.balance > 0 && (
-                                                    <span className="text-red-600">
-                                                        Balance:{' '}
-                                                        <span className="font-bold">
-                                                            {formatCurrency(
-                                                                invoice.balance,
-                                                            )}
-                                                        </span>
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </div>
-                                        <div className="mt-1 flex gap-4 text-xs text-slate-500">
-                                            <span>
-                                                Issued:{' '}
-                                                {formatDate(invoice.issue_date)}
-                                            </span>
-                                            <span>
-                                                Due:{' '}
-                                                {formatDate(invoice.due_date)}
-                                            </span>
-                                            {invoice.payment_scheme && (
-                                                <span>
-                                                    Scheme:{' '}
-                                                    {invoice.payment_scheme}
-                                                </span>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* Invoice Items */}
-                                    <Table>
-                                        <TableHeader>
-                                            <TableRow className="bg-white dark:bg-slate-900">
-                                                <TableHead className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                                                    Item
-                                                </TableHead>
-                                                <TableHead className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                                                    Type
-                                                </TableHead>
-                                                <TableHead className="text-right text-xs font-medium text-slate-500 dark:text-slate-400">
-                                                    Qty
-                                                </TableHead>
-                                                <TableHead className="text-right text-xs font-medium text-slate-500 dark:text-slate-400">
-                                                    Price
-                                                </TableHead>
-                                                <TableHead className="text-right text-xs font-medium text-slate-500 dark:text-slate-400">
-                                                    Total
-                                                </TableHead>
-                                            </TableRow>
-                                        </TableHeader>
-                                        <TableBody>
-                                            {invoice.items &&
-                                            invoice.items.length > 0 ? (
-                                                invoice.items.map(
-                                                    (item, index) => (
-                                                        <TableRow
-                                                            key={index}
-                                                            className="hover:bg-slate-50 dark:hover:bg-slate-800/50"
-                                                        >
-                                                            <TableCell className="py-2 text-sm font-medium text-slate-900 dark:text-white">
-                                                                {item.name ||
-                                                                    item.category ||
-                                                                    'Item'}
-                                                                {item.service_code && (
-                                                                    <div className="text-xs text-slate-400">
-                                                                        Code:{' '}
-                                                                        {
-                                                                            item.service_code
-                                                                        }
-                                                                    </div>
-                                                                )}
-                                                                {item.description && (
-                                                                    <div className="text-xs text-slate-500 dark:text-slate-400">
-                                                                        {
-                                                                            item.description
-                                                                        }
-                                                                    </div>
-                                                                )}
-                                                                {item.dosage && (
-                                                                    <div className="text-xs text-slate-500 dark:text-slate-400">
-                                                                        {
-                                                                            item.dosage
-                                                                        }{' '}
-                                                                        {item.route &&
-                                                                            `• ${item.route}`}
-                                                                        {item.frequency &&
-                                                                            `• ${item.frequency}`}
-                                                                        {item.duration &&
-                                                                            `• ${item.duration}`}
-                                                                    </div>
-                                                                )}
-                                                            </TableCell>
-                                                            <TableCell className="py-2 text-sm text-slate-600 capitalize dark:text-slate-300">
-                                                                {item.type ||
-                                                                    item.category ||
-                                                                    'Service'}
-                                                                {item.service_name && (
-                                                                    <div className="text-xs text-slate-400">
-                                                                        {
-                                                                            item.service_name
-                                                                        }
-                                                                    </div>
-                                                                )}
-                                                            </TableCell>
-                                                            <TableCell className="py-2 text-right text-sm text-slate-600 dark:text-slate-300">
-                                                                {item.quantity ||
-                                                                    1}
-                                                            </TableCell>
-                                                            <TableCell className="py-2 text-right text-sm text-slate-600 dark:text-slate-300">
-                                                                {formatCurrency(
-                                                                    Number(
-                                                                        item.price,
-                                                                    ) || 0,
-                                                                )}
-                                                            </TableCell>
-                                                            <TableCell className="py-2 text-right text-sm font-medium text-slate-900 dark:text-white">
-                                                                {formatCurrency(
-                                                                    item.total ||
-                                                                        Number(
-                                                                            item.price,
-                                                                        ) ||
-                                                                        0,
-                                                                )}
-                                                            </TableCell>
-                                                        </TableRow>
-                                                    ),
-                                                )
-                                            ) : (
-                                                <TableRow>
-                                                    <TableCell
-                                                        colSpan={5}
-                                                        className="py-4 text-center text-sm text-slate-500 dark:text-slate-400"
-                                                    >
-                                                        No items found
-                                                    </TableCell>
-                                                </TableRow>
-                                            )}
-                                        </TableBody>
-                                    </Table>
-
-                                    {/* Invoice Summary */}
-                                    <div className="border-t border-slate-200 bg-slate-50 px-4 py-2 dark:border-slate-700 dark:bg-slate-800/50">
-                                        <div className="flex justify-end gap-6 text-sm">
-                                            <span className="text-slate-500">
-                                                Subtotal:{' '}
-                                                <span className="font-medium text-slate-900">
-                                                    {formatCurrency(
-                                                        invoice.subtotal || 0,
-                                                    )}
-                                                </span>
-                                            </span>
-                                            {invoice.tax > 0 && (
-                                                <span className="text-slate-500">
-                                                    Tax:{' '}
-                                                    <span className="font-medium text-slate-900">
-                                                        {formatCurrency(
-                                                            invoice.tax,
-                                                        )}
-                                                    </span>
-                                                </span>
-                                            )}
-                                            {invoice.discount > 0 && (
-                                                <span className="text-slate-500">
-                                                    Discount:{' '}
-                                                    <span className="font-medium text-red-600">
-                                                        -
-                                                        {formatCurrency(
-                                                            invoice.discount,
-                                                        )}
-                                                    </span>
-                                                </span>
-                                            )}
-                                            <span className="font-bold text-slate-900">
-                                                Total:{' '}
-                                                {formatCurrency(
-                                                    invoice.total || 0,
-                                                )}
-                                            </span>
-                                            {invoice.balance > 0 && (
-                                                <span className="font-bold text-red-600">
-                                                    Balance:{' '}
-                                                    {formatCurrency(
-                                                        invoice.balance,
-                                                    )}
-                                                </span>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-                            );
-                        })}
-
-                        {/* Grand Total Summary */}
-                        {invoices.length > 1 && (
-                            <div className="rounded-lg bg-blue-50 p-4 dark:bg-blue-900/20">
-                                <h4 className="mb-2 text-sm font-bold text-slate-900 dark:text-white">
-                                    Grand Total Summary
-                                </h4>
-                                <div className="grid grid-cols-3 gap-4">
-                                    <div>
-                                        <p className="text-xs text-slate-500">
-                                            Total Amount
-                                        </p>
-                                        <p className="text-lg font-bold text-slate-900">
-                                            {formatCurrency(totalAmount)}
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <p className="text-xs text-slate-500">
-                                            Total Paid
-                                        </p>
-                                        <p className="text-lg font-bold text-emerald-600">
-                                            {formatCurrency(totalPaid)}
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <p className="text-xs text-slate-500">
-                                            Total Balance
-                                        </p>
-                                        <p
-                                            className={cn(
-                                                'text-lg font-bold',
-                                                totalBalance > 0
-                                                    ? 'text-red-600'
-                                                    : 'text-emerald-600',
-                                            )}
-                                        >
-                                            {formatCurrency(totalBalance)}
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                </ScrollArea>
-
-                {/* Footer - Fixed with Close Button */}
-                <div className="flex-shrink-0 border-t border-slate-200 bg-white px-6 py-3 dark:border-slate-700 dark:bg-slate-800">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
-                            <span>
-                                {invoices.length} invoice
-                                {invoices.length > 1 ? 's' : ''}
-                            </span>
-                            <span className="h-3 w-px bg-slate-300 dark:bg-slate-600" />
-                            <span>
-                                Total Items:{' '}
-                                {invoices.reduce(
-                                    (sum, inv) =>
-                                        sum + (inv.items?.length || 0),
-                                    0,
-                                )}
-                            </span>
-                            <span className="h-3 w-px bg-slate-300 dark:bg-slate-600" />
-                            <span className="font-medium text-slate-700">
-                                Total: {formatCurrency(totalAmount)}
-                            </span>
-                            {totalBalance > 0 && (
-                                <>
-                                    <span className="h-3 w-px bg-slate-300 dark:bg-slate-600" />
-                                    <span className="font-medium text-red-600">
-                                        Balance: {formatCurrency(totalBalance)}
-                                    </span>
-                                </>
-                            )}
-                        </div>
-                        <div className="flex gap-2">
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                className="gap-1.5 text-xs"
-                                onClick={() => window.print()}
-                            >
-                                <Printer className="h-3.5 w-3.5" />
-                                Print All
-                            </Button>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                className="gap-1.5 text-xs"
-                            >
-                                <Download className="h-3.5 w-3.5" />
-                                PDF
-                            </Button>
-                            {totalBalance > 0 && (
-                                <Button
-                                    variant="default"
-                                    size="sm"
-                                    className="gap-1.5 bg-emerald-600 text-xs hover:bg-emerald-700"
-                                >
-                                    <CreditCard className="h-3.5 w-3.5" />
-                                    Pay All
-                                </Button>
-                            )}
-                            <Button
-                                variant="default"
-                                size="sm"
-                                className="gap-1.5 text-xs"
-                                onClick={onClose}
-                            >
-                                Close
-                            </Button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+            <span className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`} />
+            {cfg.label}
+        </span>
     );
 };
 
-// ============================================
-// MAIN QUEUES COMPONENT
-// ============================================
+const PriorityBadge: FC<{ priority: string }> = ({ priority }) => {
+    const config: Record<string, { label: string; color: string }> = {
+        routine: {
+            label: 'Routine',
+            color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+        },
+        urgent: {
+            label: 'Urgent',
+            color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+        },
+        emergency: {
+            label: 'Emergency',
+            color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+        },
+        stat: {
+            label: 'STAT',
+            color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+        },
+    };
 
-export default function Queues() {
-    const { active, completed } = usePage<QueuesProps>().props;
-    console.log(active);
+    // Older records use high / medium / low.
+    const aliases: Record<string, string> = {
+        high: 'urgent',
+        medium: 'routine',
+        low: 'routine',
+    };
+
+    const cfg = config[aliases[priority] ?? priority] || config.routine;
+
+    return (
+        <span
+            className={`inline-flex items-center rounded px-2 py-0.5 text-[10px] font-medium ${cfg.color}`}
+        >
+            {cfg.label}
+        </span>
+    );
+};
+
+const PaymentBadge: FC<{ method: string }> = ({ method }) => {
+    if (!method || method === 'Not specified') {
+        return <span className="text-xs text-slate-400">—</span>;
+    }
+
+    const config: Record<string, { label: string; color: string }> = {
+        cash: {
+            label: 'Cash',
+            color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+        },
+        nhima: {
+            label: 'NHIMA',
+            color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+        },
+        insurance: {
+            label: 'Insurance',
+            color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+        },
+        charity: {
+            label: 'Charity',
+            color: 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400',
+        },
+        mobile_money: {
+            label: 'Mobile',
+            color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+        },
+        card: {
+            label: 'Card',
+            color: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400',
+        },
+        altaf: {
+            label: 'Altaf',
+            color: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
+        },
+    };
+
+    const cfg = config[method.toLowerCase()] || {
+        label: method,
+        color: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400',
+    };
+
+    return (
+        <span
+            className={`inline-flex items-center rounded px-2 py-0.5 text-[10px] font-medium ${cfg.color}`}
+        >
+            {cfg.label}
+        </span>
+    );
+};
+
+/** Live wait time. Turns amber after 30 minutes and red after an hour. */
+const WaitBadge: FC<{ minutes: number | null }> = ({ minutes }) => {
+    if (minutes === null) {
+        return <span className="text-xs text-slate-400">—</span>;
+    }
+
+    const tone =
+        minutes >= 60
+            ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+            : minutes >= 30
+              ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+              : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
+
+    return (
+        <span
+            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${tone}`}
+        >
+            <Hourglass size={12} />
+            {formatWait(minutes)}
+        </span>
+    );
+};
+
+const PatientAvatar: FC<{
+    name: string;
+    patientId?: number;
+    gender?: string | null;
+    photoUrl?: string | null;
+    size?: 'sm' | 'lg';
+}> = ({ name, patientId, gender, photoUrl, size = 'sm' }) => {
+    const [failed, setFailed] = useState(false);
+
+    const dimension = size === 'lg' ? 'h-12 w-12 text-sm' : 'h-9 w-9 text-xs';
+    const pixels = size === 'lg' ? 96 : 72;
+
+    const src =
+        photoUrl ||
+        (patientId !== undefined
+            ? getAvatarUrl(patientId, gender, pixels)
+            : null);
+
+    const initials = (name || '')
+        .split(' ')
+        .filter(Boolean)
+        .map((n) => n[0])
+        .join('')
+        .toUpperCase()
+        .slice(0, 2);
+
+    if (!src || failed) {
+        return (
+            <div
+                className={`flex ${dimension} shrink-0 items-center justify-center rounded-full bg-blue-100 font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300`}
+            >
+                {initials || '?'}
+            </div>
+        );
+    }
+
+    return (
+        <img
+            src={src}
+            alt={name}
+            loading="lazy"
+            referrerPolicy="no-referrer"
+            onError={() => setFailed(true)}
+            className={`${dimension} shrink-0 rounded-full bg-blue-100 object-cover dark:bg-blue-900/40`}
+        />
+    );
+};
+
+const DetailField: FC<{ label: string; children: ReactNode }> = ({
+    label,
+    children,
+}) => (
+    <div>
+        <Label className="text-xs text-slate-500">{label}</Label>
+        <div className="mt-0.5 text-sm text-slate-800 dark:text-slate-200">
+            {children}
+        </div>
+    </div>
+);
+
+const StatCard: FC<{
+    label: string;
+    value: ReactNode;
+    icon: ReactNode;
+    tone: string;
+}> = ({ label, value, icon, tone }) => (
+    <div className="flex items-center gap-3 rounded-xl border border-white bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+        <div
+            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${tone}`}
+        >
+            {icon}
+        </div>
+        <div>
+            <p className="text-xl leading-none font-semibold text-slate-800 dark:text-slate-100">
+                {value}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">{label}</p>
+        </div>
+    </div>
+);
+
+// ============================================================================
+// Main component
+// ============================================================================
+
+export default function ConsultationQueue() {
+    const { queue = [] } = usePage<Props>().props;
+
+    const [selectedPatient, setSelectedPatient] = useState<QueuePatient | null>(
+        null,
+    );
+    const [showDetailsModal, setShowDetailsModal] = useState(false);
     const [loading, setLoading] = useState(false);
-    const [selectedInvoices, setSelectedInvoices] = useState<Invoice[]>([]);
-    const [selectedPatient, setSelectedPatient] = useState<string>('');
-    const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
+    const [activeTab, setActiveTab] = useState<QueueTab>('in_queue');
+    const [now, setNow] = useState(() => Date.now());
 
-    // Debug: Log the data
-    console.log('Active Queue Data:', active);
-    console.log('Completed Queue Data:', completed);
+    // Keep wait times ticking and the queue fresh while the tab is visible.
+    useEffect(() => {
+        const timer = setInterval(() => {
+            setNow(Date.now());
 
-    // Action handlers
-    const handleViewPatient = async (visitId: number) => {
+            if (document.visibilityState === 'visible') {
+                router.reload({ only: ['queue', 'stats'] });
+            }
+        }, REFRESH_MS);
+
+        return () => clearInterval(timer);
+    }, []);
+
+    const processedQueue = useMemo<QueuePatient[]>(
+        () => queue.map(normalizeRecord),
+        [queue],
+    );
+
+    // Status 1 → In Progress tab. Most urgent first, then first come first served.
+    const inQueue = useMemo(
+        () =>
+            processedQueue
+                .filter((p) => p.visit_status === 'in_progress')
+                .sort((a, b) => {
+                    const rank =
+                        (PRIORITY_RANK[a.priority] ?? 3) -
+                        (PRIORITY_RANK[b.priority] ?? 3);
+
+                    return rank !== 0 ? rank : arrivalTime(a) - arrivalTime(b);
+                }),
+        [processedQueue],
+    );
+
+    // Status 0 → Completed tab. Most recent first.
+    const completed = useMemo(
+        () =>
+            processedQueue
+                .filter((p) => p.visit_status === 'completed')
+                .sort((a, b) => arrivalTime(b) - arrivalTime(a)),
+        [processedQueue],
+    );
+
+    const tableData = activeTab === 'in_queue' ? inQueue : completed;
+
+    const urgentCount = inQueue.filter((p) => isUrgent(p.priority)).length;
+
+    const longestWait = useMemo(() => {
+        const waits = inQueue
+            .map((p) => minutesWaiting(p.registered_at, now))
+            .filter((m): m is number => m !== null);
+
+        return waits.length ? Math.max(...waits) : null;
+    }, [inQueue, now]);
+
+    // ------------------------------------------------------------------------
+    // Handlers
+    // ------------------------------------------------------------------------
+
+    const openDashboard = (patient: QueuePatient) => {
+        if (!patient.patient_id) {
+            Notiflix.Notify.failure('This queue entry has no patient attached');
+
+            return;
+        }
+
+        router.visit(`/patients/dashboard/${patient.patient_id}`);
+    };
+
+    /** Sends the patient out of the queue: status 1 → 0. */
+    const handleMarkCompleted = async (patient: QueuePatient) => {
+        setLoading(true);
+        Notiflix.Loading.pulse('Updating...');
+
         try {
-            Notiflix.Report.info(
-                'Patient Details',
-                `Viewing patient record #${visitId}`,
-                'Close',
+            const response = await Http.post(
+                `/consultation/queue/${patient.id}/status`,
+                { status: 0 },
             );
-        } catch {
-            Notiflix.Notify.failure('Failed to load patient details');
-        }
-    };
 
-    const handleStartConsultation = async (visitId: number) => {
-        Notiflix.Confirm.show(
-            'Start Consultation',
-            'Are you sure you want to start this consultation?',
-            async () => {
-                setLoading(true);
-                try {
-                    await router.put(`/visits/${visitId}/start`);
-                    Notiflix.Notify.success(
-                        'Consultation started successfully',
-                    );
-                    router.reload();
-                } catch {
-                    Notiflix.Notify.failure('Failed to start consultation');
-                } finally {
-                    setLoading(false);
-                }
-            },
-            'Yes, Start',
-            'Cancel',
-        );
-    };
-
-    const handleCompleteVisit = async (visitId: number) => {
-        Notiflix.Confirm.show(
-            'Complete Visit',
-            'Are you sure you want to mark this visit as completed?',
-            async () => {
-                setLoading(true);
-                try {
-                    await router.put(`/visits/${visitId}/complete`);
-                    Notiflix.Notify.success('Visit completed successfully');
-                    router.reload();
-                } catch {
-                    Notiflix.Notify.failure('Failed to complete visit');
-                } finally {
-                    setLoading(false);
-                }
-            },
-            'Yes, Complete',
-            'Cancel',
-        );
-    };
-
-    // Handle viewing invoice - shows ALL invoices for the patient
-    const handleViewInvoice = (patientId: number, patientName: string) => {
-        const allPatients = [...(active || []), ...(completed || [])];
-        const patient = allPatients.find((p) => p.patient.id === patientId);
-
-        console.log('=== VIEW INVOICE ===');
-        console.log('Patient ID:', patientId);
-        console.log('Patient Name:', patientName);
-        console.log('Patient Data:', patient);
-        console.log('Unpaid Invoices:', patient?.unpaid_invoices);
-
-        if (!patient) {
-            Notiflix.Notify.warning('Patient not found');
-            return;
-        }
-
-        if (!patient.unpaid_invoices || patient.unpaid_invoices.length === 0) {
-            Notiflix.Report.warning(
-                'No Invoices Found',
-                `
-                <div style="text-align: left;">
-                    <p><strong>Patient:</strong> ${patientName}</p>
-                    <p><strong>Total Unpaid:</strong> ${patient.total_unpaid || 0}</p>
-                    <p><strong>All Invoices Count:</strong> ${patient.all_invoices_count || 0}</p>
-                    <hr/>
-                    <p style="color:#666;font-size:13px;">
-                        This patient has no unpaid invoices.
-                    </p>
-                </div>
-                `,
-                'OK',
+            if (response.data.success) {
+                Notiflix.Notify.success('Consultation marked as completed');
+                router.reload({ only: ['queue', 'stats'] });
+            } else {
+                Notiflix.Notify.failure(
+                    response.data.message || 'Failed to update status',
+                );
+            }
+        } catch (error: any) {
+            Notiflix.Notify.failure(
+                error.response?.data?.message || 'Failed to update status',
             );
-            return;
+        } finally {
+            Notiflix.Loading.remove();
+            setLoading(false);
         }
-
-        console.log('Opening modal with invoices:', patient.unpaid_invoices);
-
-        // Open modal with ALL invoices
-        setSelectedInvoices(patient.unpaid_invoices);
-        setSelectedPatient(patientName);
-        setIsInvoiceModalOpen(true);
     };
 
-    // Define columns for active queues - REMOVED Unpaid Balance column
-    const activeColumns: Column<PatientVisit>[] = [
+    const handleViewDetails = (patient: QueuePatient) => {
+        setSelectedPatient(patient);
+        setShowDetailsModal(true);
+    };
+
+    // ------------------------------------------------------------------------
+    // Columns
+    // ------------------------------------------------------------------------
+
+    const columns: Column<QueuePatient>[] = [
         {
-            id: 'visits',
+            id: 'token',
             label: 'Token',
             sortable: true,
             format: (value, row) => (
-                <div className="font-mono text-sm font-medium">
-                    {row.visits?.token || 'Token'}
-                </div>
+                <span className="inline-flex items-center gap-2">
+                    {['stat', 'emergency'].includes(row.priority) &&
+                        row.visit_status === 'in_progress' && (
+                            <span className="relative flex h-2 w-2">
+                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75 motion-reduce:animate-none" />
+                                <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+                            </span>
+                        )}
+                    <span className="font-mono text-sm font-medium text-blue-600 dark:text-blue-400">
+                        {(value as string) || 'N/A'}
+                    </span>
+                </span>
             ),
         },
         {
-            id: 'patient',
+            id: 'patient_name',
             label: 'Patient',
             sortable: true,
             filterable: true,
-            format: (value, row) => (
-                <div className="flex items-center gap-2">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-blue-400 to-blue-500 text-white shadow-sm">
-                        <User size={14} />
-                    </div>
+            format: (_value, row) => (
+                <Link
+                    href={`/patients/dashboard/${row.patient_id}`}
+                    className="flex items-center gap-2.5 hover:text-blue-600 dark:hover:text-blue-400"
+                >
+                    <PatientAvatar
+                        name={row.patient_name}
+                        patientId={row.patient_id}
+                        gender={row.gender}
+                        photoUrl={row.photo_url}
+                    />
                     <div>
                         <span className="font-medium text-slate-800 dark:text-slate-200">
-                            {row.patient?.first_name} {row.patient?.last_name}
+                            {row.patient_name}
                         </span>
                         <div className="flex items-center gap-2 text-xs text-slate-400">
-                            <span>
-                                ID: {row.patient?.patient_number || 'N/A'}
-                            </span>
-                            {row.patient?.phone && (
+                            <span>EMR #: {row.patient_number}</span>
+                            {row.contact !== 'N/A' && (
                                 <>
                                     <span>•</span>
                                     <Phone size={10} />
-                                    <span>{row.patient.phone}</span>
+                                    <span>{row.contact}</span>
                                 </>
                             )}
-                            {row.all_invoices_count !== undefined &&
-                                row.all_invoices_count > 0 && (
-                                    <>
-                                        <span>•</span>
-                                        <span className="text-blue-500">
-                                            Invoices: {row.all_invoices_count}
-                                        </span>
-                                    </>
-                                )}
                         </div>
                     </div>
-                </div>
+                </Link>
             ),
         },
-
         {
             id: 'priority',
             label: 'Priority',
             sortable: true,
-            format: (value, row) => {
-                const config = getPriorityConfig(row.priority);
-                return (
-                    <Badge className={cn('text-xs font-medium', config.color)}>
-                        {config.label}
-                    </Badge>
-                );
-            },
-        },
-
-        {
-            id: 'created_at',
-            label: 'Arrived',
-            sortable: true,
+            format: (_value, row) => <PriorityBadge priority={row.priority} />,
         },
         {
-            id: 'estimated_wait_time',
-            label: 'Wait Time',
+            id: 'visit_status',
+            label: 'Status',
             sortable: true,
-            format: (value) => {
-                if (!value)
-                    return <span className="text-sm text-slate-400">—</span>;
-                return (
-                    <div className="flex items-center gap-1">
-                        <Timer className="h-3.5 w-3.5 text-slate-400" />
-                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                            {value} min
+            format: (_value, row) => <StatusBadge status={row.visit_status} />,
+        },
+        {
+            id: 'registered_at',
+            label: activeTab === 'in_queue' ? 'Waiting' : 'Arrived',
+            sortable: true,
+            format: (value, row) => (
+                <div className="flex flex-col gap-1">
+                    {row.visit_status === 'in_progress' && (
+                        <WaitBadge
+                            minutes={minutesWaiting(row.registered_at, now)}
+                        />
+                    )}
+                    <div className="flex items-center gap-1.5">
+                        <Clock size={12} className="text-slate-400" />
+                        <span className="text-xs text-slate-500 dark:text-slate-400">
+                            {formatDateTime(value as string)}
                         </span>
                     </div>
-                );
-            },
+                </div>
+            ),
         },
-    ];
-
-    // Define actions for active queues
-    const activeActions: Action<PatientVisit>[] = [
         {
-            label: 'Dashboard',
-            icon: <Users2 size={16} />,
-            color: 'primary',
-            onClick: (row) =>
-                router.visit(`/patients/dashboard/${row.patient.id}`),
+            id: 'assigned_staff',
+            label: 'Clinician',
+            sortable: true,
+            format: (_value, row) => (
+                <div className="flex items-center gap-1.5 text-sm text-slate-700 dark:text-slate-300">
+                    <Building2 size={14} className="text-slate-400" />
+                    {row.assigned_staff}
+                </div>
+            ),
+        },
+        {
+            id: 'payment_method',
+            label: 'Payment',
+            sortable: true,
+            format: (_value, row) => (
+                <PaymentBadge method={row.payment_method} />
+            ),
         },
     ];
 
-    // Status options for filter dropdown
-    const statusOptions = [
-        { value: 'waiting', label: 'Waiting' },
-        { value: 'in_progress', label: 'In Progress' },
-        { value: 'completed', label: 'Completed' },
-        { value: 'cancelled', label: 'Cancelled' },
-        { value: 'no_show', label: 'No Show' },
+    // ------------------------------------------------------------------------
+    // Actions (Start Consultation only makes sense for active patients)
+    // ------------------------------------------------------------------------
+
+    const actions: Action<QueuePatient>[] = [
+        ...(activeTab === 'in_queue'
+            ? [
+                  {
+                      label: 'Start Consultation',
+                      icon: <PlayCircle size={16} />,
+                      color: 'primary',
+                      onClick: (row: QueuePatient) => openDashboard(row),
+                  } as Action<QueuePatient>,
+              ]
+            : []),
+        {
+            label: 'View Dashboard',
+            icon: <Eye size={16} />,
+            color: 'info',
+            onClick: (row) => openDashboard(row),
+        },
+        {
+            label: 'Details',
+            icon: <User size={16} />,
+            color: 'info',
+            onClick: (row) => handleViewDetails(row),
+        },
     ];
+
+    // ------------------------------------------------------------------------
+    // Render
+    // ------------------------------------------------------------------------
 
     return (
         <AppLayout
             breadcrumbs={[
-                { title: 'Reception', href: '/reception' },
-                { title: 'Queues', href: '/reception/queues' },
+                { href: '/dashboard', title: 'Altaf Memorial Hospital' },
+                { href: '', title: 'Department' },
+                { href: '/consultation/queue', title: 'Consultation' },
             ]}
         >
-            <div className="h-full bg-blue-50 p-4">
-                <PageHeader
-                    icon={<Users className="h-6 w-6" />}
-                    title="Clients In  Queue"
-                    subtitle="View and manage patients in the queue with invoice tracking"
+            <PageHeader
+                icon={<Stethoscope />}
+                title="Reception Encounter Queue"
+                subtitle="Patients waiting to see a clinician, most urgent first"
+                actions={[
+                    {
+                        label: `In Progress (${inQueue.length})`,
+                        onClick: () => setActiveTab('in_queue'),
+                        variant: activeTab === 'in_queue' ? 'cyan' : 'default',
+                    },
+                    {
+                        label: `Completed (${completed.length})`,
+                        onClick: () => setActiveTab('completed'),
+                        variant: activeTab === 'completed' ? 'cyan' : 'default',
+                    },
+                ]}
+            />
+
+            <div className="flex h-full min-h-screen flex-1 flex-col gap-4 bg-blue-50 p-4 dark:bg-slate-900">
+                <ReusableTable
+                    columns={columns}
+                    data={tableData}
+                    actions={actions}
+                    loading={loading}
+                    filterPlaceholder="Search by patient name, token, or contact..."
+                    rowsPerPageOptions={[8, 15, 25, 50]}
+                    defaultRowsPerPage={8}
+                    defaultOrderBy="registered_at"
+                    emptyMessage={
+                        activeTab === 'in_queue'
+                            ? 'No patients in progress'
+                            : 'No completed consultations found'
+                    }
+                    className="shadow-sm"
                 />
 
-                <div className="mt-6">
-                    <ReusableTable
-                        title="Active Queue"
-                        columns={activeColumns}
-                        data={active || []}
-                        actions={activeActions}
-                        loading={loading}
-                        filterPlaceholder="Search by patient name..."
-                        statusFilterKey="status"
-                        statusOptions={statusOptions}
-                        rowsPerPageOptions={[8, 15, 25, 50]}
-                        defaultRowsPerPage={8}
-                        defaultOrderBy="arrived_at"
-                        emptyMessage="No patients in the queue"
-                        className="shadow-sm"
-                    />
-                </div>
+                {/* Details modal */}
+                <Dialog
+                    open={showDetailsModal}
+                    onOpenChange={(open) => {
+                        setShowDetailsModal(open);
 
-                <InvoiceModal
-                    isOpen={isInvoiceModalOpen}
-                    onClose={() => {
-                        setIsInvoiceModalOpen(false);
-                        setSelectedInvoices([]);
-                        setSelectedPatient('');
+                        if (!open) {
+                            setSelectedPatient(null);
+                        }
                     }}
-                    invoices={selectedInvoices}
-                    patientName={selectedPatient}
-                />
+                >
+                    <DialogContent className="max-w-md">
+                        <DialogHeader>
+                            <DialogTitle className="text-sm">
+                                Patient Details
+                            </DialogTitle>
+                        </DialogHeader>
+
+                        {selectedPatient && (
+                            <div className="space-y-4">
+                                <div className="flex items-center gap-3">
+                                    <PatientAvatar
+                                        name={selectedPatient.patient_name}
+                                        patientId={selectedPatient.patient_id}
+                                        gender={selectedPatient.gender}
+                                        photoUrl={selectedPatient.photo_url}
+                                        size="lg"
+                                    />
+                                    <div>
+                                        <p className="text-sm font-medium">
+                                            {selectedPatient.patient_name}
+                                        </p>
+                                        <p className="text-xs text-slate-500">
+                                            Token: {selectedPatient.token}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <DetailField label="EMR number">
+                                        {selectedPatient.patient_number}
+                                    </DetailField>
+                                    <DetailField label="Contact">
+                                        {selectedPatient.contact}
+                                    </DetailField>
+                                    <DetailField label="Gender">
+                                        {selectedPatient.gender}
+                                    </DetailField>
+                                    <DetailField label="Priority">
+                                        <PriorityBadge
+                                            priority={selectedPatient.priority}
+                                        />
+                                    </DetailField>
+                                    <DetailField label="Status">
+                                        <StatusBadge
+                                            status={
+                                                selectedPatient.visit_status
+                                            }
+                                        />
+                                    </DetailField>
+                                    <DetailField label="Payment">
+                                        <PaymentBadge
+                                            method={
+                                                selectedPatient.payment_method
+                                            }
+                                        />
+                                    </DetailField>
+                                    <DetailField label="Department">
+                                        {selectedPatient.assigned_department}
+                                    </DetailField>
+                                    <DetailField label="Clinician">
+                                        {selectedPatient.assigned_staff}
+                                    </DetailField>
+                                    <DetailField label="Arrived">
+                                        {formatDateTime(
+                                            selectedPatient.registered_at,
+                                        )}
+                                    </DetailField>
+                                    <DetailField label="Waiting">
+                                        {selectedPatient.visit_status ===
+                                        'in_progress' ? (
+                                            <WaitBadge
+                                                minutes={minutesWaiting(
+                                                    selectedPatient.registered_at,
+                                                    now,
+                                                )}
+                                            />
+                                        ) : (
+                                            '—'
+                                        )}
+                                    </DetailField>
+                                </div>
+
+                                <div className="flex items-center justify-between gap-2 border-t pt-3">
+                                    <Link
+                                        href={`/patients/dashboard/${selectedPatient.patient_id}`}
+                                        className="inline-flex items-center gap-1 rounded bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-600 transition-colors hover:bg-blue-100 dark:bg-blue-950/30 dark:text-blue-400"
+                                    >
+                                        <Eye className="h-3.5 w-3.5" />
+                                        Dashboard
+                                    </Link>
+
+                                    <div className="flex gap-2">
+                                        {selectedPatient.visit_status ===
+                                            'in_progress' && (
+                                            <>
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    className="text-xs"
+                                                    disabled={loading}
+                                                    onClick={async () => {
+                                                        await handleMarkCompleted(
+                                                            selectedPatient,
+                                                        );
+                                                        setShowDetailsModal(
+                                                            false,
+                                                        );
+                                                    }}
+                                                >
+                                                    {loading && (
+                                                        <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                                                    )}
+                                                    Mark completed
+                                                </Button>
+                                                <Button
+                                                    size="sm"
+                                                    className="text-xs"
+                                                    onClick={() => {
+                                                        setShowDetailsModal(
+                                                            false,
+                                                        );
+                                                        openDashboard(
+                                                            selectedPatient,
+                                                        );
+                                                    }}
+                                                >
+                                                    <PlayCircle className="mr-1 h-3.5 w-3.5" />
+                                                    Start consultation
+                                                </Button>
+                                            </>
+                                        )}
+
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="text-xs"
+                                            onClick={() =>
+                                                setShowDetailsModal(false)
+                                            }
+                                        >
+                                            Close
+                                        </Button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </DialogContent>
+                </Dialog>
             </div>
         </AppLayout>
     );

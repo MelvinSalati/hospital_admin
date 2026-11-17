@@ -215,27 +215,44 @@ class NursesController extends Controller
 
     public function visit(int $departmentId)
     {
-
-        $visit  = PatientVisit::with(['patient', 'assignedStaff', 'visitToken'])
-            ->where('department_id',  $departmentId)
-            ->where('status', 1)
+        $visits = PatientVisit::with([
+            'patient',
+            'assignedStaff',
+            'assignedDepartment',
+            'visitToken',
+        ])
+            ->where('department_id', $departmentId)
+            ->where(function ($q) {
+                // In progress: always show
+                $q->where('status', 1)
+                    // Completed (out of the queue): keep the Completed tab to recent history
+                    ->orWhere(function ($q) {
+                        $q->where('status', 0)
+                            ->where('updated_at', '>=', now()->subDays(7));
+                    });
+            })
             ->orderBy('created_at', 'asc')
             ->get()
             ->map(function ($visit) {
-
                 return [
                     'id' => $visit->id,
-                    'token' => $visit->visitToken ? $visit->visitToken->token : 'T-' . str_pad($visit->id, 4, '0', STR_PAD_LEFT),
+                    'token' => $visit->visitToken?->token
+                        ?? 'T-' . str_pad($visit->id, 4, '0', STR_PAD_LEFT),
                     'visit_token_id' => $visit->visitToken?->id,
                     'patient_id' => $visit->patient_id,
-                    'patient_number' => $visit->patient->patient_number,
-                    'patient_name' => $visit->patient ? $visit->patient->first_name . ' ' . $visit->patient->last_name : 'Unknown',
+                    'patient_number' => $visit->patient?->patient_number,
+                    'patient_name' => $visit->patient
+                        ? $visit->patient->first_name . ' ' . $visit->patient->last_name
+                        : 'Unknown',
                     'contact' => $visit->patient?->phone ?? 'N/A',
                     'gender' => $visit->patient?->gender ?? 'N/A',
                     'payment_method' => $visit->payment_method,
-                    'original_payment_method' => $visit->visitToken?->original_payment_method ?? $visit->original_payment_method,
-                    'status' => $visit->status,
-                    'registered_at' => $visit->started_at ? $visit->started_at->format('Y-m-d H:i:s') : $visit->created_at->format('Y-m-d H:i:s'),
+                    'original_payment_method' => $visit->visitToken?->original_payment_method
+                        ?? $visit->original_payment_method,
+                    'status' => (int) $visit->status, // 1 = in progress, 0 = completed
+                    'registered_at' => $visit->started_at
+                        ? $visit->started_at->format('Y-m-d H:i:s')
+                        : $visit->created_at->format('Y-m-d H:i:s'),
                     'assigned_department' => $visit->assignedDepartment?->department_name ?? 'Not assigned',
                     'assigned_staff' => $visit->assignedStaff?->name ?? 'Not assigned',
                     'visit_status' => $this->mapVisitStatus($visit->status),
@@ -243,11 +260,11 @@ class NursesController extends Controller
                     'department_id' => $visit->department_id,
                 ];
             });
-        return  Inertia::render('nurses/visits', [
-            'queues' => $visit
+
+        return Inertia::render('nurses/visits', [
+            'queue' => $visits,
         ]);
     }
-
     public function inPatients()
     {
         return Inertia::render('nurses/in-patient', [

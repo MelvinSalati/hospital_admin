@@ -508,17 +508,18 @@ export default function Registry() {
     return (
         <AppLayout
             breadcrumbs={[
+                 { href: '/dashboard', title: 'Altaf Memorial Hospital' },
                 { title: 'Patient', href: '/' },
                 { title: 'Registry', href: '/' },
             ]}
         >
+            {' '}
+            <PageHeader
+                icon={<UsersIcon className="h-5 w-5" />}
+                title="Search"
+                subtitle="Find registered patients using multiple identification methods"
+            />
             <div className="min-h-screen bg-blue-50 p-4 md:p-6">
-                <PageHeader
-                    icon={<UsersIcon className="h-5 w-5" />}
-                    title="Search"
-                    subtitle="Find registered patients using multiple identification methods"
-                />
-
                 <div className="bg-white p-2">
                     {/* ------------------------------ Search card ------------------------------ */}
                     <section

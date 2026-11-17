@@ -2,7 +2,7 @@ import PageHeader from '@/components/PageHeader';
 import ReusableTable from '@/components/ReusableTable';
 import type { Column, Action } from '@/components/ReusableTable';
 import AppLayout from '@/layouts/app/app-header-layout';
-import { usePage, router, Link } from '@inertiajs/react';
+import { usePage, router } from '@inertiajs/react';
 import {
     BedIcon,
     Eye,
@@ -12,6 +12,8 @@ import {
     XCircle,
     Activity,
 } from 'lucide-react';
+import { useState } from 'react';
+import type { FC } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
@@ -30,12 +32,102 @@ type Procedure = {
     age_sex?: string;
     created_at?: string;
     status?: ProcedureStatus;
+    photo_url?: string | null;
 };
 
 interface PageProps {
     procedures: Procedure[];
     [key: string]: unknown;
 }
+
+// ─── Illustrated avatars (DiceBear) ─────────────────────────────────────────
+const AVATAR_BASE_URL = 'https://api.dicebear.com/9.x/avataaars/svg';
+
+const AVATAR_STYLE = {
+    skinColor: '614335,ae5d29',
+    hairColor: '2c1b18,4a312c',
+    backgroundColor: 'dbeafe,e0e7ff',
+    maleTops:
+        'shortCurly,shortFlat,shortRound,frizzle,theCaesar,dreads01,dreads02,sides',
+    femaleTops: 'bob,bun,curly,curvy,dreads,fro,froBand,bigHair',
+    neutralTops: 'shortCurly,shortFlat,bob,curly,fro,frizzle',
+};
+
+const getAvatarUrl = (
+    patientId: number,
+    gender: string | null | undefined,
+    pixels: number,
+): string => {
+    const g = (gender || '').toLowerCase();
+    const isMale = g === 'male';
+    const isFemale = g === 'female';
+
+    const params = new URLSearchParams({
+        seed: `patient-${patientId}`,
+        size: String(pixels),
+        skinColor: AVATAR_STYLE.skinColor,
+        hairColor: AVATAR_STYLE.hairColor,
+        backgroundColor: AVATAR_STYLE.backgroundColor,
+        top: isMale
+            ? AVATAR_STYLE.maleTops
+            : isFemale
+              ? AVATAR_STYLE.femaleTops
+              : AVATAR_STYLE.neutralTops,
+        facialHairProbability: isMale ? '25' : '0',
+        facialHairColor: '2c1b18',
+        accessoriesProbability: '0',
+    });
+
+    return `${AVATAR_BASE_URL}?${params.toString()}`;
+};
+
+const PatientAvatar: FC<{
+    name: string;
+    patientId?: number;
+    gender?: string | null;
+    photoUrl?: string | null;
+    size?: 'sm' | 'lg';
+}> = ({ name, patientId, gender, photoUrl, size = 'sm' }) => {
+    const [failed, setFailed] = useState(false);
+
+    const dimension = size === 'lg' ? 'h-12 w-12 text-sm' : 'h-9 w-9 text-xs';
+    const pixels = size === 'lg' ? 96 : 72;
+
+    const src =
+        photoUrl ||
+        (patientId !== undefined
+            ? getAvatarUrl(patientId, gender, pixels)
+            : null);
+
+    const initials = (name || '')
+        .split(' ')
+        .filter(Boolean)
+        .map((n) => n[0])
+        .join('')
+        .toUpperCase()
+        .slice(0, 2);
+
+    if (!src || failed) {
+        return (
+            <div
+                className={`flex ${dimension} shrink-0 items-center justify-center rounded-full bg-blue-100 font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300`}
+            >
+                {initials || '?'}
+            </div>
+        );
+    }
+
+    return (
+        <img
+            src={src}
+            alt={name}
+            loading="lazy"
+            referrerPolicy="no-referrer"
+            onError={() => setFailed(true)}
+            className={`${dimension} shrink-0 rounded-full bg-blue-100 object-cover dark:bg-blue-900/40`}
+        />
+    );
+};
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 const formatDate = (d?: string) => {
@@ -49,6 +141,22 @@ const formatDate = (d?: string) => {
     } catch {
         return '—';
     }
+};
+
+/** patient_id can be a plain id or an { id, name } object. */
+const resolvePatientId = (
+    value: Procedure['patient_id'],
+): number | undefined =>
+    typeof value === 'object' && value !== null ? value.id : value;
+
+/** "M/34" → "male", "F/8" → "female", anything else → null. */
+const genderFromSexAge = (value: string | null | undefined): string | null => {
+    const first = (value || '').trim().charAt(0).toUpperCase();
+
+    if (first === 'M') return 'male';
+    if (first === 'F') return 'female';
+
+    return null;
 };
 
 /** Safely turn any status shape (string | {value,label} | {id,name}) into a string */
@@ -131,9 +239,17 @@ export default function InPatient() {
             sortable: true,
             filterable: true,
             format: (_v: unknown, row: Procedure) => (
-                <span className="text-sm font-medium text-gray-800">
-                    {row?.name || '—'}
-                </span>
+                <div className="flex items-center gap-2.5">
+                    <PatientAvatar
+                        name={row?.name || ''}
+                        patientId={resolvePatientId(row.patient_id) ?? row.id}
+                        gender={genderFromSexAge(row.age_sex)}
+                        photoUrl={row.photo_url}
+                    />
+                    <span className="text-sm font-medium text-gray-800 dark:text-slate-200">
+                        {row?.name || '—'}
+                    </span>
+                </div>
             ),
         },
         { id: 'age_sex', label: 'Age/Sex', sortable: true },
@@ -183,7 +299,9 @@ export default function InPatient() {
             icon: <Eye size={16} />,
             color: 'info',
             onClick: (row) =>
-                router.visit(`../../patients/dashboard/${row.patient_id}`),
+                router.visit(
+                    `../../patients/dashboard/${resolvePatientId(row.patient_id)}`,
+                ),
         },
     ];
 
@@ -198,18 +316,19 @@ export default function InPatient() {
     return (
         <AppLayout
             breadcrumbs={[
+                { title: 'Altaf Memorial Hospital', href: '/nurses' },
                 { title: 'Nurses', href: '/nurses' },
                 { title: 'Treatment Room', href: '/nurses/treatment-room' },
             ]}
         >
-            <div className="h-full bg-blue-50 p-2">
+            <div className="h-full bg-blue-50">
                 <PageHeader
                     icon={<BedIcon />}
                     title="Treatment Room"
                     subtitle="View procedures such as injection giving etc"
                 />
 
-                <div className="mt-6">
+                <div className="mt-6 p-4">
                     <ReusableTable
                         title="Seen Treatment Room"
                         columns={columns}

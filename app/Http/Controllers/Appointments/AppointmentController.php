@@ -11,21 +11,29 @@ use Inertia\Inertia;
 
 class AppointmentController extends Controller
 {
-    public function index(int $departmentId){
-        return  Inertia::render('appointments/appointments',$this->appointments($departmentId));
+    public function index(int $departmentId)
+    {
+        return  Inertia::render('nurses/appointments', $this->appointments($departmentId));
     }
 
 
     public function appointments(int $departmentId): mixed
     {
         return [
-             'appointments' => AppointmentRepository::getAppointments($departmentId)
+            'appointments' => AppointmentRepository::getAppointments($departmentId)
         ];
-       
-    } 
+    }
+    public function receptionAppointments(): mixed
+    {
+        return  Inertia::render('receptions/appointments', [
+            'appointments' => AppointmentRepository::getReceptionAppointments()
+        ]);;
+    }
 
-    public function updateAppointment(Request $request, int $appointmentId){
+
+    public function updateAppointment(Request $request, int $appointmentId)
+    {
         $appointment = Appointment::findOrFail($appointmentId);
-        return $appointment->update(['status'=>$request->status]);
+        return $appointment->update(['status' => $request->status]);
     }
 }

@@ -1,112 +1,315 @@
+// resources/js/pages/consultation/department.tsx
+
 import { Link, usePage, router } from '@inertiajs/react';
 import {
-    Users,
-    Eye,
+    AlertTriangle,
+    Building2,
+    CheckCircle2,
     Clock,
-    Phone,
-    Search,
-    CheckCircle,
-    Activity,
-    UserCheck,
+    Eye,
+    Hourglass,
     Loader2,
-    ChevronLeft,
-    ChevronRight,
+    PlayCircle,
+    Phone,
+    Stethoscope,
     User,
-    CreditCard,
+    Users,
 } from 'lucide-react';
 import Notiflix from 'notiflix';
-import { useState, useMemo } from 'react';
-import { Badge } from '@/components/ui/badge';
+import { useEffect, useMemo, useState } from 'react';
+import type { FC, ReactNode } from 'react';
+import PageHeader from '@/components/PageHeader';
+import ReusableTable from '@/components/ReusableTable';
+import type { Action, Column } from '@/components/ReusableTable';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
     DialogContent,
-    DialogFooter,
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import AppLayout from '@/layouts/app-layout';
 import Http from '@/utils/Http';
-import PageHeader from '@/components/PageHeader';
-import ReusableTable from '@/components/ReusableTable';
-import type { Column, Action } from '@/components/ReusableTable';
 
 // ============================================================================
 // Types
 // ============================================================================
 
-interface QueuePatient {
+/** Queue status: 1 = In Progress, 0 = Completed. */
+type VisitStatus = 'in_progress' | 'completed';
+
+interface QueueRecord {
     id: number;
-    token: string;
+    token: string | null;
     patient_id: number;
+    patient_number?: string | null;
+    patient_name: string | null;
+    contact: string | null;
+    gender: string | null;
+    payment_method: string | null;
+    original_payment_method?: string | null;
+    status: number | string | boolean | null;
+    registered_at: string | null;
+    assigned_department?: string | null;
+    assigned_staff?: string | null;
+    visit_status?: string | null;
+    priority: string | null;
+    department_id?: number | null;
+    photo_url?: string | null;
+}
+
+interface QueuePatient extends Omit<
+    QueueRecord,
+    | 'token'
+    | 'patient_number'
+    | 'patient_name'
+    | 'contact'
+    | 'gender'
+    | 'payment_method'
+    | 'visit_status'
+    | 'priority'
+    | 'assigned_department'
+    | 'assigned_staff'
+> {
+    token: string;
+    patient_number: string;
     patient_name: string;
     contact: string;
     gender: string;
     payment_method: string;
-    original_payment_method: string;
-    status: number | string;
-    registered_at: string;
+    visit_status: VisitStatus;
+    priority: string;
     assigned_department: string;
     assigned_staff: string;
-    visit_status: string;
-    priority: string;
-    department_id: number;
-}
-
-interface Stats {
-    total_in_queue: number;
-    pending_assignment: number;
-    assigned_today: number;
 }
 
 interface Props {
-    queue: QueuePatient[];
-    stats: Stats;
+    [key: string]: unknown;
+    queue?: QueueRecord[];
+    stats?: Record<string, number>;
 }
 
+type QueueTab = 'in_queue' | 'completed';
+
 // ============================================================================
-// Badge Components
+// Constants
 // ============================================================================
 
-const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
-    const config: Record<string, { label: string; color: string }> = {
-        pending: {
-            label: 'Pending',
-            color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-        },
-        active: {
-            label: 'Active',
-            color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-        },
-        in_progress: {
-            label: 'In Prog',
-            color: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
-        },
-        completed: {
-            label: 'Done',
-            color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
-        },
-        cancelled: {
-            label: 'Cancelled',
-            color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-        },
-    };
-    const cfg = config[status] || config.pending;
+/** How often the queue refreshes and wait times recalculate. */
+const REFRESH_MS = 30_000;
+
+/** Lower rank = seen first. */
+const PRIORITY_RANK: Record<string, number> = {
+    stat: 0,
+    emergency: 1,
+    urgent: 2,
+    high: 2,
+    routine: 3,
+    medium: 3,
+    low: 4,
+};
+
+// ============================================================================
+// Illustrated avatars (DiceBear)
+// ============================================================================
+
+const AVATAR_BASE_URL = 'https://api.dicebear.com/9.x/avataaars/svg';
+
+const AVATAR_STYLE = {
+    skinColor: '614335,ae5d29',
+    hairColor: '2c1b18,4a312c',
+    backgroundColor: 'dbeafe,e0e7ff',
+    maleTops:
+        'shortCurly,shortFlat,shortRound,frizzle,theCaesar,dreads01,dreads02,sides',
+    femaleTops: 'bob,bun,curly,curvy,dreads,fro,froBand,bigHair',
+    neutralTops: 'shortCurly,shortFlat,bob,curly,fro,frizzle',
+};
+
+const getAvatarUrl = (
+    patientId: number,
+    gender: string | null | undefined,
+    pixels: number,
+): string => {
+    const g = (gender || '').toLowerCase();
+    const isMale = g === 'male';
+    const isFemale = g === 'female';
+
+    const params = new URLSearchParams({
+        seed: `patient-${patientId}`,
+        size: String(pixels),
+        skinColor: AVATAR_STYLE.skinColor,
+        hairColor: AVATAR_STYLE.hairColor,
+        backgroundColor: AVATAR_STYLE.backgroundColor,
+        top: isMale
+            ? AVATAR_STYLE.maleTops
+            : isFemale
+              ? AVATAR_STYLE.femaleTops
+              : AVATAR_STYLE.neutralTops,
+        facialHairProbability: isMale ? '25' : '0',
+        facialHairColor: '2c1b18',
+        accessoriesProbability: '0',
+    });
+
+    return `${AVATAR_BASE_URL}?${params.toString()}`;
+};
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+/**
+ * The queue's `status` column is the source of truth:
+ *   1 → In Progress, 0 → Completed.
+ * Numeric strings ("0", "1") and booleans are accepted too. Anything else
+ * falls back to the text status, and finally to in progress so nobody disappears.
+ */
+const resolveStatus = (record: QueueRecord): VisitStatus => {
+    const raw = record.status;
+
+    if (raw !== null && raw !== undefined && raw !== '') {
+        const numeric = Number(raw);
+
+        if (numeric === 1) {
+            return 'in_progress';
+        }
+
+        if (numeric === 0) {
+            return 'completed';
+        }
+    }
+
+    const text = String(record.visit_status ?? raw ?? '')
+        .toLowerCase()
+        .replace(/[\s-]+/g, '_');
+
+    return ['completed', 'done', 'cancelled', 'no_show'].includes(text)
+        ? 'completed'
+        : 'in_progress';
+};
+
+const capitalize = (value: string): string =>
+    value ? value.charAt(0).toUpperCase() + value.slice(1).toLowerCase() : '';
+
+const parseDate = (value?: string | null): Date | null => {
+    if (!value) {
+        return null;
+    }
+
+    const date = new Date(value.replace(' ', 'T'));
+
+    return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const formatDate = (value?: string | null): string => {
+    const date = parseDate(value);
+
+    return date
+        ? date.toLocaleDateString('en-GB', {
+              day: '2-digit',
+              month: 'short',
+              year: 'numeric',
+          })
+        : 'N/A';
+};
+
+const formatTime = (value?: string | null): string => {
+    const date = parseDate(value);
+
+    return date
+        ? date.toLocaleTimeString('en-GB', {
+              hour: '2-digit',
+              minute: '2-digit',
+          })
+        : '';
+};
+
+const formatDateTime = (value?: string | null): string =>
+    parseDate(value) ? `${formatDate(value)}, ${formatTime(value)}` : 'N/A';
+
+/** Minutes between arrival and `now`, or null when the date is unusable. */
+const minutesWaiting = (value: string | null, now: number): number | null => {
+    const date = parseDate(value);
+
+    if (!date) {
+        return null;
+    }
+
+    return Math.max(0, Math.floor((now - date.getTime()) / 60_000));
+};
+
+const formatWait = (minutes: number): string => {
+    if (minutes < 1) {
+        return '<1m';
+    }
+
+    if (minutes < 60) {
+        return `${minutes}m`;
+    }
+
+    const hours = Math.floor(minutes / 60);
+    const rest = String(minutes % 60).padStart(2, '0');
+
+    return `${hours}h ${rest}m`;
+};
+
+const isUrgent = (priority: string): boolean =>
+    ['stat', 'emergency', 'urgent', 'high'].includes(priority);
+
+const arrivalTime = (patient: QueuePatient): number =>
+    parseDate(patient.registered_at)?.getTime() ?? 0;
+
+const normalizeRecord = (record: QueueRecord): QueuePatient => ({
+    ...record,
+    token: record.token || `T-${String(record.id).padStart(4, '0')}`,
+    patient_number: record.patient_number || 'N/A',
+    patient_name: record.patient_name?.trim() || 'Unknown patient',
+    contact: record.contact || 'N/A',
+    gender: record.gender ? capitalize(record.gender) : 'N/A',
+    payment_method:
+        record.payment_method ||
+        record.original_payment_method ||
+        'Not specified',
+    visit_status: resolveStatus(record),
+    priority: (record.priority || 'routine').toLowerCase(),
+    assigned_department: record.assigned_department || 'Consultation',
+    assigned_staff: record.assigned_staff || 'Not assigned',
+});
+
+// ============================================================================
+// Badge components
+// ============================================================================
+
+const STATUS_CONFIG: Record<
+    VisitStatus,
+    { label: string; color: string; dot: string }
+> = {
+    in_progress: {
+        label: 'In Progress',
+        color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+        dot: 'bg-emerald-500',
+    },
+    completed: {
+        label: 'Completed',
+        color: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
+        dot: 'bg-slate-500',
+    },
+};
+
+const StatusBadge: FC<{ status: VisitStatus }> = ({ status }) => {
+    const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.active;
 
     return (
         <span
             className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${cfg.color}`}
         >
-            <span
-                className={`h-1.5 w-1.5 rounded-full ${cfg.color.split(' ')[0].replace('bg-', 'bg-')}`}
-            />
+            <span className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`} />
             {cfg.label}
         </span>
     );
 };
 
-const PriorityBadge: React.FC<{ priority: string }> = ({ priority }) => {
+const PriorityBadge: FC<{ priority: string }> = ({ priority }) => {
     const config: Record<string, { label: string; color: string }> = {
         routine: {
             label: 'Routine',
@@ -125,7 +328,15 @@ const PriorityBadge: React.FC<{ priority: string }> = ({ priority }) => {
             color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
         },
     };
-    const cfg = config[priority] || config.routine;
+
+    // Older records use high / medium / low.
+    const aliases: Record<string, string> = {
+        high: 'urgent',
+        medium: 'routine',
+        low: 'routine',
+    };
+
+    const cfg = config[aliases[priority] ?? priority] || config.routine;
 
     return (
         <span
@@ -136,7 +347,7 @@ const PriorityBadge: React.FC<{ priority: string }> = ({ priority }) => {
     );
 };
 
-const PaymentBadge: React.FC<{ method: string }> = ({ method }) => {
+const PaymentBadge: FC<{ method: string }> = ({ method }) => {
     if (!method || method === 'Not specified') {
         return <span className="text-xs text-slate-400">—</span>;
     }
@@ -171,6 +382,7 @@ const PaymentBadge: React.FC<{ method: string }> = ({ method }) => {
             color: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
         },
     };
+
     const cfg = config[method.toLowerCase()] || {
         label: method,
         color: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400',
@@ -185,124 +397,220 @@ const PaymentBadge: React.FC<{ method: string }> = ({ method }) => {
     );
 };
 
-const PatientAvatar: React.FC<{ name: string }> = ({ name }) => {
-    const initials = name
+/** Live wait time. Turns amber after 30 minutes and red after an hour. */
+const WaitBadge: FC<{ minutes: number | null }> = ({ minutes }) => {
+    if (minutes === null) {
+        return <span className="text-xs text-slate-400">—</span>;
+    }
+
+    const tone =
+        minutes >= 60
+            ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+            : minutes >= 30
+              ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+              : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
+
+    return (
+        <span
+            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${tone}`}
+        >
+            <Hourglass size={12} />
+            {formatWait(minutes)}
+        </span>
+    );
+};
+
+const PatientAvatar: FC<{
+    name: string;
+    patientId?: number;
+    gender?: string | null;
+    photoUrl?: string | null;
+    size?: 'sm' | 'lg';
+}> = ({ name, patientId, gender, photoUrl, size = 'sm' }) => {
+    const [failed, setFailed] = useState(false);
+
+    const dimension = size === 'lg' ? 'h-12 w-12 text-sm' : 'h-9 w-9 text-xs';
+    const pixels = size === 'lg' ? 96 : 72;
+
+    const src =
+        photoUrl ||
+        (patientId !== undefined
+            ? getAvatarUrl(patientId, gender, pixels)
+            : null);
+
+    const initials = (name || '')
         .split(' ')
+        .filter(Boolean)
         .map((n) => n[0])
         .join('')
         .toUpperCase()
         .slice(0, 2);
-    return (
-        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-xs font-medium text-white shadow-sm">
-            {initials || '?'}
-        </div>
-    );
-};
 
-const StatCard: React.FC<{ icon: any; label: string; value: number }> = ({
-    icon: Icon,
-    label,
-    value,
-}) => {
-    const colors: Record<string, string> = {
-        Queue: 'bg-blue-50 text-blue-600 dark:bg-blue-950/30 dark:text-blue-400',
-        Pending:
-            'bg-amber-50 text-amber-600 dark:bg-amber-950/30 dark:text-amber-400',
-        Assigned:
-            'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400',
-    };
-
-    return (
-        <div
-            className={`rounded-lg px-4 py-2 text-center ${colors[label as keyof typeof colors] || colors.Queue}`}
-        >
-            <div className="flex items-center justify-center gap-1 text-xs font-medium uppercase">
-                <Icon className="h-3.5 w-3.5" />
-                {label}
+    if (!src || failed) {
+        return (
+            <div
+                className={`flex ${dimension} shrink-0 items-center justify-center rounded-full bg-blue-100 font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300`}
+            >
+                {initials || '?'}
             </div>
-            <p className="text-xl font-bold">{value}</p>
-        </div>
+        );
+    }
+
+    return (
+        <img
+            src={src}
+            alt={name}
+            loading="lazy"
+            referrerPolicy="no-referrer"
+            onError={() => setFailed(true)}
+            className={`${dimension} shrink-0 rounded-full bg-blue-100 object-cover dark:bg-blue-900/40`}
+        />
     );
 };
 
-// ============================================================================
-// Stethoscope Icon
-// ============================================================================
-
-const StethoscopeIcon: React.FC<{ className?: string }> = ({
-    className = 'h-5 w-5',
+const DetailField: FC<{ label: string; children: ReactNode }> = ({
+    label,
+    children,
 }) => (
-    <svg
-        className={className}
-        fill="none"
-        stroke="currentColor"
-        viewBox="0 0 24 24"
-    >
-        <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
-        />
-    </svg>
+    <div>
+        <Label className="text-xs text-slate-500">{label}</Label>
+        <div className="mt-0.5 text-sm text-slate-800 dark:text-slate-200">
+            {children}
+        </div>
+    </div>
+);
+
+const StatCard: FC<{
+    label: string;
+    value: ReactNode;
+    icon: ReactNode;
+    tone: string;
+}> = ({ label, value, icon, tone }) => (
+    <div className="flex items-center gap-3 rounded-xl border border-white bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+        <div
+            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${tone}`}
+        >
+            {icon}
+        </div>
+        <div>
+            <p className="text-xl leading-none font-semibold text-slate-800 dark:text-slate-100">
+                {value}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">{label}</p>
+        </div>
+    </div>
 );
 
 // ============================================================================
-// Main Component
+// Main component
 // ============================================================================
 
-export default function Nurses() {
-    const { props } = usePage<{ props: Props }>();
-    const queues: QueuePatient[] = props.queue || [];
-    console.log('viist quques', queues);
+export default function ConsultationQueue() {
+    const { queue = [] } = usePage<Props>().props;
 
     const [selectedPatient, setSelectedPatient] = useState<QueuePatient | null>(
         null,
     );
     const [showDetailsModal, setShowDetailsModal] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [activeTab, setActiveTab] = useState<QueueTab>('in_queue');
+    const [now, setNow] = useState(() => Date.now());
 
-    // Normalize status
-    const normalizeStatus = (status: number | string | undefined): string => {
-        if (!status) return 'pending';
-        if (typeof status === 'number') {
-            const statusMap: Record<number, string> = {
-                0: 'cancelled',
-                1: 'active',
-                2: 'pending',
-                3: 'in_progress',
-                4: 'completed',
-            };
-            return statusMap[status] || 'pending';
+    // Keep wait times ticking and the queue fresh while the tab is visible.
+    useEffect(() => {
+        const timer = setInterval(() => {
+            setNow(Date.now());
+
+            if (document.visibilityState === 'visible') {
+                router.reload({ only: ['queue', 'stats'] });
+            }
+        }, REFRESH_MS);
+
+        return () => clearInterval(timer);
+    }, []);
+
+    const processedQueue = useMemo<QueuePatient[]>(
+        () => queue.map(normalizeRecord),
+        [queue],
+    );
+
+    // Status 1 → In Progress tab. Most urgent first, then first come first served.
+    const inQueue = useMemo(
+        () =>
+            processedQueue
+                .filter((p) => p.visit_status === 'in_progress')
+                .sort((a, b) => {
+                    const rank =
+                        (PRIORITY_RANK[a.priority] ?? 3) -
+                        (PRIORITY_RANK[b.priority] ?? 3);
+
+                    return rank !== 0 ? rank : arrivalTime(a) - arrivalTime(b);
+                }),
+        [processedQueue],
+    );
+
+    // Status 0 → Completed tab. Most recent first.
+    const completed = useMemo(
+        () =>
+            processedQueue
+                .filter((p) => p.visit_status === 'completed')
+                .sort((a, b) => arrivalTime(b) - arrivalTime(a)),
+        [processedQueue],
+    );
+
+    const tableData = activeTab === 'in_queue' ? inQueue : completed;
+
+    const urgentCount = inQueue.filter((p) => isUrgent(p.priority)).length;
+
+    const longestWait = useMemo(() => {
+        const waits = inQueue
+            .map((p) => minutesWaiting(p.registered_at, now))
+            .filter((m): m is number => m !== null);
+
+        return waits.length ? Math.max(...waits) : null;
+    }, [inQueue, now]);
+
+    // ------------------------------------------------------------------------
+    // Handlers
+    // ------------------------------------------------------------------------
+
+    const openDashboard = (patient: QueuePatient) => {
+        if (!patient.patient_id) {
+            Notiflix.Notify.failure('This queue entry has no patient attached');
+
+            return;
         }
-        return status.toLowerCase();
+
+        router.visit(`/patients/dashboard/${patient.patient_id}`);
     };
 
-    // Process queue data
-    const processedQueue = useMemo(() => {
-        return queues.map((patient) => ({
-            ...patient,
-            token: patient.token || `T-${String(patient.id).padStart(4, '0')}`,
-            payment_method:
-                patient.payment_method ||
-                patient.original_payment_method ||
-                'Not specified',
-            contact: patient.contact || 'N/A',
-            gender: patient.gender || 'N/A',
-            visit_status: normalizeStatus(
-                patient.visit_status || patient.status,
-            ),
-            priority: patient.priority || 'routine',
-        }));
-    }, [queues]);
+    /** Sends the patient out of the queue: status 1 → 0. */
+    const handleMarkCompleted = async (patient: QueuePatient) => {
+        setLoading(true);
+        Notiflix.Loading.pulse('Updating...');
 
-    const formatTime = (dateString: string) => {
-        if (!dateString) return 'N/A';
-        const date = new Date(dateString);
-        return date.toLocaleTimeString([], {
-            hour: '2-digit',
-            minute: '2-digit',
-        });
+        try {
+            const response = await Http.post(
+                `/consultation/queue/${patient.id}/status`,
+                { status: 0 },
+            );
+
+            if (response.data.success) {
+                Notiflix.Notify.success('Consultation marked as completed');
+                router.reload({ only: ['queue', 'stats'] });
+            } else {
+                Notiflix.Notify.failure(
+                    response.data.message || 'Failed to update status',
+                );
+            }
+        } catch (error: any) {
+            Notiflix.Notify.failure(
+                error.response?.data?.message || 'Failed to update status',
+            );
+        } finally {
+            Notiflix.Loading.remove();
+            setLoading(false);
+        }
     };
 
     const handleViewDetails = (patient: QueuePatient) => {
@@ -310,47 +618,27 @@ export default function Nurses() {
         setShowDetailsModal(true);
     };
 
-    const handleStatusUpdate = async (patientId: number, newStatus: string) => {
-        setLoading(true);
-        Notiflix.Loading.pulse('Updating...');
-
-        try {
-            const response = await Http.post(
-                `/nurses/queue/${patientId}/status`,
-                { status: newStatus },
-            );
-            if (response.data.success) {
-                Notiflix.Loading.remove();
-                Notiflix.Notify.success(`Status updated to ${newStatus}`);
-                router.reload();
-            } else {
-                Notiflix.Loading.remove();
-                Notiflix.Notify.failure(
-                    response.data.message || 'Failed to update status',
-                );
-            }
-        } catch (error: any) {
-            Notiflix.Loading.remove();
-            Notiflix.Notify.failure(
-                error.response?.data?.message || 'Failed to update status',
-            );
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    // ============================================
-    // COLUMNS DEFINITION
-    // ============================================
+    // ------------------------------------------------------------------------
+    // Columns
+    // ------------------------------------------------------------------------
 
     const columns: Column<QueuePatient>[] = [
         {
             id: 'token',
             label: 'Token',
             sortable: true,
-            format: (value) => (
-                <span className="font-mono text-sm font-medium text-blue-600 dark:text-blue-400">
-                    {value || 'N/A'}
+            format: (value, row) => (
+                <span className="inline-flex items-center gap-2">
+                    {['stat', 'emergency'].includes(row.priority) &&
+                        row.visit_status === 'in_progress' && (
+                            <span className="relative flex h-2 w-2">
+                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75 motion-reduce:animate-none" />
+                                <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+                            </span>
+                        )}
+                    <span className="font-mono text-sm font-medium text-blue-600 dark:text-blue-400">
+                        {(value as string) || 'N/A'}
+                    </span>
                 </span>
             ),
         },
@@ -359,19 +647,24 @@ export default function Nurses() {
             label: 'Patient',
             sortable: true,
             filterable: true,
-            format: (value, row) => (
+            format: (_value, row) => (
                 <Link
                     href={`/patients/dashboard/${row.patient_id}`}
-                    className="flex items-center gap-2 hover:text-blue-600 dark:hover:text-blue-400"
+                    className="flex items-center gap-2.5 hover:text-blue-600 dark:hover:text-blue-400"
                 >
-                    <PatientAvatar name={row.patient_name} />
+                    <PatientAvatar
+                        name={row.patient_name}
+                        patientId={row.patient_id}
+                        gender={row.gender}
+                        photoUrl={row.photo_url}
+                    />
                     <div>
                         <span className="font-medium text-slate-800 dark:text-slate-200">
                             {row.patient_name}
                         </span>
                         <div className="flex items-center gap-2 text-xs text-slate-400">
                             <span>EMR #: {row.patient_number}</span>
-                            {row.contact && row.contact !== 'N/A' && (
+                            {row.contact !== 'N/A' && (
                                 <>
                                     <span>•</span>
                                     <Phone size={10} />
@@ -387,25 +680,42 @@ export default function Nurses() {
             id: 'priority',
             label: 'Priority',
             sortable: true,
-            format: (value, row) => <PriorityBadge priority={row.priority} />,
+            format: (_value, row) => <PriorityBadge priority={row.priority} />,
         },
         {
             id: 'visit_status',
             label: 'Status',
             sortable: true,
-            filterable: true,
-            format: (value, row) => <StatusBadge status={row.visit_status} />,
+            format: (_value, row) => <StatusBadge status={row.visit_status} />,
         },
         {
             id: 'registered_at',
-            label: 'Arrived',
+            label: activeTab === 'in_queue' ? 'Waiting' : 'Arrived',
             sortable: true,
-            format: (value) => (
-                <div className="flex items-center gap-1.5">
-                    <Clock size={14} className="text-slate-400" />
-                    <span className="text-sm text-slate-700 dark:text-slate-300">
-                        {formatTime(value as string)}
-                    </span>
+            format: (value, row) => (
+                <div className="flex flex-col gap-1">
+                    {row.visit_status === 'in_progress' && (
+                        <WaitBadge
+                            minutes={minutesWaiting(row.registered_at, now)}
+                        />
+                    )}
+                    <div className="flex items-center gap-1.5">
+                        <Clock size={12} className="text-slate-400" />
+                        <span className="text-xs text-slate-500 dark:text-slate-400">
+                            {formatDateTime(value as string)}
+                        </span>
+                    </div>
+                </div>
+            ),
+        },
+        {
+            id: 'assigned_staff',
+            label: 'Clinician',
+            sortable: true,
+            format: (_value, row) => (
+                <div className="flex items-center gap-1.5 text-sm text-slate-700 dark:text-slate-300">
+                    <Building2 size={14} className="text-slate-400" />
+                    {row.assigned_staff}
                 </div>
             ),
         },
@@ -413,24 +723,32 @@ export default function Nurses() {
             id: 'payment_method',
             label: 'Payment',
             sortable: true,
-            format: (value, row) => (
+            format: (_value, row) => (
                 <PaymentBadge method={row.payment_method} />
             ),
         },
     ];
 
-    // ============================================
-    // ACTIONS DEFINITION
-    // ============================================
+    // ------------------------------------------------------------------------
+    // Actions (Start Consultation only makes sense for active patients)
+    // ------------------------------------------------------------------------
 
     const actions: Action<QueuePatient>[] = [
+        ...(activeTab === 'in_queue'
+            ? [
+                  {
+                      label: 'Start Consultation',
+                      icon: <PlayCircle size={16} />,
+                      color: 'primary',
+                      onClick: (row: QueuePatient) => openDashboard(row),
+                  } as Action<QueuePatient>,
+              ]
+            : []),
         {
             label: 'View Dashboard',
             icon: <Eye size={16} />,
             color: 'info',
-            onClick: (row) => {
-                router.visit(`/patients/dashboard/${row.patient_id}`);
-            },
+            onClick: (row) => openDashboard(row),
         },
         {
             label: 'Details',
@@ -438,79 +756,83 @@ export default function Nurses() {
             color: 'info',
             onClick: (row) => handleViewDetails(row),
         },
-        {
-            label: 'Mark Active',
-            icon: <Activity size={16} />,
-            color: 'success',
-            show: (row) => row.visit_status === 'pending',
-            onClick: (row) => handleStatusUpdate(row.id, 'active'),
-        },
     ];
 
-    // ============================================
-    // STATUS OPTIONS FOR FILTER
-    // ============================================
-
-    const statusOptions = [
-        { value: 'pending', label: 'Pending' },
-        { value: 'active', label: 'Active' },
-        { value: 'in_progress', label: 'In Progress' },
-        { value: 'completed', label: 'Completed' },
-        { value: 'cancelled', label: 'Cancelled' },
-    ];
-
-    // ============================================
-    // RENDER
-    // ============================================
+    // ------------------------------------------------------------------------
+    // Render
+    // ------------------------------------------------------------------------
 
     return (
         <AppLayout
             breadcrumbs={[
+                { href: '/dashboard', title: 'Altaf Memorial Hospital' },
                 { href: '', title: 'Department' },
-                { href: '', title: 'Nurses Bay' },
+                { href: '/consultation/queue', title: 'Consultation' },
             ]}
         >
-            <div className="flex h-full min-h-screen flex-1 flex-col gap-4 bg-blue-50 p-4 dark:bg-slate-900">
-                {/* Header */}
-                <PageHeader
-                    icon={<StethoscopeIcon />}
-                    title="Visit Queue"
-                    subtitle="View and manage patients currently in the queue"
-                />
+            <PageHeader
+                icon={<Stethoscope />}
+                title="Nurses Encounter Queue"
+                subtitle="Patients waiting to see a clinician, most urgent first"
+                actions={[
+                    {
+                        label: `In Progress (${inQueue.length})`,
+                        onClick: () => setActiveTab('in_queue'),
+                        variant: activeTab === 'in_queue' ? 'cyan' : 'default',
+                    },
+                    {
+                        label: `Completed (${completed.length})`,
+                        onClick: () => setActiveTab('completed'),
+                        variant: activeTab === 'completed' ? 'cyan' : 'default',
+                    },
+                ]}
+            />
 
-                {/* Reusable Table */}
+            <div className="flex h-full min-h-screen flex-1 flex-col gap-4 bg-blue-50 p-4 dark:bg-slate-900">
                 <ReusableTable
-                    title="Queue Patients"
                     columns={columns}
-                    data={queues}
+                    data={tableData}
                     actions={actions}
                     loading={loading}
                     filterPlaceholder="Search by patient name, token, or contact..."
-                    statusFilterKey="visit_status"
-                    statusOptions={statusOptions}
-                    rowsPerPageOptions={[5, 10, 25, 50]}
-                    defaultRowsPerPage={10}
+                    rowsPerPageOptions={[8, 15, 25, 50]}
+                    defaultRowsPerPage={8}
                     defaultOrderBy="registered_at"
-                    emptyMessage="No patients in the queue"
+                    emptyMessage={
+                        activeTab === 'in_queue'
+                            ? 'No patients in progress'
+                            : 'No completed consultations found'
+                    }
                     className="shadow-sm"
                 />
 
-                {/* Details Modal */}
+                {/* Details modal */}
                 <Dialog
                     open={showDetailsModal}
-                    onOpenChange={setShowDetailsModal}
+                    onOpenChange={(open) => {
+                        setShowDetailsModal(open);
+
+                        if (!open) {
+                            setSelectedPatient(null);
+                        }
+                    }}
                 >
-                    <DialogContent className="max-w-sm">
+                    <DialogContent className="max-w-md">
                         <DialogHeader>
                             <DialogTitle className="text-sm">
                                 Patient Details
                             </DialogTitle>
                         </DialogHeader>
+
                         {selectedPatient && (
-                            <div className="space-y-3">
+                            <div className="space-y-4">
                                 <div className="flex items-center gap-3">
                                     <PatientAvatar
                                         name={selectedPatient.patient_name}
+                                        patientId={selectedPatient.patient_id}
+                                        gender={selectedPatient.gender}
+                                        photoUrl={selectedPatient.photo_url}
+                                        size="lg"
                                     />
                                     <div>
                                         <p className="text-sm font-medium">
@@ -521,67 +843,63 @@ export default function Nurses() {
                                         </p>
                                     </div>
                                 </div>
-                                <div className="grid grid-cols-2 gap-2 text-sm">
-                                    <div>
-                                        <Label className="text-xs text-slate-500">
-                                            Contact
-                                        </Label>
-                                        <p>{selectedPatient.contact}</p>
-                                    </div>
-                                    <div>
-                                        <Label className="text-xs text-slate-500">
-                                            Gender
-                                        </Label>
-                                        <p>{selectedPatient.gender}</p>
-                                    </div>
-                                    <div>
-                                        <Label className="text-xs text-slate-500">
-                                            Priority
-                                        </Label>
-                                        <p>
-                                            <PriorityBadge
-                                                priority={
-                                                    selectedPatient.priority
-                                                }
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <DetailField label="EMR number">
+                                        {selectedPatient.patient_number}
+                                    </DetailField>
+                                    <DetailField label="Contact">
+                                        {selectedPatient.contact}
+                                    </DetailField>
+                                    <DetailField label="Gender">
+                                        {selectedPatient.gender}
+                                    </DetailField>
+                                    <DetailField label="Priority">
+                                        <PriorityBadge
+                                            priority={selectedPatient.priority}
+                                        />
+                                    </DetailField>
+                                    <DetailField label="Status">
+                                        <StatusBadge
+                                            status={
+                                                selectedPatient.visit_status
+                                            }
+                                        />
+                                    </DetailField>
+                                    <DetailField label="Payment">
+                                        <PaymentBadge
+                                            method={
+                                                selectedPatient.payment_method
+                                            }
+                                        />
+                                    </DetailField>
+                                    <DetailField label="Department">
+                                        {selectedPatient.assigned_department}
+                                    </DetailField>
+                                    <DetailField label="Clinician">
+                                        {selectedPatient.assigned_staff}
+                                    </DetailField>
+                                    <DetailField label="Arrived">
+                                        {formatDateTime(
+                                            selectedPatient.registered_at,
+                                        )}
+                                    </DetailField>
+                                    <DetailField label="Waiting">
+                                        {selectedPatient.visit_status ===
+                                        'in_progress' ? (
+                                            <WaitBadge
+                                                minutes={minutesWaiting(
+                                                    selectedPatient.registered_at,
+                                                    now,
+                                                )}
                                             />
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <Label className="text-xs text-slate-500">
-                                            Status
-                                        </Label>
-                                        <p>
-                                            <StatusBadge
-                                                status={
-                                                    selectedPatient.visit_status
-                                                }
-                                            />
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <Label className="text-xs text-slate-500">
-                                            Payment
-                                        </Label>
-                                        <p>
-                                            <PaymentBadge
-                                                method={
-                                                    selectedPatient.payment_method
-                                                }
-                                            />
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <Label className="text-xs text-slate-500">
-                                            Registered
-                                        </Label>
-                                        <p className="text-xs">
-                                            {formatTime(
-                                                selectedPatient.registered_at,
-                                            )}
-                                        </p>
-                                    </div>
+                                        ) : (
+                                            '—'
+                                        )}
+                                    </DetailField>
                                 </div>
-                                <div className="flex items-center justify-between gap-2 border-t pt-2">
+
+                                <div className="flex items-center justify-between gap-2 border-t pt-3">
                                     <Link
                                         href={`/patients/dashboard/${selectedPatient.patient_id}`}
                                         className="inline-flex items-center gap-1 rounded bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-600 transition-colors hover:bg-blue-100 dark:bg-blue-950/30 dark:text-blue-400"
@@ -589,15 +907,59 @@ export default function Nurses() {
                                         <Eye className="h-3.5 w-3.5" />
                                         Dashboard
                                     </Link>
-                                    <Button
-                                        size="sm"
-                                        className="text-xs"
-                                        onClick={() => {
-                                            setShowDetailsModal(false);
-                                        }}
-                                    >
-                                        Close
-                                    </Button>
+
+                                    <div className="flex gap-2">
+                                        {selectedPatient.visit_status ===
+                                            'in_progress' && (
+                                            <>
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    className="text-xs"
+                                                    disabled={loading}
+                                                    onClick={async () => {
+                                                        await handleMarkCompleted(
+                                                            selectedPatient,
+                                                        );
+                                                        setShowDetailsModal(
+                                                            false,
+                                                        );
+                                                    }}
+                                                >
+                                                    {loading && (
+                                                        <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                                                    )}
+                                                    Mark completed
+                                                </Button>
+                                                <Button
+                                                    size="sm"
+                                                    className="text-xs"
+                                                    onClick={() => {
+                                                        setShowDetailsModal(
+                                                            false,
+                                                        );
+                                                        openDashboard(
+                                                            selectedPatient,
+                                                        );
+                                                    }}
+                                                >
+                                                    <PlayCircle className="mr-1 h-3.5 w-3.5" />
+                                                    Start consultation
+                                                </Button>
+                                            </>
+                                        )}
+
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="text-xs"
+                                            onClick={() =>
+                                                setShowDetailsModal(false)
+                                            }
+                                        >
+                                            Close
+                                        </Button>
+                                    </div>
                                 </div>
                             </div>
                         )}

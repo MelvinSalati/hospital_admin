@@ -1,5 +1,3 @@
-// components/PatientHeader.tsx
-
 import {
     Phone,
     Mail,
@@ -314,7 +312,7 @@ export default function PatientHeader({
     return (
         <>
             <div className="border-b bg-white">
-                <div className="px-6 py-5">
+                <div className="">
                     <div className="flex items-start gap-6">
                         {/* Avatar */}
                         <div className="flex-shrink-0">

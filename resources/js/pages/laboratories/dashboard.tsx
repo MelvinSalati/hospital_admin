@@ -503,7 +503,7 @@ function LabQueue({ rows }: { rows: QueuePatient[] }) {
                                 className="border-b border-slate-100 last:border-0"
                             >
                                 <td className="py-3 pr-3 font-medium tracking-wider text-slate-800">
-                                    {maskName(p.name)}
+                                    {p.name}
                                 </td>
                                 <td className="py-3 pr-3 text-slate-600">
                                     {p.patientCode}
@@ -994,7 +994,7 @@ export default function LaboratoryDashboard({
                 { href: '', title: 'Laboratory' },
             ]}
         >
-            <div className="bg-blue-50 p-2">
+            <div className="bg-blue-50">
                 <PageHeader
                     icon={<MicroscopeIcon className="h-5 w-5" />}
                     title="Laboratory department"

@@ -508,7 +508,7 @@ const RadiologyServiceModal = ({
                             </div>
                             <div>
                                 <h2 className="text-lg font-semibold text-slate-900">
-                                    Order Radiology Services
+                                    Order Imaging Service
                                 </h2>
                                 <p className="text-xs text-slate-500">
                                     Select imaging services and add details to
@@ -563,7 +563,7 @@ const RadiologyServiceModal = ({
                                                                 'Unknown Service'}
                                                         </div>
                                                         <div
-                                                            className={`text-sm ${
+                                                            className={`hidden text-sm ${
                                                                 hasPrice
                                                                     ? 'text-gray-500'
                                                                     : 'text-red-500'
@@ -622,21 +622,21 @@ const RadiologyServiceModal = ({
 
                         <div className="w-full bg-gray-50 p-4 md:w-1/2">
                             <h3 className="mb-3 font-semibold">
-                                Order Cart ({cart.length} items)
+                                Imging items ({cart.length} items)
                             </h3>
 
                             <div className="max-h-[400px] space-y-2 overflow-y-auto">
                                 {cart.map((item) => (
                                     <div
                                         key={item.id}
-                                        className="rounded-lg bg-white p-3 shadow-sm"
+                                        className="rounded-lg bg-slate-100 p-3 shadow-sm"
                                     >
                                         <div className="flex justify-between">
                                             <div>
                                                 <div className="font-medium">
                                                     {item.service_name}
                                                 </div>
-                                                <div className="text-sm text-gray-500">
+                                                <div className="hidden text-sm text-gray-500">
                                                     ZMW {item.price.toFixed(2)}{' '}
                                                     each
                                                 </div>
@@ -697,7 +697,7 @@ const RadiologyServiceModal = ({
                                                     +
                                                 </button>
                                             </div>
-                                            <div className="font-semibold">
+                                            <div className="hidden font-semibold">
                                                 ZMW{' '}
                                                 {(
                                                     item.price * item.quantity
@@ -709,14 +709,14 @@ const RadiologyServiceModal = ({
                                 {cart.length === 0 && (
                                     <div className="py-8 text-center text-gray-400">
                                         <ShoppingCart className="mx-auto mb-2 h-12 w-12 opacity-30" />
-                                        Cart is empty
+                                        No imaging order selected
                                     </div>
                                 )}
                             </div>
 
                             {cart.length > 0 && (
                                 <div className="mt-4 border-t pt-3">
-                                    <div className="mb-3 flex justify-between">
+                                    <div className="mb-3 flex hidden justify-between">
                                         <span className="font-semibold">
                                             Total:
                                         </span>
@@ -732,7 +732,7 @@ const RadiologyServiceModal = ({
                                         <Save className="mr-2 h-4 w-4" />
                                         {isSubmitting
                                             ? 'Saving...'
-                                            : `Save Order (ZMW ${totalAmount.toFixed(2)})`}
+                                            : `Save Order`}
                                     </Button>
                                 </div>
                             )}

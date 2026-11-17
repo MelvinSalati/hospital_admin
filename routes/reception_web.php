@@ -14,11 +14,11 @@ Route::prefix('reception')->group(function () {
     Route::get('/dashboard/{departmentId}', [ReceptionController::class, 'dashboard']);
     Route::get('/registry/{departmentId}', [ReceptionController::class, 'search']);
     Route::get('/create/{departmentId}', [PatientController::class, 'create']);
-    Route::get('/appointments/{departmentId}', [AppointmentController::class, 'index']);
+    Route::get('/appointments/{departmentId}', [AppointmentController::class, 'receptionAppointments']);
     Route::get('/bills/{departmentId}', [BillController::class, 'index']);
     Route::inertia('/reports/{departmentId}', 'receptions/report');
     Route::get('payments/{departmentId}}', [BillController::class, 'payments']);
     Route::get('/queue/{departmentId}', [ReceptionController::class, 'queues']);
     Route::get('insurance/{departmentId}', [BillController::class, 'insurance']);
     Route::get('visits/{departmentId}', [ReceptionController::class, 'visits']);
-})->middleware(['auth', 'verified']);
+})->middleware(['auth', 'verified' . 'EnsureUserDepartment']);

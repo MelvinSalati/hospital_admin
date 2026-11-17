@@ -519,13 +519,12 @@ export default function Processed() {
                 { href: '', title: 'Processed' },
             ]}
         >
+            <PageHeader
+                icon={<Microscope className="h-5 w-5" />}
+                title="Processed Laboratory Results"
+                subtitle="Review completed tests, result values, and who processed each sample"
+            />
             <div className="h-full space-y-4 bg-blue-50 p-4">
-                <PageHeader
-                    icon={<Microscope className="h-5 w-5" />}
-                    title="Processed Laboratory Results"
-                    subtitle="Review completed tests, result values, and who processed each sample"
-                />
-
                 <ReusableTable
                     title="Processed Results"
                     columns={columns}

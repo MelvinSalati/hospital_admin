@@ -344,106 +344,77 @@ class LaboratoryController extends Controller
      * $userId is the patient ID used by the existing route.
      * $lab_order_id is the laboratory order ID.
      */
-    public function uploadResults(
-        Request $request,
-        int $userId,
-        int $patientId,
-        int $lab_order_id
-    ) {
-        $validated = $request->validate([
-            'pdfs'         => ['required', 'array', 'min:1'],
-            'pdfs.*'       => ['required', 'file', 'mimes:pdf', 'max:10240'],
-            'test_names'   => ['required', 'array', 'min:1'],
-            'test_names.*' => ['required', 'string', 'max:255'],
-        ]);
+   public function uploadResults(
+    Request $request,
+    int $userId,
+    int $patientId,
+    int $lab_order_id
+) {
+    $validated = $request->validate([
+        'pdfs'         => ['required', 'array', 'min:1'],
+        'pdfs.*'       => ['required', 'file', 'mimes:pdf', 'max:10240'],
+        'test_names'   => ['required', 'array', 'min:1'],
+        'test_names.*' => ['required', 'string', 'max:255'],
+    ]);
 
-        try {
-            $order = LabOrder::find($lab_order_id);
-            if (!$order) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Laboratory order not found.',
-                ], 404);
-            }
-
-            $patient = Patient::find($patientId);
-            if (!$patient) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Patient not found.',
-                ], 404);
-            }
-
-            $files         = $request->file('pdfs', []);
-            $selectedTests = $validated['test_names'];
-
-            $created = [];
-
-            foreach ($files as $pdf) {
-                if (!$pdf instanceof UploadedFile) {
-                    continue;
-                }
-
-                // ── 1. Store the PDF (fast) ─────────────────────────────
-                $filename = Str::uuid() . '.pdf';
-                $path     = 'lab-results/' . $filename;
-
-                if (!Storage::disk('public')->putFileAs('lab-results', $pdf, $filename)) {
-                    Log::error('Could not store uploaded lab PDF', [
-                        'original' => $pdf->getClientOriginalName(),
-                    ]);
-                    continue;
-                }
-
-                // ── 2. Create the LabResultFile row (pending) ───────────
-                $file = LabResultFile::create([
-                    'lab_order_id'      => $lab_order_id,
-                    'patient_id'        => $patientId,
-                    'uploaded_by'       => $userId,
-                    'original_name'     => $pdf->getClientOriginalName(),
-                    'path'              => $path,
-                    'mime_type'         => $pdf->getClientMimeType() ?: 'application/pdf',
-                    'size'              => $pdf->getSize(),
-                    'report_no'         => null,
-                    'ocr_text'          => null,
-                    'processing_status' => 'pending',
-                ]);
-
-                // ══════════════════════════════════════════════════════════
-                // ▶▶▶  JOB DISPATCHED HERE  ◀◀◀
-                // ══════════════════════════════════════════════════════════
-                ProcessLabResultOcrJob::dispatch(
-                    $file->id,
-                    $selectedTests,
-                );
-
-                $created[] = [
-                    'file_id'       => $file->id,
-                    'original_name' => $pdf->getClientOriginalName(),
-                    'status'        => 'pending',
-                ];
-            }
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Files received. OCR and parsing are running in the background.',
-                'files'   => $created,
-            ], 202);
-        } catch (Throwable $e) {
-            Log::error('Lab result upload failed', [
-                'user_id'      => $userId,
-                'patient_id'   => $patientId,
-                'lab_order_id' => $lab_order_id,
-                'error'        => $e->getMessage(),
-            ]);
-
+    try {
+        $order = LabOrder::find($lab_order_id);
+        if (!$order) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to accept upload: ' . $e->getMessage(),
-            ], 500);
+                'message' => 'Laboratory order not found.',
+            ], 404);
         }
-    }
 
+        if (!Patient::whereKey($patientId)->exists()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Patient not found.',
+            ], 404);
+        }
+
+        $saved = [];
+
+        foreach ($request->file('pdfs', []) as $pdf) {
+            if (!$pdf instanceof UploadedFile) {
+                continue;
+            }
+
+            // ▶▶▶ The new method is consumed here ◀◀◀
+            $saved[] = $this->labResultPdfService->storeAndComplete(
+                $pdf,
+                $lab_order_id,
+                $userId,
+                $validated['test_names'],
+            );
+        }
+
+        // Optional: tell the ordering doctor the results are ready
+        $this->notifyOrdererOfResults($lab_order_id, $saved);
+
+        return response()->json([
+            'success' => true,
+            'message' => count($saved) . ' file(s) uploaded and marked as processed.',
+            'files'   => collect($saved)->map(fn ($f) => [
+                'file_id'       => $f->id,
+                'original_name' => $f->original_name,
+                'status'        => $f->processing_status,
+            ])->values(),
+        ], 201);
+    } catch (Throwable $e) {
+        Log::error('Lab result upload failed', [
+            'user_id'      => $userId,
+            'patient_id'   => $patientId,
+            'lab_order_id' => $lab_order_id,
+            'error'        => $e->getMessage(),
+        ]);
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to save upload: ' . $e->getMessage(),
+        ], 500);
+    }
+}
     /**
      * Match a parsed result name to an ordered test.
      */

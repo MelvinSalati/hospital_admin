@@ -26,7 +26,7 @@ use App\Http\Controllers\Patients\TheaterController;
 use App\Http\Controllers\Patients\DentalController;
 use App\Http\Controllers\Pharmacies\SupplierController;
 use App\Http\Controllers\Laboratories\LaboratorySettingsController;
-
+use App\Models\PatientVisit;
 /*
 |--------------------------------------------------------------------------
 | API V1 Routes
@@ -34,6 +34,19 @@ use App\Http\Controllers\Laboratories\LaboratorySettingsController;
 */
 
 Route::prefix('v1')->group(function () {
+
+    // count the number of encouters
+
+
+    Route::get('departments/{departmentId}/encounters/count', function ($departmentId) {
+        // $count = PatientVisit::where('department_id', $departmentId)->where('status', 1)->count();
+        // if(!$count){
+        //     $count = \App\Models\ImageOrders::where('status','in_progress')->count();
+        // }
+        return response()->json([
+            'count' => PatientVisit::where('department_id', $departmentId)->where('status', 1)->count()
+        ]);
+    });
 
     /*
     |--------------------------------------------------------------------------

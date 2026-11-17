@@ -280,7 +280,7 @@ class DashboardRepository
             ->get()
             ->map(function (LabOrder $order) use ($statusMap) {
                 $patient = $order->patient;
-                $patientName = $patient?->name ?? 'Unknown';
+                $patientName = $patient?->first_name . ' ' . $patient?->last_name ?? 'Unknown';
 
                 $since = $order->collected_date
                     ? Carbon::parse($order->collected_date)
