@@ -29,6 +29,12 @@ class PrescriptionsController extends Controller
     private const PHARMACY_DEPARTMENT_ID = 1;
 
     /**
+     * Verbose diagnostics for index(). Writes to storage/logs/laravel.log
+     * under the tag "[Prescriptions@index]". Set to false once the list is correct.
+     */
+    private const DEBUG_INDEX = true;
+
+    /**
      * Show the prescription workspace for a patient.
      *
      * Lists ONLY drugs that are:
@@ -38,73 +44,228 @@ class PrescriptionsController extends Controller
      *
      * One row per product. If a product has several matching service rows,
      * the lowest service id is used (the same one store() resolves with ->first()).
+     *
+     * With DEBUG_INDEX = true, every step is logged to storage/logs/laravel.log
+     * under "[Prescriptions@index]".
      */
     public function index(int $patientId)
     {
-        $activeToken = VisitTokenHelper::getActiveTokenArray($patientId);
-        $token       = is_array($activeToken) ? ($activeToken['token'] ?? null) : null;
+        $tag   = '[Prescriptions@index]';
+        $debug = self::DEBUG_INDEX;
 
-        $schemeId = $token
-            ? PatientVisitScheme::where('token', $token)->value('scheme_id')
-            : null;
+        try {
+            // ---------- 1. Visit token + scheme ----------
+            $activeToken = VisitTokenHelper::getActiveTokenArray($patientId);
+            $token       = is_array($activeToken) ? ($activeToken['token'] ?? null) : null;
 
-        $drugs = collect();
+            $schemeId = $token
+                ? PatientVisitScheme::where('token', $token)->value('scheme_id')
+                : null;
 
-        if ($schemeId) {
-            $drugs = DB::table('department_stocks as ds')
-                ->join('products as p', 'p.id', '=', 'ds.product_id')
-                ->join('services as s', function ($join) use ($schemeId) {
-                    $join->on('s.product_uuid', '=', 'p.product_uuid')
-                        ->whereRaw(
-                            's.id = (
-                                SELECT MIN(s2.id)
-                                FROM services s2
-                                WHERE s2.product_uuid = p.product_uuid
-                                  AND s2.scheme_type = ?
-                                  AND s2.deleted_at IS NULL
-                            )',
-                            [$schemeId]
-                        );
-                })
-                ->where('ds.department_id', self::PHARMACY_DEPARTMENT_ID)
-                ->where('ds.is_active', 1)
-                ->where('ds.stock_balance', '>', 0)
-                ->whereNull('s.deleted_at')
-                ->select([
-                    'p.id as drug_id',
-                    'p.product_name as drug_name',
-                    'p.product_code',
-                    'p.strength',
-                    'p.pack_size',
-                    'p.unit',
-                    'ds.department_id',
-                    's.id as service_id',
-                    's.price as price',
-                    's.service_name',
-                    's.service_category',
-                    'ds.stock_balance as closing_balance',
-                    'ds.updated_at as last_movement_at',
-                ])
-                ->orderByDesc('ds.updated_at')
-                ->get()
-                ->unique('drug_id')          // safety: one row per product
-                ->sortBy('drug_name', SORT_NATURAL | SORT_FLAG_CASE)
-                ->values();
-        }
+            if ($debug) {
+                Log::info("$tag 1. visit token + scheme", [
+                    'patient_id'         => $patientId,
+                    'active_token_raw'   => $activeToken,
+                    'token'              => $token,
+                    'visit_scheme_rows'  => $token
+                        ? PatientVisitScheme::where('token', $token)->get()->toArray()
+                        : null,
+                    'scheme_id'          => $schemeId,
+                    'scheme_id_type'     => gettype($schemeId),
+                    'pharmacy_dept_id'   => self::PHARMACY_DEPARTMENT_ID,
+                ]);
+            }
 
-        $defaultPaymentMethod = PaymentMethod::where('patient_id', $patientId)
-            ->where('is_default', 1)
-            ->where('type', 'mobile_money')
-            ->first();
+            $drugs = collect();
 
-        return Inertia::render('patients/prescription', [
-            'prescriptions' => Prescription::where('patient_id', $patientId)
+            if (!$schemeId) {
+                Log::warning("$tag no scheme resolved for patient — returning EMPTY drug list", [
+                    'patient_id' => $patientId,
+                    'token'      => $token,
+                ]);
+            } else {
+
+                // ---------- 2. Diagnosis of every in-stock Pharmacy product ----------
+                if ($debug) {
+                    $stockRows = DB::table('department_stocks')
+                        ->where('department_id', self::PHARMACY_DEPARTMENT_ID)
+                        ->where('is_active', 1)
+                        ->where('stock_balance', '>', 0)
+                        ->get(['id', 'product_id', 'stock_balance', 'updated_at']);
+
+                    $products = DB::table('products')
+                        ->whereIn('id', $stockRows->pluck('product_id')->all())
+                        ->get(['id', 'product_name', 'product_uuid'])
+                        ->keyBy('id');
+
+                    $uuids = $products->pluck('product_uuid')->filter()->unique()->values()->all();
+
+                    $serviceRows = empty($uuids)
+                        ? collect()
+                        : DB::table('services')
+                        ->whereIn('product_uuid', $uuids)
+                        ->whereNull('deleted_at')
+                        ->get(['id', 'product_uuid', 'scheme_type', 'service_name', 'price']);
+
+                    $diagnosis = $stockRows->map(function ($row) use ($products, $serviceRows, $schemeId) {
+                        $product = $products->get($row->product_id);
+
+                        if (!$product) {
+                            return [
+                                'product_id'    => $row->product_id,
+                                'stock_balance' => $row->stock_balance,
+                                'result'        => 'EXCLUDED: product_id not found in products table',
+                            ];
+                        }
+
+                        if (empty($product->product_uuid)) {
+                            return [
+                                'product_id'    => $product->id,
+                                'product_name'  => $product->product_name,
+                                'stock_balance' => $row->stock_balance,
+                                'result'        => 'EXCLUDED: product has NULL product_uuid',
+                            ];
+                        }
+
+                        $matches   = $serviceRows->where('product_uuid', $product->product_uuid);
+                        $forScheme = $matches->where('scheme_type', $schemeId);
+
+                        if ($matches->isEmpty()) {
+                            $result = 'EXCLUDED: no services row has this product_uuid';
+                        } elseif ($forScheme->isEmpty()) {
+                            $result = 'EXCLUDED: services exist but none for scheme ' . $schemeId
+                                . ' (they are for scheme(s): '
+                                . $matches->pluck('scheme_type')->unique()->implode(', ') . ')';
+                        } else {
+                            $result = 'INCLUDED: service id ' . $forScheme->min('id')
+                                . ' @ price ' . $forScheme->sortBy('id')->first()->price;
+                        }
+
+                        return [
+                            'product_id'    => $product->id,
+                            'product_name'  => $product->product_name,
+                            'product_uuid'  => $product->product_uuid,
+                            'stock_balance' => $row->stock_balance,
+                            'result'        => $result,
+                        ];
+                    })->values()->all();
+
+                    Log::info("$tag 2. in-stock Pharmacy products and why each is in/out", [
+                        'scheme_id'                 => $schemeId,
+                        'pharmacy_rows_in_stock'    => $stockRows->count(),
+                        'pharmacy_rows_total'       => DB::table('department_stocks')
+                            ->where('department_id', self::PHARMACY_DEPARTMENT_ID)->count(),
+                        'diagnosis'                 => $diagnosis,
+                    ]);
+                }
+
+                // ---------- 3. The real query ----------
+                $query = DB::table('department_stocks as ds')
+                    ->join('products as p', 'p.id', '=', 'ds.product_id')
+                    ->join('services as s', function ($join) use ($schemeId) {
+                        $join->on('s.product_uuid', '=', 'p.product_uuid')
+                            ->whereRaw(
+                                's.id = (
+                                    SELECT MIN(s2.id)
+                                    FROM services s2
+                                    WHERE s2.product_uuid = p.product_uuid
+                                      AND s2.scheme_type = ?
+                                      AND s2.deleted_at IS NULL
+                                )',
+                                [$schemeId]
+                            );
+                    })
+                    ->where('ds.department_id', self::PHARMACY_DEPARTMENT_ID)
+                    ->where('ds.is_active', 1)
+                    ->where('ds.stock_balance', '>', 0)
+                    ->whereNull('s.deleted_at')
+                    ->select([
+                        'p.id as drug_id',
+                        'p.product_name as drug_name',
+                        'p.product_code',
+                        'p.strength',
+                        'p.pack_size',
+                        'p.unit',
+                        'ds.department_id',
+                        's.id as service_id',
+                        's.price as price',
+                        's.service_name',
+                        's.service_category',
+                        'ds.stock_balance as closing_balance',
+                        'ds.updated_at as last_movement_at',
+                    ])
+                    ->orderByDesc('ds.updated_at');
+
+                if ($debug) {
+                    Log::info("$tag 3. SQL about to run", [
+                        'sql'      => $query->toSql(),
+                        'bindings' => $query->getBindings(),
+                    ]);
+                }
+
+                $rawRows = $query->get();
+
+                $drugs = $rawRows
+                    ->unique('drug_id')          // safety: one row per product
+                    ->sortBy('drug_name', SORT_NATURAL | SORT_FLAG_CASE)
+                    ->values();
+
+                if ($debug) {
+                    Log::info("$tag 4. query result", [
+                        'rows_from_query' => $rawRows->count(),
+                        'rows_after_unique' => $drugs->count(),
+                        'duplicates_removed' => $rawRows->count() - $drugs->count(),
+                        'drugs' => $drugs->map(fn($d) => [
+                            'drug_id'    => $d->drug_id,
+                            'drug_name'  => $d->drug_name,
+                            'service_id' => $d->service_id,
+                            'price'      => $d->price,
+                            'stock'      => $d->closing_balance,
+                        ])->all(),
+                    ]);
+                }
+
+                if ($drugs->isEmpty()) {
+                    Log::warning("$tag drug list is EMPTY for scheme {$schemeId} — see the step 2 diagnosis above", [
+                        'patient_id' => $patientId,
+                    ]);
+                }
+            }
+
+            // ---------- 5. Remaining props ----------
+            $defaultPaymentMethod = PaymentMethod::where('patient_id', $patientId)
+                ->where('is_default', 1)
+                ->where('type', 'mobile_money')
+                ->first();
+
+            $activePrescriptions = Prescription::where('patient_id', $patientId)
                 ->where('status', 'active')
-                ->get(),
-            'services' => $drugs,
-            'patientId' => $patientId,
-            'defaultPaymentMethod' => $defaultPaymentMethod,
-        ]);
+                ->get();
+
+            if ($debug) {
+                Log::info("$tag 5. rendering page", [
+                    'patient_id'              => $patientId,
+                    'drugs_sent_to_page'      => $drugs->count(),
+                    'active_prescriptions'    => $activePrescriptions->count(),
+                    'has_default_payment'     => (bool) $defaultPaymentMethod,
+                ]);
+            }
+
+            return Inertia::render('patients/prescription', [
+                'prescriptions'        => $activePrescriptions,
+                'services'             => $drugs,
+                'patientId'            => $patientId,
+                'defaultPaymentMethod' => $defaultPaymentMethod,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error("$tag FAILED: " . $e->getMessage(), [
+                'patient_id' => $patientId,
+                'file'       => $e->getFile() . ':' . $e->getLine(),
+                'trace'      => $e->getTraceAsString(),
+            ]);
+
+            throw $e; // keep normal error behaviour; the log above explains why
+        }
     }
 
     /**
