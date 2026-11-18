@@ -24,54 +24,73 @@ class PrescriptionsController extends Controller
 {
     /**
      * Department that owns dispensable stock (1 = Pharmacy).
-     * Only this department's ledger rows are listed in the prescription workspace.
+     * Only this department's stock is listed in the prescription workspace.
      */
     private const PHARMACY_DEPARTMENT_ID = 1;
 
     /**
      * Show the prescription workspace for a patient.
+     *
+     * Lists ONLY drugs that are:
+     *   1. in stock in the Pharmacy (department_stocks.stock_balance > 0), AND
+     *   2. set up as a billable service under the patient's visit scheme
+     *      (services.product_uuid = products.product_uuid, services.scheme_type = scheme).
+     *
+     * One row per product. If a product has several matching service rows,
+     * the lowest service id is used (the same one store() resolves with ->first()).
      */
     public function index(int $patientId)
     {
         $activeToken = VisitTokenHelper::getActiveTokenArray($patientId);
-        $schemeId    = PatientVisitScheme::where('token', $activeToken['token'] ?? null)
-            ->value('scheme_id');
+        $token       = is_array($activeToken) ? ($activeToken['token'] ?? null) : null;
 
-        // Exactly ONE latest ledger row per drug for the pharmacy department.
-        // MAX(id) is unique, so there can be no ties (unlike MAX(transaction_date)).
-        $latestLedgerIds = DB::table('department_stock_ledger_items')
-            ->where('department_id', self::PHARMACY_DEPARTMENT_ID)
-            ->groupBy('drug_id')
-            ->selectRaw('MAX(id)');
+        $schemeId = $token
+            ? PatientVisitScheme::where('token', $token)->value('scheme_id')
+            : null;
 
-        $drugs = DB::table('department_stock_ledger_items as l')
-            ->join('products as p', 'p.id', '=', 'l.drug_id')
-            ->join('services as s', function ($join) use ($schemeId) {
-                $join->on('s.product_uuid', '=', 'p.product_uuid')
-                    ->where('s.scheme_type', '=', $schemeId);
-            })
-            ->whereIn('l.id', $latestLedgerIds)
-            ->where('l.department_id', self::PHARMACY_DEPARTMENT_ID)
-            ->where('l.balance_after', '>', 0)
-            ->select([
-                'p.id as drug_id',
-                'p.product_name as drug_name',
-                'p.product_code',
-                'p.strength',
-                'p.pack_size',
-                'p.unit',
-                'l.department_id',
-                's.id as service_id',
-                's.price as price',
-                's.service_name',
-                's.service_category',
-                'l.balance_after as closing_balance',
-                'l.transaction_date as last_movement_at',
-            ])
-            ->orderBy('p.product_name')
-            ->get()
-            ->unique('drug_id')   // guards against duplicate service rows per product/scheme
-            ->values();
+        $drugs = collect();
+
+        if ($schemeId) {
+            $drugs = DB::table('department_stocks as ds')
+                ->join('products as p', 'p.id', '=', 'ds.product_id')
+                ->join('services as s', function ($join) use ($schemeId) {
+                    $join->on('s.product_uuid', '=', 'p.product_uuid')
+                        ->whereRaw(
+                            's.id = (
+                                SELECT MIN(s2.id)
+                                FROM services s2
+                                WHERE s2.product_uuid = p.product_uuid
+                                  AND s2.scheme_type = ?
+                                  AND s2.deleted_at IS NULL
+                            )',
+                            [$schemeId]
+                        );
+                })
+                ->where('ds.department_id', self::PHARMACY_DEPARTMENT_ID)
+                ->where('ds.is_active', 1)
+                ->where('ds.stock_balance', '>', 0)
+                ->whereNull('s.deleted_at')
+                ->select([
+                    'p.id as drug_id',
+                    'p.product_name as drug_name',
+                    'p.product_code',
+                    'p.strength',
+                    'p.pack_size',
+                    'p.unit',
+                    'ds.department_id',
+                    's.id as service_id',
+                    's.price as price',
+                    's.service_name',
+                    's.service_category',
+                    'ds.stock_balance as closing_balance',
+                    'ds.updated_at as last_movement_at',
+                ])
+                ->orderByDesc('ds.updated_at')
+                ->get()
+                ->unique('drug_id')          // safety: one row per product
+                ->sortBy('drug_name', SORT_NATURAL | SORT_FLAG_CASE)
+                ->values();
+        }
 
         $defaultPaymentMethod = PaymentMethod::where('patient_id', $patientId)
             ->where('is_default', 1)
