@@ -62,7 +62,9 @@ class LabOrder extends Model
     {
         return $this->hasMany(LabOrderItem::class, 'lab_order_id');
     }
-
+  public function resultFiles(){
+        return $this->hasMany(LabOrderItem::class, 'lab_order_id');
+  }
     public function orderedBy()
     {
         return $this->belongsTo(User::class, 'ordered_by');

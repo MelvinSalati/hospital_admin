@@ -16,6 +16,9 @@ Route::prefix('v1')->group(function () {
 
         // Create a new lab order - REMOVED duplicate {patientId}
         Route::post('/lab-orders', [LabOrderController::class, 'store']);
+
+        // remove item from the lab 
+        Route::post('remove/item/{invoiceId}', [\App\Http\Controllers\Invoices\InvoiceItemController::class, 'destroy']);
     });
 
     // Lab order specific routes

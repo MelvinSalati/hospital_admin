@@ -20,7 +20,10 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use App\Models\Patients\LabOrder as PatientsLabOrder;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Schema;
+use App\Services\Invoices\InvoiceService;
 use Inertia\Inertia;
 use Carbon\Carbon;
 use Throwable;
@@ -40,6 +43,143 @@ class LaboratoryController extends Controller
         $this->queueService = $queueService;
         $this->labResultPdfService = $labResultPdfService;
     }
+
+    public function laboratoryQueue()
+    {
+        $doneStatuses = ['completed', 'reported', 'performed', 'cancelled'];
+
+        $inProgress = PatientsLabOrder::query()
+            ->with(['patient', 'orderedBy'])
+            ->whereNotIn('status', $doneStatuses)
+            ->orderBy('ordered_date', 'asc')
+            ->limit(50)
+            ->get();
+
+        // Separate query, so a long completed history can never push pending
+        // orders out of the limit.
+        $completed = PatientsLabOrder::query()
+            ->with(['patient', 'orderedBy'])
+            ->whereIn('status', $doneStatuses)
+            ->orderByDesc('completed_date')
+            ->orderByDesc('updated_at')
+            ->limit(100)
+            ->get();
+
+        $orders   = $inProgress->concat($completed)->values();
+        $orderIds = $orders->pluck('id');
+
+        // Ordered tests per order
+        $itemsByOrder = DB::table('lab_order_items')
+            ->whereIn('lab_order_id', $orderIds)
+            ->whereNull('deleted_at')
+            ->orderBy('id')
+            ->get()
+            ->groupBy('lab_order_id');
+
+        // Uploaded result files per order
+        $filesByOrder = DB::table('lab_result_files')
+            ->whereIn('lab_order_id', $orderIds)
+            ->get(['lab_order_id', 'processing_status'])
+            ->groupBy('lab_order_id');
+
+        // Fallback: if neither lab_orders nor lab_order_items has an invoice_id
+        // column, look the invoice up by visit token.
+        // !! Adjust table/column names to your schema, or delete this block. !!
+        $invoiceIdsByToken = collect();
+        if (Schema::hasTable('invoices') && Schema::hasColumn('invoices', 'visit_token')) {
+            $invoiceIdsByToken = DB::table('invoices')
+                ->whereIn('visit_token', $orders->pluck('visit_token')->filter()->unique())
+                ->orderBy('id')
+                ->pluck('id', 'visit_token');
+        }
+
+        return Inertia::render('laboratories/laboratory', [
+            'queue' => $orders
+                ->map(fn($o) => $this->mapQueueRow(
+                    $o,
+                    $itemsByOrder->get($o->id, collect()),
+                    $filesByOrder->get($o->id, collect()),
+                    $invoiceIdsByToken,
+                ))
+                ->values(),
+        ]);
+    }
+
+    /**
+     * Shape one lab order into the QueuePatient row that
+     * resources/js/pages/laboratory/Nurses.tsx expects.
+     */
+    private function mapQueueRow(PatientsLabOrder $order, $items, $files, $invoiceIdsByToken = null): array
+    {
+        $patient = $order->patient;
+
+        // Invoice id: lab_orders.invoice_id -> lab_order_items.invoice_id -> invoices.visit_token
+        $invoiceId = $order->invoice_id
+            ?? $items->pluck('invoice_id')->filter()->first()
+            ?? ($invoiceIdsByToken[$order->visit_token] ?? null);
+
+        $tests = $items->isNotEmpty()
+            ? $items->map(fn($item) => [
+                'item_id'         => $item->id,
+                'invoice_id'      => $item->invoice_id ?? $invoiceId,
+                'test_name'       => $item->test_name,
+                'unit_price'      => (string) ($item->unit_price ?? 0),
+                'quantity'        => (int) ($item->quantity ?? 1),
+                'total_price'     => (string) ($item->total_price ?? 0),
+                'amount'          => (float) ($item->total_price ?? 0),
+                'status'          => $item->status ?? 'pending',
+                'result_value'    => $item->result_value,
+                'reference_range' => $item->reference_range,
+                'unit'            => $item->unit,
+                'interpretation'  => $item->interpretation,
+                'result_file'     => null,
+            ])->values()
+            // Older orders have no lab_order_items rows: fall back to the order's own test
+            : collect([[
+                'item_id'     => null,
+                'invoice_id'  => $invoiceId,
+                'test_name'   => $order->test_name ?? 'Laboratory test',
+                'unit_price'  => (string) ($order->total_amount ?? 0),
+                'quantity'    => 1,
+                'total_price' => (string) ($order->total_amount ?? 0),
+                'amount'      => (float) ($order->total_amount ?? 0),
+                'status'      => strtolower((string) $order->status) === 'completed' ? 'completed' : 'pending',
+            ]]);
+
+        $status = strtolower((string) $order->status);
+
+        // Processed = finished/cancelled, or a result file was parsed successfully
+        $processed = in_array($status, ['completed', 'reported', 'performed', 'cancelled'], true)
+            || $files->contains(fn($f) => $f->processing_status === 'completed');
+
+        // Sex/Age string, e.g. "M/34" (the frontend reads the first letter)
+        $gender = $patient?->gender ? ucfirst($patient->gender) : null;
+        $sexAge = $gender && $patient?->date_of_birth
+            ? $gender[0] . '/' . \Carbon\Carbon::parse($patient->date_of_birth)->age
+            : $gender;
+
+        return [
+            'id'             => $patient?->id ?? $order->patient_id,
+            'lab_order_id'   => $order->id,
+            'invoice_id'     => $invoiceId,
+            'token'          => (string) ($order->visit_token ?? ''),
+            'visit_token'    => $order->visit_token,
+            'first_name'     => $patient?->first_name ?? '',
+            'last_name'      => $patient?->last_name ?? '',
+            'gender'         => $sexAge,
+            'patient_number' => $patient?->patient_number,
+            'photo_url'      => $patient?->photo_url ?? null,
+            'status'         => $processed
+                ? ($status === 'cancelled' ? 'cancelled' : 'completed')
+                : ($order->status ?: 'pending'),
+            'processed'      => $processed,
+            'created_at'     => (string) ($order->ordered_date ?? $order->created_at),
+            'ordered_by'     => $order->orderedBy?->name ?? 'system',
+            'total_amount'   => $tests->sum('amount') ?: (float) ($order->total_amount ?? 0),
+            'tests'          => $tests,
+        ];
+    }
+
 
     public function dashboard()
     {
@@ -344,77 +484,77 @@ class LaboratoryController extends Controller
      * $userId is the patient ID used by the existing route.
      * $lab_order_id is the laboratory order ID.
      */
-   public function uploadResults(
-    Request $request,
-    int $userId,
-    int $patientId,
-    int $lab_order_id
-) {
-    $validated = $request->validate([
-        'pdfs'         => ['required', 'array', 'min:1'],
-        'pdfs.*'       => ['required', 'file', 'mimes:pdf', 'max:10240'],
-        'test_names'   => ['required', 'array', 'min:1'],
-        'test_names.*' => ['required', 'string', 'max:255'],
-    ]);
-
-    try {
-        $order = LabOrder::find($lab_order_id);
-        if (!$order) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Laboratory order not found.',
-            ], 404);
-        }
-
-        if (!Patient::whereKey($patientId)->exists()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Patient not found.',
-            ], 404);
-        }
-
-        $saved = [];
-
-        foreach ($request->file('pdfs', []) as $pdf) {
-            if (!$pdf instanceof UploadedFile) {
-                continue;
-            }
-
-            // ▶▶▶ The new method is consumed here ◀◀◀
-            $saved[] = $this->labResultPdfService->storeAndComplete(
-                $pdf,
-                $lab_order_id,
-                $userId,
-                $validated['test_names'],
-            );
-        }
-
-        // Optional: tell the ordering doctor the results are ready
-        $this->notifyOrdererOfResults($lab_order_id, $saved);
-
-        return response()->json([
-            'success' => true,
-            'message' => count($saved) . ' file(s) uploaded and marked as processed.',
-            'files'   => collect($saved)->map(fn ($f) => [
-                'file_id'       => $f->id,
-                'original_name' => $f->original_name,
-                'status'        => $f->processing_status,
-            ])->values(),
-        ], 201);
-    } catch (Throwable $e) {
-        Log::error('Lab result upload failed', [
-            'user_id'      => $userId,
-            'patient_id'   => $patientId,
-            'lab_order_id' => $lab_order_id,
-            'error'        => $e->getMessage(),
+    public function uploadResults(
+        Request $request,
+        int $userId,
+        int $patientId,
+        int $lab_order_id
+    ) {
+        $validated = $request->validate([
+            'pdfs'         => ['required', 'array', 'min:1'],
+            'pdfs.*'       => ['required', 'file', 'mimes:pdf', 'max:10240'],
+            'test_names'   => ['required', 'array', 'min:1'],
+            'test_names.*' => ['required', 'string', 'max:255'],
         ]);
 
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to save upload: ' . $e->getMessage(),
-        ], 500);
+        try {
+            $order = LabOrder::find($lab_order_id);
+            if (!$order) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Laboratory order not found.',
+                ], 404);
+            }
+
+            if (!Patient::whereKey($patientId)->exists()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Patient not found.',
+                ], 404);
+            }
+
+            $saved = [];
+
+            foreach ($request->file('pdfs', []) as $pdf) {
+                if (!$pdf instanceof UploadedFile) {
+                    continue;
+                }
+
+                // ▶▶▶ The new method is consumed here ◀◀◀
+                $saved[] = $this->labResultPdfService->storeAndComplete(
+                    $pdf,
+                    $lab_order_id,
+                    $userId,
+                    $validated['test_names'],
+                );
+            }
+
+            // Optional: tell the ordering doctor the results are ready
+            $this->notifyOrdererOfResults($lab_order_id, $saved);
+
+            return response()->json([
+                'success' => true,
+                'message' => count($saved) . ' file(s) uploaded and marked as processed.',
+                'files'   => collect($saved)->map(fn($f) => [
+                    'file_id'       => $f->id,
+                    'original_name' => $f->original_name,
+                    'status'        => $f->processing_status,
+                ])->values(),
+            ], 201);
+        } catch (Throwable $e) {
+            Log::error('Lab result upload failed', [
+                'user_id'      => $userId,
+                'patient_id'   => $patientId,
+                'lab_order_id' => $lab_order_id,
+                'error'        => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to save upload: ' . $e->getMessage(),
+            ], 500);
+        }
     }
-}
     /**
      * Match a parsed result name to an ordered test.
      */

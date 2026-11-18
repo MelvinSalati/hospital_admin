@@ -15,6 +15,8 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use App\Models\Laboratory\TestConfig;
 use App\Models\Laboratory\TestCategory;
+use App\Models\Patients\LabOrder as PatientsLabOrder;
+use App\Models\Patients\Patient;
 use Inertia\Inertia;
 
 class LaboratoryController extends Controller
@@ -28,6 +30,33 @@ class LaboratoryController extends Controller
         $this->queueService = $queueService;
     }
 
+    public function laboratoryQueue()
+    {
+        $inProgress = PatientsLabOrder::query()
+            ->with(['patient', 'items', 'orderedBy', 'resultFiles'])
+            ->whereIn('status', ['pending', 'scheduled', 'in_progress'])
+            ->orderBy('ordered_date', 'asc')
+            ->limit(50)
+            ->get();
+
+        // Separate query, so a long completed history can never push pending
+        // orders out of the limit.
+        $completed = PatientsLabOrder::query()
+            ->with(['patient', 'items', 'orderedBy', 'resultFiles'])
+            ->whereIn('status', ['completed', 'reported', 'performed'])
+            ->orderByDesc('reported_date')
+            ->orderByDesc('performed_date')
+            ->orderByDesc('updated_at')
+            ->limit(100)
+            ->get();
+
+        return Inertia::render('laboratories/queue', [
+            'laboratoryQueue' => $inProgress
+                ->concat($completed)
+                ->map(fn(ImagingOrder $o) => $this->mapQueueRow($o))
+                ->values(),
+        ]);
+    }
     public function dashboard()
     {
         return Inertia::render('laboratories/dashboard', []);

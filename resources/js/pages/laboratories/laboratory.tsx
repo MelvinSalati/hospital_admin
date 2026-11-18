@@ -8,13 +8,20 @@ import {
     Receipt,
     ShieldCheck,
     CheckCircle2,
-    KeyRound,
     Upload,
     FileText,
     FilePlus2,
     FileUp,
     Building2,
     LayoutDashboard,
+    Clock,
+    Hash,
+    User,
+    Stethoscope,
+    Ruler,
+    ShieldAlert,
+    AlertTriangle,
+    ChevronDown,
 } from 'lucide-react';
 import Notiflix from 'notiflix';
 import { useState, useMemo, useEffect, useRef } from 'react';
@@ -26,11 +33,10 @@ import AppLayout from '@/layouts/app-layout';
 import { cn } from '@/lib/utils';
 import Http from '@/utils/Http';
 
-const APPROVAL_CODE = '902027';
-
 // ============ TYPES ============
 interface LabTest {
-    item_id?: number;
+    item_id?: number | null;
+    invoice_id?: number | null;
     test_name: string;
     unit_price: string;
     quantity: number;
@@ -47,6 +53,7 @@ interface LabTest {
 interface QueuePatient {
     id: number;
     lab_order_id?: number;
+    invoice_id?: number | null;
     token: string;
     visit_token?: string;
     first_name: string;
@@ -58,7 +65,7 @@ interface QueuePatient {
     ordered_by?: string;
     total_amount: number;
     photo_url?: string | null;
-    /** true once results are uploaded and parsed (sent by LaboratoryController@index) */
+    /** true once results are uploaded and parsed (sent by LaboratoryController@laboratoryQueue) */
     processed?: boolean;
     tests: LabTest[];
 }
@@ -178,6 +185,20 @@ const formatMoney = (n: number | string) =>
         maximumFractionDigits: 2,
     })}`;
 
+const formatDateTime = (value: string | null | undefined): string => {
+    if (!value) return '—';
+    const d = new Date(value.replace(' ', 'T'));
+    if (Number.isNaN(d.getTime())) return value;
+
+    return d.toLocaleString('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+};
+
 /** "M/34" → "male", "F/8" → "female", anything else → null. */
 const genderFromSexAge = (value: string | null | undefined): string | null => {
     const first = (value || '').trim().charAt(0).toUpperCase();
@@ -248,100 +269,287 @@ const TestStatusBadge: FC<{ status: string }> = ({ status }) => (
     </span>
 );
 
-// ============ APPROVAL CODE PROMPT ============
-function AdminCodePrompt({
+/** Colour-codes a result interpretation (normal / high / low / abnormal / critical…). */
+const interpretationClass = (value: string): string => {
+    const v = value.toLowerCase();
+
+    if (v.includes('critical'))
+        return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
+    if (
+        v.includes('high') ||
+        v.includes('low') ||
+        v.includes('abnormal') ||
+        v.includes('positive') ||
+        v.includes('reactive')
+    )
+        return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400';
+    if (
+        v.includes('normal') ||
+        v.includes('negative') ||
+        v.includes('non-reactive')
+    )
+        return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400';
+
+    return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
+};
+
+const InfoCell: FC<{
+    icon: React.ReactNode;
+    label: string;
+    value: React.ReactNode;
+    mono?: boolean;
+}> = ({ icon, label, value, mono }) => (
+    <div className="min-w-0 rounded-lg border border-slate-200 bg-white p-2.5 dark:border-slate-700 dark:bg-slate-800">
+        <div className="flex items-center gap-1.5 text-[10px] font-semibold tracking-wide text-slate-400 uppercase">
+            {icon}
+            {label}
+        </div>
+        <div
+            className={cn(
+                'mt-1 truncate text-xs font-medium text-slate-800 dark:text-slate-200',
+                mono && 'font-mono',
+            )}
+        >
+            {value || '—'}
+        </div>
+    </div>
+);
+
+// ============ REMOVE TEST CONFIRMATION ============
+function RemoveTestDialog({
     open,
-    testName,
+    order,
+    test,
     onCancel,
-    onSubmit,
+    onConfirm,
     busy,
+    error,
+    reason,
+    onReasonChange,
 }: {
     open: boolean;
-    testName: string | null;
+    order: QueuePatient | null;
+    test: LabTest | null;
     onCancel: () => void;
-    onSubmit: (code: string) => void;
+    onConfirm: () => void;
     busy: boolean;
+    error: string | null;
+    reason: string;
+    onReasonChange: (v: string) => void;
 }) {
-    const [code, setCode] = useState('');
-    const [error, setError] = useState<string | null>(null);
+    if (!open || !test) return null;
 
-    const handleCancel = () => {
-        setCode('');
-        setError(null);
-        onCancel();
-    };
-
-    const handleSubmit = () => {
-        if (!code) return;
-        if (code.trim() !== APPROVAL_CODE) {
-            setError('Invalid approval code.');
-            return;
-        }
-        setError(null);
-        onSubmit(code);
-    };
-
-    if (!open) return null;
+    const allTests = order?.tests ?? [];
+    const currentTotal = allTests.reduce(
+        (s, t) => s + Number(t.amount ?? 0),
+        0,
+    );
+    const testAmount = Number(test.amount ?? test.total_price ?? 0);
+    const newTotal = Math.max(0, currentTotal - testAmount);
+    const remaining = Math.max(0, allTests.length - 1);
+    const hasResult =
+        test.status === 'completed' ||
+        !!test.result_value ||
+        !!test.result_file;
+    const fullName = order ? `${order.first_name} ${order.last_name}` : '';
 
     return (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4">
-            <div className="w-full max-w-sm rounded-xl bg-white shadow-2xl dark:bg-slate-800">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm">
+            <div className="flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-xl bg-white shadow-2xl dark:bg-slate-800">
+                {/* Header */}
                 <div className="flex items-start justify-between border-b border-slate-200 p-4 dark:border-slate-700">
-                    <div className="flex items-center gap-2">
-                        <KeyRound size={16} className="text-red-600" />
+                    <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400">
+                            <ShieldAlert size={20} />
+                        </div>
                         <div>
                             <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                                Approval Code Required
+                                Remove Test
                             </h3>
                             <p className="text-[11px] text-slate-500">
-                                Remove "{testName}"
+                                Remove a test from this lab order
                             </p>
                         </div>
                     </div>
                     <button
-                        onClick={handleCancel}
-                        className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
+                        onClick={onCancel}
+                        disabled={busy}
+                        className="rounded p-1 text-slate-400 hover:bg-slate-100 disabled:opacity-50 dark:hover:bg-slate-700"
                     >
                         <X size={16} />
                     </button>
                 </div>
-                <div className="p-4">
-                    <input
-                        type="password"
-                        value={code}
-                        onChange={(e) => {
-                            setCode(e.target.value);
-                            if (error) setError(null);
-                        }}
-                        onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-                        placeholder="Approval code"
-                        autoFocus
-                        className={cn(
-                            'w-full rounded-md border px-3 py-2 font-mono text-sm tracking-widest focus:ring-2 focus:outline-none dark:bg-slate-900 dark:text-slate-100',
-                            error
-                                ? 'border-red-400 focus:ring-red-100'
-                                : 'border-slate-200 focus:border-blue-400 focus:ring-blue-100 dark:border-slate-700',
-                        )}
-                    />
-                    {error && (
-                        <p className="mt-2 text-[11px] text-red-600">{error}</p>
+
+                <div className="flex-1 space-y-4 overflow-y-auto p-4">
+                    {/* Patient / order strip */}
+                    {order && (
+                        <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50/60 p-3 dark:border-slate-700 dark:bg-slate-900/40">
+                            <PatientAvatar
+                                name={fullName}
+                                patientId={order.id}
+                                gender={genderFromSexAge(order.gender)}
+                                photoUrl={order.photo_url}
+                            />
+                            <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+                                    {fullName}
+                                </p>
+                                <p className="truncate text-[11px] text-slate-500">
+                                    <span className="font-mono">
+                                        AMH-{order.token}
+                                    </span>
+                                    {order.patient_number && (
+                                        <> · EMR #{order.patient_number}</>
+                                    )}
+                                    {order.lab_order_id && (
+                                        <> · Order #{order.lab_order_id}</>
+                                    )}
+                                </p>
+                            </div>
+                            <StatusBadge status={order.status} />
+                        </div>
                     )}
-                    <div className="mt-4 flex justify-end gap-2">
-                        <button
-                            onClick={handleCancel}
-                            disabled={busy}
-                            className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-700"
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            onClick={handleSubmit}
-                            disabled={busy || !code}
-                            className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
-                        >
-                            {busy ? 'Removing…' : 'Confirm'}
-                        </button>
+
+                    {/* Test being removed */}
+                    <div className="rounded-lg border border-red-200 bg-red-50/50 p-3 dark:border-red-900/50 dark:bg-red-950/20">
+                        <p className="flex items-center gap-1.5 text-[10px] font-semibold tracking-wide text-red-600 uppercase dark:text-red-400">
+                            <Trash2 size={11} />
+                            Test to be removed
+                        </p>
+                        <div className="mt-2 flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
+                                    {test.test_name}
+                                </p>
+                                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-500">
+                                    <span>Qty {test.quantity}</span>
+                                    <span>×</span>
+                                    <span className="font-mono">
+                                        {formatMoney(test.unit_price)}
+                                    </span>
+                                    <TestStatusBadge status={test.status} />
+                                </div>
+                            </div>
+                            <span className="font-mono text-sm font-semibold text-red-600 dark:text-red-400">
+                                {formatMoney(testAmount)}
+                            </span>
+                        </div>
                     </div>
+
+                    {/* Impact on order */}
+                    <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
+                        <p className="mb-2 text-[10px] font-semibold tracking-wide text-slate-400 uppercase">
+                            Impact on order
+                        </p>
+                        <dl className="space-y-1.5 text-xs">
+                            <div className="flex items-center justify-between">
+                                <dt className="text-slate-500">
+                                    Current total ({allTests.length} test
+                                    {allTests.length === 1 ? '' : 's'})
+                                </dt>
+                                <dd className="font-mono text-slate-700 dark:text-slate-300">
+                                    {formatMoney(currentTotal)}
+                                </dd>
+                            </div>
+                            <div className="flex items-center justify-between">
+                                <dt className="text-slate-500">
+                                    Less: {test.test_name}
+                                </dt>
+                                <dd className="font-mono text-red-600 dark:text-red-400">
+                                    − {formatMoney(testAmount)}
+                                </dd>
+                            </div>
+                            <div className="flex items-center justify-between border-t border-slate-200 pt-1.5 dark:border-slate-700">
+                                <dt className="font-medium text-slate-700 dark:text-slate-300">
+                                    New total ({remaining} test
+                                    {remaining === 1 ? '' : 's'})
+                                </dt>
+                                <dd className="font-mono text-sm font-semibold text-blue-600 dark:text-blue-400">
+                                    {formatMoney(newTotal)}
+                                </dd>
+                            </div>
+                        </dl>
+                    </div>
+
+                    {/* Warnings */}
+                    {(hasResult || remaining === 0) && (
+                        <div className="space-y-2">
+                            {hasResult && (
+                                <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-[11px] text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300">
+                                    <AlertTriangle
+                                        size={14}
+                                        className="mt-0.5 shrink-0"
+                                    />
+                                    <span>
+                                        This test already has a result recorded.
+                                        Removing it will discard that result
+                                        from this order.
+                                    </span>
+                                </div>
+                            )}
+                            {remaining === 0 && (
+                                <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-[11px] text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300">
+                                    <AlertTriangle
+                                        size={14}
+                                        className="mt-0.5 shrink-0"
+                                    />
+                                    <span>
+                                        This is the only test on the order. The
+                                        order will be left empty.
+                                    </span>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Reason (optional, saved in the audit log) */}
+                    <div>
+                        <label className="mb-1.5 block text-xs font-semibold text-slate-700 dark:text-slate-200">
+                            Reason{' '}
+                            <span className="font-normal text-slate-400">
+                                (optional)
+                            </span>
+                        </label>
+                        <textarea
+                            value={reason}
+                            onChange={(e) => onReasonChange(e.target.value)}
+                            maxLength={500}
+                            rows={2}
+                            disabled={busy}
+                            placeholder="Why is this test being removed?"
+                            className="w-full resize-none rounded-md border border-slate-200 px-3 py-2 text-xs focus:border-blue-400 focus:ring-2 focus:ring-blue-100 focus:outline-none disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        />
+                    </div>
+
+                    {/* Server error */}
+                    {error && (
+                        <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-2.5 text-[11px] text-red-700 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-300">
+                            <AlertTriangle
+                                size={14}
+                                className="mt-0.5 shrink-0"
+                            />
+                            <span>{error}</span>
+                        </div>
+                    )}
+                </div>
+
+                {/* Footer */}
+                <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-900">
+                    <button
+                        onClick={onCancel}
+                        disabled={busy}
+                        className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        onClick={onConfirm}
+                        disabled={busy}
+                        className="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                    >
+                        <Trash2 size={12} />
+                        {busy ? 'Removing…' : 'Confirm & Remove'}
+                    </button>
                 </div>
             </div>
         </div>
@@ -448,7 +656,7 @@ function UploadResultModal({
 
         try {
             // Don't set Content-Type manually — the browser adds the boundary.
-            const response = await Http.post(
+            await Http.post(
                 `${auth.user.id}/laboratory/${patientId}/orders/${order.lab_order_id}/results/upload`,
                 form,
                 {
@@ -717,44 +925,79 @@ function OrderDetailDrawer({
     const [removing, setRemoving] = useState<string | null>(null);
     const [pendingRemove, setPendingRemove] = useState<string | null>(null);
     const [promptOpen, setPromptOpen] = useState(false);
+    const [removeError, setRemoveError] = useState<string | null>(null);
+    const [removeReason, setRemoveReason] = useState('');
     const [confirming, setConfirming] = useState(false);
+    const [infoOpen, setInfoOpen] = useState(true);
 
     const tests = order?.tests ?? [];
     const overallTotal = useMemo(
         () => tests.reduce((s, t) => s + Number(t.amount ?? 0), 0),
         [tests],
     );
-
+    const totalQuantity = useMemo(
+        () => tests.reduce((s, t) => s + Number(t.quantity ?? 0), 0),
+        [tests],
+    );
     const alreadyAccepted = order?.status === 'accepted';
 
     const askRemove = (testName: string) => {
+        setRemoveError(null);
+        setRemoveReason('');
         setPendingRemove(testName);
         setPromptOpen(true);
     };
 
-    const submitAdminCode = (code: string) => {
-        if (!order?.lab_order_id || !pendingRemove) return;
+    const closePrompt = () => {
+        setPromptOpen(false);
+        setPendingRemove(null);
+        setRemoveError(null);
+        setRemoveReason('');
+    };
+
+    // POST patients/{patientId}/remove/item/{invoiceId}
+    const removeTest = async () => {
+        if (!order || !pendingRemove || removing) return;
+
+        const test = tests.find((t) => t.test_name === pendingRemove);
+        if (!test) return;
+
+        // {invoiceId} in the route is the INVOICE id.
+        const invoiceId = test.invoice_id ?? order.invoice_id;
+        if (!invoiceId) {
+            setRemoveError('Missing invoice id for this order.');
+            return;
+        }
+
         setRemoving(pendingRemove);
-        router.delete(
-            `/laboratory/orders/${order.lab_order_id}/items/${encodeURIComponent(pendingRemove)}`,
-            {
-                preserveScroll: true,
-                data: { admin_code: code },
-                onSuccess: () => {
-                    Notiflix.Notify.success(`"${pendingRemove}" removed`);
-                    setPromptOpen(false);
-                    setPendingRemove(null);
-                    router.reload({ only: ['queue'] });
-                },
-                onError: (errs) =>
-                    Notiflix.Notify.failure(
-                        (errs as any)?.admin_code ??
-                            (errs as any)?.message ??
-                            'Failed to remove',
-                    ),
-                onFinish: () => setRemoving(null),
-            },
-        );
+        setRemoveError(null);
+
+        try {
+            await Http.post(`patients/${order.id}/remove/item/${invoiceId}`, {
+                kind: 'laboratory',
+                service_name: test.test_name,
+                // id: test.item_id, // only if InvoiceService::removeItem expects the lab_order_items id
+                ...(removeReason.trim() ? { reason: removeReason.trim() } : {}),
+            });
+
+            Notiflix.Notify.success(`"${test.test_name}" removed`);
+            closePrompt();
+            router.reload({ only: ['queue'] });
+        } catch (err: any) {
+            const errors = err?.response?.data?.errors ?? {};
+            const firstError = Object.values(errors)[0] as
+                | string[]
+                | string
+                | undefined;
+            const msg =
+                (Array.isArray(firstError) ? firstError[0] : firstError) ??
+                err?.response?.data?.message ??
+                'Failed to remove the test. Please try again.';
+            setRemoveError(msg);
+            Notiflix.Notify.failure(msg);
+        } finally {
+            setRemoving(null);
+        }
     };
 
     const confirmWithPatient = () => {
@@ -807,7 +1050,7 @@ function OrderDetailDrawer({
 
             <aside
                 className={cn(
-                    'fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col bg-white shadow-2xl transition-transform dark:bg-slate-800',
+                    'fixed inset-y-0 right-0 z-50 flex w-full max-w-xl flex-col bg-white shadow-2xl transition-transform dark:bg-slate-800',
                     isOpen ? 'translate-x-0' : 'translate-x-full',
                 )}
             >
@@ -821,7 +1064,10 @@ function OrderDetailDrawer({
                                 Lab Order Details
                             </h2>
                             <p className="font-mono text-[11px] text-slate-500">
-                                {order.token}
+                                AMH-{order.token}
+                                {order.lab_order_id
+                                    ? ` · Order #${order.lab_order_id}`
+                                    : ''}
                             </p>
                         </div>
                     </div>
@@ -833,6 +1079,7 @@ function OrderDetailDrawer({
                     </button>
                 </header>
 
+                {/* Patient header */}
                 <div className="flex items-center gap-3 border-b border-slate-100 bg-slate-50/60 p-4 dark:border-slate-700 dark:bg-slate-900/40">
                     <PatientAvatar
                         name={fullName}
@@ -846,85 +1093,260 @@ function OrderDetailDrawer({
                             {fullName}
                         </p>
                         <p className="text-[11px] text-slate-500 capitalize">
-                            {order.gender || '—'} · {order.ordered_by}
+                            {order.gender || '—'} · {order.ordered_by || '—'}
                         </p>
                     </div>
                     <StatusBadge status={order.status} />
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-4">
-                    <h3 className="mb-2 text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
-                        Ordered Tests ({tests.length})
-                    </h3>
-
-                    <ul className="space-y-2">
-                        {tests.map((t, idx) => (
-                            <li
-                                key={`${t.test_name}-${idx}`}
-                                className="flex items-center justify-between rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800"
-                            >
-                                <div className="min-w-0 flex-1">
-                                    <div className="flex items-center gap-2">
-                                        <span className="flex h-5 w-5 items-center justify-center rounded bg-blue-50 text-[10px] font-semibold text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
-                                            {idx + 1}
+                <div className="flex-1 space-y-5 overflow-y-auto p-4">
+                    {/* Order & patient info */}
+                    <section>
+                        <button
+                            type="button"
+                            onClick={() => setInfoOpen((v) => !v)}
+                            aria-expanded={infoOpen}
+                            className="mb-2 flex w-full items-center justify-between rounded-md py-1 text-left hover:bg-slate-50 dark:hover:bg-slate-700/40"
+                        >
+                            <span className="text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
+                                Order Information
+                            </span>
+                            <ChevronDown
+                                size={16}
+                                className={cn(
+                                    'text-slate-400 transition-transform',
+                                    infoOpen ? 'rotate-180' : 'rotate-0',
+                                )}
+                            />
+                        </button>
+                        {infoOpen && (
+                            <div className="grid grid-cols-2 gap-2">
+                                <InfoCell
+                                    icon={<Hash size={11} />}
+                                    label="EMR Number"
+                                    value={order.patient_number}
+                                    mono
+                                />
+                                <InfoCell
+                                    icon={<User size={11} />}
+                                    label="Sex / Age"
+                                    value={order.gender}
+                                />
+                                <InfoCell
+                                    icon={<Hash size={11} />}
+                                    label="Visit Token"
+                                    value={order.visit_token}
+                                    mono
+                                />
+                                <InfoCell
+                                    icon={<Hash size={11} />}
+                                    label="Lab Order ID"
+                                    value={
+                                        order.lab_order_id
+                                            ? `#${order.lab_order_id}`
+                                            : null
+                                    }
+                                    mono
+                                />
+                                <InfoCell
+                                    icon={<Building2 size={11} />}
+                                    label="Ordered By"
+                                    value={
+                                        <span className="capitalize">
+                                            {order.ordered_by}
                                         </span>
-                                        <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-200">
-                                            {t.test_name}
-                                        </p>
-                                    </div>
-                                    <div className="mt-1 flex items-center gap-3 pl-7 text-[11px] text-slate-500">
-                                        <span>Qty {t.quantity}</span>
-                                        <span>×</span>
-                                        <span className="font-mono">
-                                            {formatMoney(t.unit_price)}
-                                        </span>
-                                        <TestStatusBadge status={t.status} />
-                                    </div>
-                                    {t.result_file && (
-                                        <a
-                                            href={t.result_file}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            className="mt-2 ml-7 inline-flex items-center gap-1 text-[11px] text-blue-600 hover:underline dark:text-blue-400"
-                                        >
-                                            <FileText size={11} /> View result
-                                            PDF
-                                        </a>
-                                    )}
-                                </div>
-
-                                <div className="flex items-center gap-1 pl-3">
-                                    <span className="font-mono text-xs font-semibold text-slate-900 dark:text-slate-100">
-                                        {formatMoney(t.amount ?? t.total_price)}
-                                    </span>
-                                    <button
-                                        onClick={() => askRemove(t.test_name)}
-                                        disabled={removing === t.test_name}
-                                        className="ml-1 rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
-                                        title="Remove test"
-                                    >
-                                        <Trash2 size={14} />
-                                    </button>
-                                </div>
-                            </li>
-                        ))}
-
-                        {tests.length === 0 && (
-                            <li className="rounded-lg border border-dashed border-slate-200 p-6 text-center text-xs text-slate-400 dark:border-slate-700">
-                                No tests on this order
-                            </li>
+                                    }
+                                />
+                                <InfoCell
+                                    icon={<Clock size={11} />}
+                                    label="Ordered On"
+                                    value={formatDateTime(order.created_at)}
+                                />
+                            </div>
                         )}
-                    </ul>
+                    </section>
+
+                    {/* Tests */}
+                    <section>
+                        <h3 className="mb-2 text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
+                            Ordered Tests ({tests.length})
+                        </h3>
+
+                        <ul className="space-y-2">
+                            {tests.map((t, idx) => {
+                                const hasResult =
+                                    !!t.result_value ||
+                                    !!t.reference_range ||
+                                    !!t.interpretation ||
+                                    !!t.result_file;
+
+                                return (
+                                    <li
+                                        key={`${t.test_name}-${idx}`}
+                                        className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800"
+                                    >
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-blue-50 text-[10px] font-semibold text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
+                                                        {idx + 1}
+                                                    </span>
+                                                    <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-200">
+                                                        {t.test_name}
+                                                    </p>
+                                                    <TestStatusBadge
+                                                        status={t.status}
+                                                    />
+                                                </div>
+                                                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 pl-7 text-[11px] text-slate-500">
+                                                    <span>
+                                                        Qty {t.quantity}
+                                                    </span>
+                                                    <span>×</span>
+                                                    <span className="font-mono">
+                                                        {formatMoney(
+                                                            t.unit_price,
+                                                        )}
+                                                    </span>
+                                                    <span>=</span>
+                                                    <span className="font-mono font-semibold text-slate-700 dark:text-slate-300">
+                                                        {formatMoney(
+                                                            t.amount ??
+                                                                t.total_price,
+                                                        )}
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            <button
+                                                onClick={() =>
+                                                    askRemove(t.test_name)
+                                                }
+                                                disabled={
+                                                    removing === t.test_name
+                                                }
+                                                className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                                                title="Remove test"
+                                            >
+                                                <Trash2 size={14} />
+                                            </button>
+                                        </div>
+
+                                        {/* Result details */}
+                                        <div className="mt-3 ml-7 rounded-md border border-slate-100 bg-slate-50 p-2.5 dark:border-slate-700 dark:bg-slate-900/40">
+                                            {hasResult ? (
+                                                <>
+                                                    <div className="grid grid-cols-3 gap-2">
+                                                        <div className="min-w-0">
+                                                            <p className="flex items-center gap-1 text-[10px] font-semibold tracking-wide text-slate-400 uppercase">
+                                                                <Stethoscope
+                                                                    size={10}
+                                                                />
+                                                                Result
+                                                            </p>
+                                                            <p className="mt-0.5 truncate font-mono text-xs font-semibold text-slate-900 dark:text-slate-100">
+                                                                {t.result_value ??
+                                                                    '—'}
+                                                                {t.unit && (
+                                                                    <span className="ml-1 font-normal text-slate-500">
+                                                                        {t.unit}
+                                                                    </span>
+                                                                )}
+                                                            </p>
+                                                        </div>
+                                                        <div className="min-w-0">
+                                                            <p className="flex items-center gap-1 text-[10px] font-semibold tracking-wide text-slate-400 uppercase">
+                                                                <Ruler
+                                                                    size={10}
+                                                                />
+                                                                Reference
+                                                            </p>
+                                                            <p className="mt-0.5 truncate font-mono text-xs text-slate-700 dark:text-slate-300">
+                                                                {t.reference_range ??
+                                                                    '—'}
+                                                            </p>
+                                                        </div>
+                                                        <div className="min-w-0">
+                                                            <p className="text-[10px] font-semibold tracking-wide text-slate-400 uppercase">
+                                                                Interpretation
+                                                            </p>
+                                                            <div className="mt-0.5">
+                                                                {t.interpretation ? (
+                                                                    <span
+                                                                        className={cn(
+                                                                            'inline-block rounded px-1.5 py-0.5 text-[10px] font-medium capitalize',
+                                                                            interpretationClass(
+                                                                                t.interpretation,
+                                                                            ),
+                                                                        )}
+                                                                    >
+                                                                        {
+                                                                            t.interpretation
+                                                                        }
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="text-xs text-slate-400">
+                                                                        —
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    {t.result_file && (
+                                                        <a
+                                                            href={t.result_file}
+                                                            target="_blank"
+                                                            rel="noreferrer"
+                                                            className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 hover:underline dark:text-blue-400"
+                                                        >
+                                                            <FileText
+                                                                size={11}
+                                                            />{' '}
+                                                            View result PDF
+                                                        </a>
+                                                    )}
+                                                </>
+                                            ) : (
+                                                <p className="text-[11px] text-slate-400 italic">
+                                                    Awaiting result
+                                                </p>
+                                            )}
+                                        </div>
+                                    </li>
+                                );
+                            })}
+
+                            {tests.length === 0 && (
+                                <li className="rounded-lg border border-dashed border-slate-200 p-6 text-center text-xs text-slate-400 dark:border-slate-700">
+                                    No tests on this order
+                                </li>
+                            )}
+                        </ul>
+                    </section>
                 </div>
 
                 <footer className="border-t border-slate-200 bg-slate-50/60 p-4 dark:border-slate-700 dark:bg-slate-900/40">
-                    <div className="flex items-center justify-between text-sm">
-                        <span className="text-slate-600 dark:text-slate-400">
-                            Total
-                        </span>
-                        <span className="font-mono text-base font-semibold text-blue-600 dark:text-blue-400">
-                            {formatMoney(overallTotal)}
-                        </span>
+                    <div className="space-y-1 text-xs">
+                        <div className="flex items-center justify-between text-slate-600 dark:text-slate-400">
+                            <span>
+                                Subtotal ({tests.length} test
+                                {tests.length === 1 ? '' : 's'} ·{' '}
+                                {totalQuantity} unit
+                                {totalQuantity === 1 ? '' : 's'})
+                            </span>
+                            <span className="font-mono">
+                                {formatMoney(overallTotal)}
+                            </span>
+                        </div>
+                        <div className="flex items-center justify-between border-t border-slate-200 pt-2 text-sm dark:border-slate-700">
+                            <span className="font-medium text-slate-700 dark:text-slate-300">
+                                Total
+                            </span>
+                            <span className="font-mono text-base font-semibold text-blue-600 dark:text-blue-400">
+                                {formatMoney(overallTotal)}
+                            </span>
+                        </div>
                     </div>
 
                     <button
@@ -969,15 +1391,16 @@ function OrderDetailDrawer({
                 </footer>
             </aside>
 
-            <AdminCodePrompt
+            <RemoveTestDialog
                 open={promptOpen}
-                testName={pendingRemove}
+                order={order}
+                test={tests.find((t) => t.test_name === pendingRemove) ?? null}
                 busy={removing !== null}
-                onCancel={() => {
-                    setPromptOpen(false);
-                    setPendingRemove(null);
-                }}
-                onSubmit={submitAdminCode}
+                error={removeError}
+                reason={removeReason}
+                onReasonChange={setRemoveReason}
+                onCancel={closePrompt}
+                onConfirm={removeTest}
             />
         </>
     );
@@ -996,6 +1419,17 @@ export default function Laboratory() {
     const [resultsOrder, setResultsOrder] = useState<QueuePatient | null>(null);
     const [resultsOpen, setResultsOpen] = useState(false);
     const [activeTab, setActiveTab] = useState<QueueTab>('in_queue');
+
+    // Keep the open drawer in sync after `router.reload({ only: ['queue'] })`
+    // so a removed test disappears from the drawer straight away.
+    useEffect(() => {
+        if (!selectedOrder?.lab_order_id) return;
+        const fresh = queues.find(
+            (q) => q.lab_order_id === selectedOrder.lab_order_id,
+        );
+        if (fresh) setSelectedOrder(fresh);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [props.queue]);
 
     // In Progress: oldest first. Completed: most recent first.
     const inQueue = useMemo(
@@ -1038,29 +1472,6 @@ export default function Laboratory() {
             setResultsOrder(null);
             setPatientId(null);
         }, 200);
-    };
-
-    const collectSample = (row: QueuePatient) => {
-        Notiflix.Confirm.show(
-            'Collect Sample',
-            `Collect sample for ${row.first_name} ${row.last_name}?`,
-            'Confirm',
-            'Cancel',
-            () => {
-                router.post(
-                    `/laboratory/samples/${row.id}/collect`,
-                    {},
-                    {
-                        onSuccess: () => {
-                            Notiflix.Notify.success('Sample collected');
-                            router.reload();
-                        },
-                        onError: () =>
-                            Notiflix.Notify.failure('Failed to collect sample'),
-                    },
-                );
-            },
-        );
     };
 
     const columns: Column<QueuePatient>[] = [
@@ -1194,13 +1605,6 @@ export default function Laboratory() {
             icon: <Receipt size={16} />,
             color: 'info',
             onClick: (row) => openDetails(row),
-        },
-        {
-            label: 'Collect Sample',
-            icon: <FlaskConical size={16} />,
-            color: 'success',
-            show: (row) => row.status === 'active' || row.status === 'pending',
-            onClick: (row) => collectSample(row),
         },
     ];
 
