@@ -23,30 +23,35 @@ use App\Http\Controllers\Controller;
 class PrescriptionsController extends Controller
 {
     /**
+     * Department that owns dispensable stock (1 = Pharmacy).
+     * Only this department's ledger rows are listed in the prescription workspace.
+     */
+    private const PHARMACY_DEPARTMENT_ID = 1;
+
+    /**
      * Show the prescription workspace for a patient.
      */
     public function index(int $patientId)
     {
         $activeToken = VisitTokenHelper::getActiveTokenArray($patientId);
-        $schemeId    = PatientVisitScheme::where('token', $activeToken['token'])
+        $schemeId    = PatientVisitScheme::where('token', $activeToken['token'] ?? null)
             ->value('scheme_id');
+
+        // Exactly ONE latest ledger row per drug for the pharmacy department.
+        // MAX(id) is unique, so there can be no ties (unlike MAX(transaction_date)).
+        $latestLedgerIds = DB::table('department_stock_ledger_items')
+            ->where('department_id', self::PHARMACY_DEPARTMENT_ID)
+            ->groupBy('drug_id')
+            ->selectRaw('MAX(id)');
 
         $drugs = DB::table('department_stock_ledger_items as l')
             ->join('products as p', 'p.id', '=', 'l.drug_id')
-            ->leftJoin('services as s', function ($join) use ($schemeId) {
+            ->join('services as s', function ($join) use ($schemeId) {
                 $join->on('s.product_uuid', '=', 'p.product_uuid')
                     ->where('s.scheme_type', '=', $schemeId);
             })
-            ->whereIn('l.id', function ($q) {
-                $q->selectRaw('l2.id')
-                    ->from('department_stock_ledger_items as l2')
-                    ->whereRaw('l2.transaction_date = (
-                SELECT MAX(l3.transaction_date)
-                FROM department_stock_ledger_items l3
-                WHERE l3.drug_id = l2.drug_id
-                  AND l3.department_id = l2.department_id
-            )');
-            })
+            ->whereIn('l.id', $latestLedgerIds)
+            ->where('l.department_id', self::PHARMACY_DEPARTMENT_ID)
             ->where('l.balance_after', '>', 0)
             ->select([
                 'p.id as drug_id',
@@ -60,24 +65,13 @@ class PrescriptionsController extends Controller
                 's.price as price',
                 's.service_name',
                 's.service_category',
-                DB::raw('SUM(l.balance_after) as closing_balance'),
-                DB::raw('MAX(l.transaction_date) as last_movement_at'),
+                'l.balance_after as closing_balance',
+                'l.transaction_date as last_movement_at',
             ])
-            ->groupBy(
-                'p.id',
-                'p.product_name',
-                'p.product_code',
-                'p.strength',
-                'p.pack_size',
-                'p.unit',
-                'l.department_id',
-                's.id',
-                's.price',
-                's.service_name',
-                's.service_category',
-            )
             ->orderBy('p.product_name')
-            ->get();
+            ->get()
+            ->unique('drug_id')   // guards against duplicate service rows per product/scheme
+            ->values();
 
         $defaultPaymentMethod = PaymentMethod::where('patient_id', $patientId)
             ->where('is_default', 1)
