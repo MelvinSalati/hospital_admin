@@ -1102,94 +1102,7 @@ const PreviousResultsTable = ({ orders }: { orders: LabOrder[] }) => {
     return (
         <div className="space-y-4">
             {/* Completed Results */}
-            <div className="rounded-lg border border-green-200 bg-green-50/50">
-                <div className="flex items-center gap-2 border-b border-green-200 px-4 py-3">
-                    <CheckCircle className="h-4 w-4 text-green-600" />
-                    <h4 className="text-sm font-semibold text-green-800">
-                        Completed Results
-                    </h4>
-                    <Badge className="ml-auto bg-green-200 text-green-800">
-                        {completedOrders.length}
-                    </Badge>
-                </div>
-                <div className="p-3">
-                    {completedOrders.length > 0 ? (
-                        <div className="space-y-2">
-                            {completedOrders.slice(0, 8).map((item) => (
-                                <div
-                                    key={item.id}
-                                    className="rounded-lg bg-white p-3 shadow-sm transition-colors hover:bg-green-50"
-                                >
-                                    <div className="flex items-start justify-between gap-2">
-                                        <div className="min-w-0 flex-1">
-                                            <p className="text-sm font-medium text-gray-800">
-                                                {item.test_name}
-                                            </p>
-                                            <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-gray-500">
-                                                <span className="flex items-center gap-1">
-                                                    <Calendar className="h-3 w-3" />
-                                                    {formatDate(
-                                                        item.performed_date ||
-                                                            item._parentCreatedAt,
-                                                    )}
-                                                </span>
-                                                {item.performed_by && (
-                                                    <span className="flex items-center gap-1">
-                                                        <User className="h-3 w-3" />
-                                                        {item.performed_by}
-                                                    </span>
-                                                )}
-                                            </div>
-                                            {item.result_value && (
-                                                <p className="mt-1.5 text-xs font-semibold text-emerald-700">
-                                                    {item.result_value}
-                                                    {item.unit ? (
-                                                        <span className="ml-1 font-normal text-slate-500">
-                                                            {item.unit}
-                                                        </span>
-                                                    ) : null}
-                                                </p>
-                                            )}
-                                        </div>
-                                        <div className="ml-2 flex shrink-0 flex-col items-end gap-1.5">
-                                            <Badge className="bg-green-100 text-green-800">
-                                                Completed
-                                            </Badge>
-                                            {item.result_file && (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setViewerUrl(
-                                                            item.result_file!,
-                                                        );
-                                                        setViewerTitle(
-                                                            item.result_file_name ||
-                                                                item.test_name,
-                                                        );
-                                                    }}
-                                                    className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-[11px] font-medium text-blue-700 ring-1 ring-blue-200 hover:bg-blue-100"
-                                                >
-                                                    <FileText className="h-3 w-3" />
-                                                    View Report
-                                                </button>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                            {completedOrders.length > 8 && (
-                                <p className="text-center text-xs text-gray-400">
-                                    +{completedOrders.length - 8} more results
-                                </p>
-                            )}
-                        </div>
-                    ) : (
-                        <p className="py-4 text-center text-sm text-gray-400">
-                            No completed results available
-                        </p>
-                    )}
-                </div>
-            </div>
+        
 
             {/* Rejected & Pending Results */}
             <div className="rounded-lg border border-red-200 bg-red-50/50">
@@ -2333,7 +2246,7 @@ export default function Laboratory() {
     const { patientId, services, previousOrders, error } =
         props as LaboratoryProps;
 
-    console.log(props);
+    const [activeTab, setActiveTab] = useState('pending');
 
     const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
     const [isResultsDialogOpen, setIsResultsDialogOpen] = useState(false);
@@ -2577,59 +2490,88 @@ export default function Laboratory() {
     return (
         <PatientLayout
             breadcrumbs={[
+                { title: 'Altaf Memorial Hospital', href: '/' },
                 { title: 'Patient', href: '/' },
-                { title: 'Laboratory', href: '/' },
+                { title: 'Laboratory Services', href: '/' },
             ]}
         >
-            <div className="h-full space-y-6 bg-blue-50 p-4">
-                {/* Header */}
-                <PageHeader
-                    icon={<Microscope />}
-                    title="Laboratory"
-                    subtitle={'Manage laboratory tests and results'}
-                    actions={[
-                        {
-                            label: 'Order Investigation',
-                            onClick() {
-                                setIsOrderModalOpen(true);
-                            },
+            {/* Header */}
+            <PageHeader
+                icon={<Microscope />}
+                title="Laboratory"
+                subtitle={'Manage laboratory tests and results'}
+                actions={[
+                    {
+                        label: 'Pending',
+                        variant: 'outline',
+                        size: 'sm',
+                        onClick() {
+                            setActiveTab('pending');
                         },
-                    ]}
-                />
+                    },
+                    {
+                        label: 'Completed',
+                        variant: 'outline',
+                        size: 'sm',
+                        onClick() {
+                            setActiveTab('completed');
+                        },
+                    },
+                    {
+                        label: 'Order Investigation',
 
+                        size: 'sm',
+                        onClick() {
+                            setIsOrderModalOpen(true);
+                        },
+                    },
+                ]}
+            />
+            <div className="h-full space-y-6 bg-blue-50 p-4">
                 {/* Two-Column Layout */}
                 <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">
                     {/* Left Column - 70% (3/4 of 4 columns = 3) */}
-                    <div className="lg:col-span-3">
-                        {enhancedOrders.length > 0 ? (
-                            <div className="rounded-sm bg-white p-4">
-                                <LabOrderTable
-                                    orders={enhancedOrders}
-                                    isLabTechnician={isLabTechnician}
-                                    onEnterResults={handleEnterResults}
-                                    onExport={handleExport}
-                                    itemsPerPage={5}
-                                />
-                            </div>
-                        ) : (
-                            <div className="rounded-xl border border-gray-200 bg-white py-16 text-center shadow-sm">
-                                <FlaskConical className="mx-auto h-16 w-16 text-gray-300" />
-                                <h3 className="mt-4 text-lg font-medium text-gray-700">
-                                    No test orders found
-                                </h3>
-                                <p className="mt-1 text-sm text-gray-400">
-                                    Start by ordering your first laboratory test
-                                </p>
-                                <Button
-                                    onClick={() => setIsOrderModalOpen(true)}
-                                    className="mt-4 bg-blue-600 text-white hover:bg-blue-700"
-                                >
-                                    <Plus className="mr-2 h-4 w-4" />
-                                    Order Your First Test
-                                </Button>
-                            </div>
-                        )}
-                    </div>
+                    {activeTab === 'pending' && (
+                        <div className="lg:col-span-3">
+                            {enhancedOrders.length > 0 ? (
+                                <div className="rounded-sm bg-white p-4">
+                                    <LabOrderTable
+                                        orders={enhancedOrders}
+                                        isLabTechnician={isLabTechnician}
+                                        onEnterResults={handleEnterResults}
+                                        onExport={handleExport}
+                                        itemsPerPage={5}
+                                    />
+                                </div>
+                            ) : (
+                                <div className="rounded-xl border border-gray-200 bg-white py-16 text-center shadow-sm">
+                                    <FlaskConical className="mx-auto h-16 w-16 text-gray-300" />
+                                    <h3 className="mt-4 text-lg font-medium text-gray-700">
+                                        No test orders found
+                                    </h3>
+                                    <p className="mt-1 text-sm text-gray-400">
+                                        Start by ordering your first laboratory
+                                        test
+                                    </p>
+                                    <Button
+                                        onClick={() =>
+                                            setIsOrderModalOpen(true)
+                                        }
+                                        className="mt-4 bg-blue-600 text-white hover:bg-blue-700"
+                                    >
+                                        <Plus className="mr-2 h-4 w-4" />
+                                        Order Your First Test
+                                    </Button>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* completed 7tab */}
+                    {activeTab === 'completed' && (
+                        // <PreviousResultsTable orders={enhancedOrders} /> 
+                        <p>Complted</p>
+                    )}
 
                     {/* Right Column - 30% (1/4 of 4 columns = 1) */}
                     <div className="lg:col-span-1">
@@ -2655,7 +2597,6 @@ export default function Laboratory() {
                                         }
                                     </Badge>
                                 </div>
-                                <PreviousResultsTable orders={enhancedOrders} />
                             </div>
                         </div>
                     </div>

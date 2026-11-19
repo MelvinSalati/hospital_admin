@@ -21,6 +21,7 @@ import {
     CheckCircle2,
     Users2Icon,
     Banknote,
+    Building2Icon,
 } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { router, usePage } from '@inertiajs/react';
@@ -311,8 +312,8 @@ export default function PatientHeader({
 
     return (
         <>
-            <div className="border-b bg-white">
-                <div className="">
+            <div className="position-fixed border-b bg-white">
+                <div className="p-2">
                     <div className="flex items-start gap-6">
                         {/* Avatar */}
                         <div className="flex-shrink-0">
@@ -376,13 +377,12 @@ export default function PatientHeader({
                         <div className="flex flex-shrink-0 items-center gap-3">
                             <Button
                                 type="button"
-                                variant="primary"
                                 size="sm"
                                 onClick={openAssignModal}
-                                className="h-8 gap-1.5 px-3 text-xs font-bold text-blue-700"
+                                className="h-8 gap-1.5 px-3 text-xs"
                             >
                                 <ArrowRightLeft className="h-3.5 w-3.5" />
-                                Assign to Department
+                                Department
                             </Button>
 
                             {patient.admission_date && (
@@ -405,7 +405,7 @@ export default function PatientHeader({
 
                     {/* Bottom row */}
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                        <div className="space-y-1.5">
+                        <div className="space-y-1.5 p-4">
                             <h4 className="text-xs font-medium tracking-wider text-gray-400 uppercase">
                                 Demographics
                             </h4>
@@ -431,7 +431,7 @@ export default function PatientHeader({
                             </div>
                         </div>
 
-                        <div className="space-y-1.5">
+                        <div className="space-y-1.5 p-4">
                             <h4 className="text-xs font-medium tracking-wider text-gray-400 uppercase">
                                 Contact
                             </h4>
@@ -453,7 +453,7 @@ export default function PatientHeader({
                             </div>
                         </div>
 
-                        <div className="space-y-1.5">
+                        <div className="space-y-1.5 p-4">
                             <h4 className="text-xs font-medium tracking-wider text-gray-400 uppercase">
                                 Insurance
                             </h4>
@@ -476,7 +476,7 @@ export default function PatientHeader({
                             </div>
                         </div>
 
-                        <div className="space-y-1.5">
+                        <div className="space-y-1.5 p-4">
                             <h4 className="text-xs font-medium tracking-wider text-gray-400 uppercase">
                                 Address
                             </h4>
@@ -507,8 +507,16 @@ export default function PatientHeader({
             >
                 <DialogContent className="w-fit max-w-6xl min-w-[1000px] overflow-hidden bg-gray-50 p-0">
                     <DialogHeader className="p-6 pb-2">
-                        <DialogTitle className="text-xl">
-                            Assign to Department
+                        <DialogTitle className="text-md flex justify-items-center gap-2 align-middle">
+                            <div className="text-blue-700">
+                                <Building2Icon />
+                            </div>
+                            <div>
+                                <p className="text-xl">Assign to Department</p>
+                                {/* <span className="text-md font-light text-blue-500">
+                                    Assign client to the next level of care.
+                                </span> */}
+                            </div>
                         </DialogTitle>
                         {visitToken && (
                             <p className="mt-1 text-sm text-purple-600">
@@ -523,7 +531,7 @@ export default function PatientHeader({
                         </div>
                     )}
 
-                    <div className="grid max-h-[70vh] grid-cols-3 gap-4 overflow-hidden px-6 py-4">
+                    <div className="grid max-h-[70vh] grid-cols-3 gap-4 overflow-hidden border-t-1 border-b-1 bg-slate-100/50 px-6 py-4">
                         {/* ── Departments ── */}
                         <div className="flex h-full flex-col overflow-hidden border-r">
                             <CardContent className="flex h-full flex-col p-4">
@@ -585,7 +593,7 @@ export default function PatientHeader({
                                         </Select>
                                     </div>
                                 </div>
-                                <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                                <div className="min-h-0 flex-1 overflow-auto pr-1">
                                     {filteredDepartments.length === 0 ? (
                                         <div className="py-8 text-center text-gray-500">
                                             No departments found
@@ -875,7 +883,11 @@ export default function PatientHeader({
                         >
                             Cancel
                         </Button>
-                        <Button onClick={handleAssign} disabled={loading}>
+                        <Button
+                            onClick={handleAssign}
+                            disabled={loading}
+                            className="bg-blue-700"
+                        >
                             {loading ? 'Assigning...' : 'Confirm Assignment'}
                         </Button>
                     </DialogFooter>

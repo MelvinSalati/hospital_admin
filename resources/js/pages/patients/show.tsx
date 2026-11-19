@@ -1044,7 +1044,8 @@ export default function PatientPage() {
         <PatientLayout
             patient={patient}
             breadcrumbs={[
-                { title: 'Patient', href: '' },
+                { title: 'Altaf Memorial Hospital', href: '' },
+                { title: 'Dashboard', href: '' },
                 { title: patientName, href: '' },
             ]}
             onAssignClick={canStartVisit ? openAssignModal : undefined}
@@ -1110,7 +1111,7 @@ export default function PatientPage() {
                     {/* Top strip: allergies, vitals, conditions */}
                     <div className="grid gap-3 lg:grid-cols-12">
                         {/* Allergies come first: the safety-critical fact */}
-                        <div className="lg:col-span-4 xl:col-span-3">
+                        {/* <div className="lg:col-span-4 xl:col-span-3">
                             {allergies.length > 0 ? (
                                 <div
                                     role="region"
@@ -1158,9 +1159,9 @@ export default function PatientPage() {
                                     </div>
                                 </div>
                             )}
-                        </div>
+                        </div> */}
 
-                        <div className="lg:col-span-8 xl:col-span-6">
+                        <div className="lg:col-span-10 xl:col-span-8">
                             <Section
                                 title="Latest vitals"
                                 icon={HeartPulse}
