@@ -320,7 +320,7 @@ export function ReusableTable<T extends Record<string, any>>({
                             value={globalFilter}
                             onChange={handleGlobalFilterChange}
                             placeholder={filterPlaceholder}
-                            className="w-full rounded-lg border border-slate-100 px-3 py-2 text-sm sm:w-64"
+                            className="w-full rounded-lg border border-slate-100 px-3 py-2 text-sm shadow-md sm:w-64"
                         />
 
                         {/* Status Filter */}

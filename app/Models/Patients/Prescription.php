@@ -18,7 +18,7 @@ class Prescription extends Model
         'patient_id',
         'user_id',
         'invoice_id',
-        'items', 
+        'items',
         'status',
         'prescribed_date',
         'expiry_date',
@@ -34,6 +34,7 @@ class Prescription extends Model
         'prescribed_date' => 'date',
         'expiry_date' => 'date',
         'dispensed_date' => 'date',
+        'updated_at' => 'date',
     ];
 
     protected static function boot()
@@ -89,5 +90,4 @@ class Prescription extends Model
     {
         return $this->hasMany(PrescriptionItem::class, 'prescription_id');
     }
-
 }

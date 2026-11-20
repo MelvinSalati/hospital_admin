@@ -1107,7 +1107,7 @@ export default function AdminDashboard(props: Partial<DashboardStats> = {}) {
             ]}
         >
             <div className="min-h-screen bg-blue-50">
-                <div className="p-2">
+                <div className="">
                     <PageHeader
                         icon={<Shield className="h-5 w-5" />}
                         title="Admin Dashboard"

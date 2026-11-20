@@ -175,10 +175,11 @@ const patientNavItems: PatientNavItem[] = [
 const ROLE_NAV_MAP: Record<string, string[] | 'all'> = {
     nurse: ['Vitals', 'Admissions', 'Procedures', 'Appointments', 'Dashboard'],
     laboratory: ['Laboratory'],
-    lab_technician: ['Dashboard', 'Laboratory', 'Appointments',],
+    lab_technician: ['Dashboard', 'Laboratory', 'Appointments'],
     pharmacy: ['Pharmacy'],
     pharmacist: ['Pharmacy'],
     radiology: ['Radiology'],
+    radiologist: ['Dashboard', 'Radiology', 'Appointments'],
     reception: ['Payment'], // Billing + Payments live under this group
     receptionist: ['Payment', 'Dashboard', 'laboratory'],
     admin: 'all',

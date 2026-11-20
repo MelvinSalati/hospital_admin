@@ -24,6 +24,7 @@ class StockLedger extends Model
         'invoice_number',
         'source_department',
         'destination_department',
+        'batch_number',
         'batch_id',
         'expiry_date',
         'notes',

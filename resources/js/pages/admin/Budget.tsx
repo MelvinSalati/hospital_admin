@@ -701,44 +701,15 @@ export default function Budgets({
         >
             <Head title="Budgets" />
 
-            <div className="min-h-screen bg-slate-100 p-2">
-                <Container>
-                    <PageHeader
-                        icon={<Wallet className="h-6 w-6" />}
-                        title="Budgets"
-                        subtitle="Manage budget allocation and expenditure"
-                    >
-                        <div className="flex items-center gap-2 self-center">
-                            {can.create && (
-                                <Button size="sm" onClick={handleCreate}>
-                                    <Plus className="mr-1.5 h-3.5 w-3.5" />
-                                    Create Budget
-                                </Button>
-                            )}
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={handleExport}
-                            >
-                                <Download className="mr-1.5 h-3.5 w-3.5" />
-                                Export
-                            </Button>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={handleRefresh}
-                                disabled={loading}
-                            >
-                                <RefreshCw
-                                    className={`mr-1.5 h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`}
-                                />
-                                Refresh
-                            </Button>
-                        </div>
-                    </PageHeader>
-
+            <div className="min-h-screen bg-blue-50">
+                <PageHeader
+                    icon={<Wallet className="h-6 w-6" />}
+                    title="Budgets"
+                    subtitle="Manage budget allocation and expenditure"
+                ></PageHeader>
+                <div>
                     {/* Table — only content under the header */}
-                    <div className="mt-6">
+                    <div className="p-2">
                         <ReusableTable
                             columns={columns}
                             data={budgets}
@@ -802,7 +773,7 @@ export default function Budgets({
                             }}
                         />
                     </div>
-                </Container>
+                </div>
             </div>
 
             {/* ========================================== */}

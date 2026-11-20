@@ -167,13 +167,6 @@ export default function Login({
                                     >
                                         Keep me signed in
                                     </Label>
-                                    <div>
-                                        <p>Bulkstore Account</p>
-                                        <p>
-                                            Email : dalisto.bulk-store@gmail.com
-                                        </p>
-                                        <p>Pass: 1234567890</p>
-                                    </div>
                                 </div>
 
                                 {/* Login Button */}

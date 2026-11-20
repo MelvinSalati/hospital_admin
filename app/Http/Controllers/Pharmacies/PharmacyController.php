@@ -4,12 +4,10 @@ namespace App\Http\Controllers\Pharmacies;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\RequestDispenseDrug;
-use App\Models\Department;
-use App\Models\DepartmentStockLedger;
 use App\Models\DrugItem;
 use App\Models\Patients\Prescription;
 use App\Models\Patients\PrescriptionItem;
-use App\Models\StockBatch;
+use App\Models\BulkStores\DepartmentRequisition;
 use App\Models\StockMovement;
 use App\Models\Supplier;
 use App\Services\Pharmacies\DispenseService;
@@ -19,19 +17,156 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 class PharmacyController extends Controller
 {
-    protected PharmacyService $pharmacyService;
-    protected DispenseService $dispenseService;
-
     public function __construct(
-        PharmacyService $pharmacyService,
-        DispenseService $dispenseService,
-    ) {
-        $this->pharmacyService = $pharmacyService;
-        $this->dispenseService = $dispenseService;
+        protected PharmacyService $pharmacyService,
+        protected DispenseService $dispenseService,
+    ) {}
+
+    // =========================================================================
+    // Bulk store page (pages/pharmacies/bulkstore.tsx)
+    //
+    // Props sent here must match the interfaces in the page:
+    //   orderedItems      -> OrderedItem[]
+    //   expiringProducts  -> ExpiringProduct[]
+    //   productBatches    -> ProductBatch[]
+    // =========================================================================
+
+    public function bulkstore(int $departmentId)
+    {
+        /* ---------- 1. Product requests (orderedItems) ---------- */
+        $orderedItems = DepartmentRequisition::with([
+            'department:id,name',
+            'requestedBy:id,name',
+            'items.product:id,product_name,product_code',
+        ])
+            ->where('department_id', $departmentId)
+            ->latest('requested_at')
+            ->get()
+            ->map(function ($req) {
+                return [
+                    'id'                 => $req->id,
+                    'requisition_uuid'   => $req->requisition_uuid,
+                    'requisition_number' => $req->requisition_number,
+                    'status'             => $req->status,
+                    'priority'           => $req->priority,
+                    'requested_at'       => $req->requested_at?->toIso8601String(),
+                    'required_by_date'   => $req->required_by_date?->format('Y-m-d'),
+                    'estimated_total'    => (float) ($req->estimated_total ?? 0),
+                    'items_count'        => $req->items->count(),
+                    'department'         => $req->department?->name,
+                    'requested_by'       => $req->requestedBy?->name,
+                    'justification'      => $req->justification,
+
+                    // line items for the details drawer
+                    'items' => $req->items->map(function ($item) {
+                        return [
+                            'id'                   => $item->id,
+                            'product_id'           => $item->product_id,
+                            'product_name'         => $item->product?->product_name ?? 'Unknown',
+                            'product_code'         => $item->product?->product_code,
+                            'quantity_requested'   => $item->quantity_requested,
+                            'quantity_approved'    => $item->quantity_approved,
+                            'quantity_fulfilled'   => $item->quantity_fulfilled,
+                            'unit'                 => $item->unit,
+                            'estimated_unit_price' => (float) ($item->estimated_unit_price ?? 0),
+                            'estimated_total'      => (float) ($item->estimated_total ?? 0),
+                            'batch_number'         => $item->batch_number,
+                            'expiry_date'          => $item->expiry_date
+                                ? Carbon::parse($item->expiry_date)->format('Y-m-d')
+                                : null,
+                            'status'               => $item->status,
+                            'notes'                => $item->notes,
+                        ];
+                    })->values()->all(),
+                ];
+            })
+            ->values()
+            ->all();
+
+        /* ---------- 2. Batches for products this department holds ----------
+         * One row per stock batch (no join against ledger rows, so batches are
+         * never duplicated), with explicit columns so `id` is the batch id.
+         */
+        $today = Carbon::today();
+
+        $batchRows = DB::table('stock_batches as sb')
+            ->join('products as p', 'p.id', '=', 'sb.product_id')
+            ->leftJoin('suppliers as s', 's.id', '=', 'sb.supplier_id')
+            ->whereIn('sb.product_id', function ($q) use ($departmentId) {
+                $q->select('drug_id')
+                    ->from('department_stock_ledger_items')
+                    ->where('department_id', $departmentId);
+            })
+            ->select([
+                'sb.id',
+                'sb.batch_number',
+                'sb.expiry_date',
+                'sb.received_quantity',
+                'sb.remaining_quantity',
+                'sb.created_at',
+                'p.product_name',
+                'p.product_code',
+                's.supplier_name',
+            ])
+            ->orderBy('sb.expiry_date', 'asc')
+            ->get()
+            ->map(function ($b) use ($today) {
+                $expiry = $b->expiry_date ? Carbon::parse($b->expiry_date)->startOfDay() : null;
+
+                return [
+                    'id'                 => $b->id,
+                    'product_name'       => $b->product_name,
+                    'product_code'       => $b->product_code,
+                    'batch_number'       => $b->batch_number,
+                    'supplier'           => $b->supplier_name,
+                    'quantity_received'  => (int) $b->received_quantity,
+                    'quantity_remaining' => (int) $b->remaining_quantity,
+                    'unit'               => null,
+                    'received_at'        => $b->created_at
+                        ? Carbon::parse($b->created_at)->format('d F Y')
+                        : null,
+                    'expiry_date'        => $expiry?->format('d F Y'),
+                    // negative = already expired
+                    'days_to_expiry'     => $expiry ? (int) $today->diffInDays($expiry, false) : null,
+                ];
+            });
+
+        // ExpiringProduct[]: every batch that still has stock and an expiry date,
+        // soonest expiry first (already-expired batches come first, as negative days)
+        $expiringProducts = $batchRows
+            ->filter(fn($b) => $b['quantity_remaining'] > 0
+                && $b['days_to_expiry'] !== null)
+            ->sortBy('days_to_expiry')
+            ->map(fn($b) => [
+                'id'             => $b['id'],
+                'product_name'   => $b['product_name'],
+                'product_code'   => $b['product_code'],
+                'batch_number'   => $b['batch_number'],
+                'quantity'       => $b['quantity_remaining'],
+                'unit'           => $b['unit'],
+                'expiry_date'    => $b['expiry_date'],
+                'days_to_expiry' => $b['days_to_expiry'],
+            ])
+            ->values()
+            ->all();
+
+        // ProductBatch[]: every batch, without the helper field the page does not use
+        $productBatches = $batchRows
+            ->map(fn($b) => collect($b)->except('days_to_expiry')->all())
+            ->values()
+            ->all();
+
+        return Inertia::render('pharmacies/bulkstore', [
+            'services'         => \App\Models\Services\Service::all(),
+            'orderedItems'     => $orderedItems,
+            'expiringProducts' => $expiringProducts,
+            'productBatches'   => $productBatches,
+        ]);
     }
 
     // =========================================================================
@@ -40,65 +175,32 @@ class PharmacyController extends Controller
 
     public function index()
     {
-        $prescriptions = Prescription::with(['patient', 'Items'])
-            ->whereIn('status', ['active', 'pending'])
-            ->orderBy('created_at', 'asc')
-            ->get()
-            ->map(function (Prescription $rx) {
-                $items = $rx->Items;
-
-                $pending = $items
-                    ->where('dispensation_status', 'pending')
-                    ->where('is_cancelled', false)
-                    ->count();
-
-                return [
-                    'id'            => $rx->id,
-                    'token'         => $rx->visit_token,
-                    'rx_number'     => $rx->prescription_number,
-                    'patient_name'  => $rx->patient
-                        ? trim($rx->patient->first_name . ' ' . $rx->patient->last_name)
-                        : 'Unknown',
-                    'patient_id'    => $rx->patient_id,
-                    'created_at'    => $rx->created_at?->toIso8601String(),
-                    'status'        => $rx->status,
-                    'item_count'    => $items->count(),
-                    'pending_count' => $pending,
-
-                    'items' => $items->map(fn(PrescriptionItem $i) => [
-                        'id'                  => $i->id,
-                        'drug_name'           => $i->drug_name,
-                        'dosage'              => $i->dosage,
-                        'dosage_unit'         => $i->dosage_unit,
-                        'frequency'           => $i->frequency,
-                        'route'               => $i->route,
-                        'duration'            => $i->duration,
-                        'duration_unit'       => $i->duration_unit,
-                        'instructions'        => $i->instructions,
-                        'quantity_prescribed' => (float) $i->quantity_prescribed,
-                        'quantity_dispensed'  => (float) $i->quantity_dispensed,
-                        'quantity_remaining'  => (float) $i->quantity_remaining,
-                        'dispensation_status' => $i->dispensation_status,
-                    ])->values(),
-                ];
-            });
-
+        \Illuminate\Support\Facades\Log::info('info ', [$this->dispensedTransactions()]);
+        \Illuminate\Support\Facades\Log::info('info ', [$this->dispensedTransactions()]);
         return Inertia::render('pharmacies/queue', [
-            'prescriptions' => $prescriptions,
+            'prescriptions' => fn() => $this->queuePrescriptions(),
+            'dispensed'     => fn() => $this->dispensedTransactions(),
+        ]);
+    }
+
+    // Kept so the old /pharmacy/dispensed route keeps working.
+    public function getDispensed()
+    {
+        return Inertia::render('pharmacies/dispensed', [
+            'dispensed' => $this->dispensedTransactions(),
         ]);
     }
 
     public function dispense(RequestDispenseDrug $request, Prescription $prescriptionId)
     {
-        $departmentId = $request->department_id;
-        $userId       = $request->user()?->id ?? 1;
+        $userId = $request->user()?->id ?? 1;
 
         try {
             $created = $this->dispenseService->dispense(
                 prescription: $prescriptionId,
                 items: $request->validated()['items'],
                 userId: $userId,
-                departmentId: (int) $departmentId,
+                departmentId: (int) $request->department_id,
             );
 
             return response()->json([
@@ -107,7 +209,7 @@ class PharmacyController extends Controller
                 'count'     => count($created),
                 'status'    => $prescriptionId->fresh()->status,
             ], 201);
-        } catch (\Illuminate\Validation\ValidationException $e) {
+        } catch (ValidationException $e) {
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage(),
@@ -115,81 +217,13 @@ class PharmacyController extends Controller
             ], 422);
         } catch (\Throwable $e) {
             report($e);
+
             return response()->json([
                 'success' => false,
                 'message' => 'Dispense failed: ' . $e->getMessage(),
                 'type'    => get_class($e),
             ], 500);
         }
-    }
-
-    public function getDispensed()
-    {
-        $dispensed = Prescription::with(['patient', 'invoice'])
-            ->whereIn('status', ['dispensed', 'completed'])
-            ->orderBy('created_at', 'desc')
-            ->get()
-            ->map(function ($prescription) {
-                $items = is_string($prescription->items)
-                    ? json_decode($prescription->items, true)
-                    : $prescription->items;
-
-                $totalQuantity = 0;
-                $totalAmount   = 0;
-                $productList   = [];
-
-                if (is_array($items)) {
-                    foreach ($items as $item) {
-                        $quantity     = $item['quantity'] ?? $item['qty'] ?? 1;
-                        $price        = (float) ($item['price'] ?? 0);
-                        $totalQuantity += $quantity;
-                        $totalAmount   += $price * $quantity;
-
-                        $productList[] = [
-                            'name'     => $item['name'] ?? $item['drug_name'] ?? 'Unknown',
-                            'quantity' => $quantity,
-                        ];
-                    }
-                }
-
-                return [
-                    'id'            => (string) $prescription->id,
-                    'invoiceNumber' => $prescription->invoice?->invoice_number ?? $prescription->prescription_number,
-                    'patientName'   => $prescription->patient
-                        ? trim($prescription->patient->first_name . ' ' . $prescription->patient->last_name)
-                        : 'Unknown Patient',
-                    'products'      => $productList,
-                    'totalQuantity' => $totalQuantity,
-                    'totalAmount'   => $totalAmount,
-                    'status'        => $this->mapStatus($prescription->status),
-                    'date'          => $prescription->dispensed_date ?? $prescription->updated_at,
-                    'patientId'     => $prescription->patient_id,
-                    'patientAge'    => $prescription->patient?->age ?? null,
-                    'patientGender' => $prescription->patient?->gender ?? null,
-                    'patientPhone'  => $prescription->patient?->phone ?? null,
-                    'patientEmail'  => $prescription->patient?->email ?? null,
-                    'prescribedBy'  => $prescription->prescribed_by ?? 'Dr. Unknown',
-                    'dispensedBy'   => $prescription->dispensed_by ?? 'Pharm. Unknown',
-                    'subtotal'      => $totalAmount,
-                    'notes'         => $prescription->dispensing_notes ?? $prescription->clinical_notes,
-                ];
-            });
-
-        return Inertia::render('pharmacies/dispensed', [
-            'dispensed' => $dispensed,
-        ]);
-    }
-
-    private function mapStatus($status)
-    {
-        return [
-            'dispensed' => 'completed',
-            'completed' => 'completed',
-            'active'    => 'pending',
-            'pending'   => 'pending',
-            'cancelled' => 'cancelled',
-            'void'      => 'cancelled',
-        ][$status] ?? 'pending';
     }
 
     // =========================================================================
@@ -213,31 +247,31 @@ class PharmacyController extends Controller
     public function storeDrug(Request $request)
     {
         $validated = $request->validate([
-            'drug_name'              => 'required|string|max:255',
-            'drug_code'              => 'required|string|max:50|unique:drug_items',
-            'generic_name'           => 'nullable|string|max:255',
-            'brand_name'             => 'nullable|string|max:255',
-            'barcode'                => 'nullable|string|max:100',
-            'therapeutic_class'      => 'nullable|string|max:150',
-            'schedule_class'         => 'nullable|string|max:50',
-            'strength'               => 'nullable|string|max:100',
-            'dosage_form'            => 'required|string|max:100',
+            'drug_name'               => 'required|string|max:255',
+            'drug_code'               => 'required|string|max:50|unique:drug_items',
+            'generic_name'            => 'nullable|string|max:255',
+            'brand_name'              => 'nullable|string|max:255',
+            'barcode'                 => 'nullable|string|max:100',
+            'therapeutic_class'       => 'nullable|string|max:150',
+            'schedule_class'          => 'nullable|string|max:50',
+            'strength'                => 'nullable|string|max:100',
+            'dosage_form'             => 'required|string|max:100',
             'route_of_administration' => 'nullable|string|max:50',
-            'unit_of_measure'        => 'nullable|string|max:50',
-            'pack_size'              => 'nullable|integer|min:0',
-            'minimum_stock_level'    => 'nullable|integer|min:0',
-            'maximum_stock_level'    => 'nullable|integer|min:0',
-            'reorder_level'          => 'nullable|integer|min:0',
-            'purchase_price'         => 'nullable|numeric|min:0',
-            'selling_price'          => 'nullable|numeric|min:0',
-            'insurance_price'        => 'nullable|numeric|min:0',
-            'is_arv'                 => 'boolean',
-            'is_tb_drug'             => 'boolean',
-            'is_emergency'           => 'boolean',
-            'is_controlled'          => 'boolean',
-            'track_batches'          => 'boolean',
-            'track_expiry'           => 'boolean',
-            'allow_negative_stock'   => 'boolean',
+            'unit_of_measure'         => 'nullable|string|max:50',
+            'pack_size'               => 'nullable|integer|min:0',
+            'minimum_stock_level'     => 'nullable|integer|min:0',
+            'maximum_stock_level'     => 'nullable|integer|min:0',
+            'reorder_level'           => 'nullable|integer|min:0',
+            'purchase_price'          => 'nullable|numeric|min:0',
+            'selling_price'           => 'nullable|numeric|min:0',
+            'insurance_price'         => 'nullable|numeric|min:0',
+            'is_arv'                  => 'boolean',
+            'is_tb_drug'              => 'boolean',
+            'is_emergency'            => 'boolean',
+            'is_controlled'           => 'boolean',
+            'track_batches'           => 'boolean',
+            'track_expiry'            => 'boolean',
+            'allow_negative_stock'    => 'boolean',
         ]);
 
         try {
@@ -252,10 +286,7 @@ class PharmacyController extends Controller
                 'drug'    => $drug,
             ], 201);
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => $e->getMessage(),
-            ], 500);
+            return $this->errorResponse($e);
         }
     }
 
@@ -323,70 +354,49 @@ class PharmacyController extends Controller
                     'unit_cost'              => $movement->unit_cost,
                 ]);
 
-            $drugData = array_merge($drug->toArray(), [
-                'current_stock'     => $stockSummary->current_stock ?? 0,
-                'total_received'    => $stockSummary->total_received ?? 0,
-                'total_issued'      => $stockSummary->total_issued ?? 0,
-                'total_transferred' => $stockSummary->total_transferred ?? 0,
-                'total_adjusted'    => $stockSummary->total_adjusted ?? 0,
-                'total_movements'   => $stockSummary->total_movements ?? 0,
-                'transactions'      => $transactions,
-            ]);
-
             return response()->json([
                 'success' => true,
-                'drug'    => $drugData,
+                'drug'    => array_merge($drug->toArray(), [
+                    'current_stock'     => $stockSummary->current_stock ?? 0,
+                    'total_received'    => $stockSummary->total_received ?? 0,
+                    'total_issued'      => $stockSummary->total_issued ?? 0,
+                    'total_transferred' => $stockSummary->total_transferred ?? 0,
+                    'total_adjusted'    => $stockSummary->total_adjusted ?? 0,
+                    'total_movements'   => $stockSummary->total_movements ?? 0,
+                    'transactions'      => $transactions,
+                ]),
             ]);
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => $e->getMessage(),
-            ], 500);
+            return $this->errorResponse($e);
         }
     }
 
     public function getDrugDetails($id)
     {
         try {
-            $drug          = DrugItem::findOrFail($id);
-            $currentStock  = StockMovement::where('product_id', $drug->id)->sum('quantity');
-
-            $transactions = StockMovement::where('product_id', $drug->id)
-                ->with(['supplier', 'createdBy', 'fromDepartment', 'toDepartment'])
-                ->orderBy('moved_at', 'desc')
-                ->paginate(15);
+            $drug         = DrugItem::findOrFail($id);
+            $currentStock = StockMovement::where('product_id', $drug->id)->sum('quantity');
 
             return response()->json([
                 'success'       => true,
                 'drug'          => $drug,
                 'current_stock' => $currentStock,
-                'transactions'  => $transactions,
+                'transactions'  => $this->movementsQuery($drug->id)->paginate(15),
             ]);
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => $e->getMessage(),
-            ], 500);
+            return $this->errorResponse($e);
         }
     }
 
     public function getTransactions($id)
     {
         try {
-            $transactions = StockMovement::where('product_id', $id)
-                ->with(['supplier', 'createdBy', 'fromDepartment', 'toDepartment'])
-                ->orderBy('moved_at', 'desc')
-                ->paginate(20);
-
             return response()->json([
                 'success'      => true,
-                'transactions' => $transactions,
+                'transactions' => $this->movementsQuery($id)->paginate(20),
             ]);
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => $e->getMessage(),
-            ], 500);
+            return $this->errorResponse($e);
         }
     }
 
@@ -402,9 +412,9 @@ class PharmacyController extends Controller
         ]);
 
         try {
-            $drug          = DrugItem::findOrFail($id);
-            $currentStock  = StockMovement::where('product_id', $drug->id)->sum('quantity');
-            $adjustment    = $request->new_quantity - $currentStock;
+            $drug         = DrugItem::findOrFail($id);
+            $currentStock = StockMovement::where('product_id', $drug->id)->sum('quantity');
+            $adjustment   = $request->new_quantity - $currentStock;
 
             $movement = StockMovement::create([
                 'movement_uuid'    => (string) Str::uuid(),
@@ -429,10 +439,7 @@ class PharmacyController extends Controller
                 ],
             ]);
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => $e->getMessage(),
-            ], 500);
+            return $this->errorResponse($e);
         }
     }
 
@@ -473,10 +480,7 @@ class PharmacyController extends Controller
                 'new_stock'   => $currentStock - $request->quantity,
             ]);
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => $e->getMessage(),
-            ], 500);
+            return $this->errorResponse($e);
         }
     }
 
@@ -520,10 +524,7 @@ class PharmacyController extends Controller
                 'new_stock' => $movement->balance_after,
             ]);
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => $e->getMessage(),
-            ], 500);
+            return $this->errorResponse($e);
         }
     }
 
@@ -533,14 +534,14 @@ class PharmacyController extends Controller
 
     public function dashboard()
     {
-        $totalProducts       = DrugItem::where('is_active', 1)->count();
-        $productsDispensed   = StockMovement::where('type', 'issuing')->sum('quantity') * -1;
-        $totalTransactions   = StockMovement::count();
+        $totalProducts     = DrugItem::where('is_active', 1)->count();
+        $productsDispensed = StockMovement::where('type', 'issuing')->sum('quantity') * -1;
+        $totalTransactions = StockMovement::count();
 
-        $lastMonth              = now()->subMonth();
-        $currentMonthTotal      = StockMovement::whereMonth('moved_at', now()->month)->whereYear('moved_at', now()->year)->sum('quantity');
-        $lastMonthTotal         = StockMovement::whereMonth('moved_at', $lastMonth->month)->whereYear('moved_at', $lastMonth->year)->sum('quantity');
-        $productsTrend          = $lastMonthTotal > 0
+        $lastMonth         = now()->subMonth();
+        $currentMonthTotal = StockMovement::whereMonth('moved_at', now()->month)->whereYear('moved_at', now()->year)->sum('quantity');
+        $lastMonthTotal    = StockMovement::whereMonth('moved_at', $lastMonth->month)->whereYear('moved_at', $lastMonth->year)->sum('quantity');
+        $productsTrend     = $lastMonthTotal > 0
             ? round((($currentMonthTotal - $lastMonthTotal) / abs($lastMonthTotal)) * 100, 1)
             : 0;
 
@@ -591,7 +592,7 @@ class PharmacyController extends Controller
                 'patientName'   => $movement->createdBy?->name ?? 'System',
                 'products'      => [$movement->drug->drug_name ?? 'Unknown'],
                 'quantity'      => (int) abs($movement->quantity),
-                'totalAmount'   => (float) ($movement->unit_cost * abs($movement->quantity) ?? 0),
+                'totalAmount'   => (float) ($movement->unit_cost * abs($movement->quantity)),
                 'status'        => $movement->type === 'receiving' ? 'completed' : 'pending',
                 'date'          => $movement->moved_at->format('Y-m-d H:i:s'),
             ]);
@@ -602,97 +603,14 @@ class PharmacyController extends Controller
                 'productsDispensed' => (int) $productsDispensed,
                 'totalTransactions' => $totalTransactions,
                 'productsTrend'     => $productsTrend,
-                'dispensedTrend'    => 8.3,
-                'transactionsTrend' => 15.2,
+                'dispensedTrend'    => 8.3,   // TODO: compute
+                'transactionsTrend' => 15.2,  // TODO: compute
             ],
-            'topDispensedDrugs' => $topDispensedDrugs,
-            'weeklyTrend'       => $weeklyTrend,
-            'notifications'     => $this->getNotifications(),
+            'topDispensedDrugs'  => $topDispensedDrugs,
+            'weeklyTrend'        => $weeklyTrend,
+            'notifications'      => $this->getNotifications(),
             'recentTransactions' => $recentTransactions,
         ]);
-    }
-
-    private function getNotifications()
-    {
-        $notifications = [];
-
-        // 1. Low stock
-        $lowStockCount = 0;
-        foreach (DrugItem::where('is_active', 1)->get() as $drug) {
-            $currentStock = StockMovement::where('product_id', $drug->id)->sum('quantity');
-            $reorder      = $drug->reorder_level ?? $drug->minimum_stock_level ?? 0;
-
-            if ($currentStock > 0 && $currentStock <= $reorder && $lowStockCount < 5) {
-                $notifications[] = [
-                    'id'      => 'low_stock_' . $drug->id,
-                    'title'   => 'Low Stock Alert',
-                    'message' => "{$drug->drug_name} has only {$currentStock} units left",
-                    'type'    => 'warning',
-                    'time'    => now()->toDateTimeString(),
-                    'read'    => false,
-                ];
-                $lowStockCount++;
-            }
-        }
-
-        // 2. Expiring soon (movements only, >= today and <= today+30)
-        $expiring = StockMovement::where('expiry_date', '>=', now())
-            ->where('expiry_date', '<=', now()->addDays(30))
-            ->where('quantity', '>', 0)
-            ->with('drug')
-            ->limit(5)
-            ->get();
-
-        foreach ($expiring as $movement) {
-            $daysLeft = now()->diffInDays($movement->expiry_date);
-            $notifications[] = [
-                'id'      => 'expiring_' . $movement->id,
-                'title'   => 'Expiring Soon',
-                'message' => "{$movement->drug->drug_name} expires in {$daysLeft} days ({$movement->quantity} units)",
-                'type'    => 'danger',
-                'time'    => now()->toDateTimeString(),
-                'read'    => false,
-            ];
-        }
-
-        // 3. Recent receivings
-        foreach (StockMovement::where('type', 'receiving')->orderBy('moved_at', 'desc')->with('drug')->limit(3)->get() as $movement) {
-            $notifications[] = [
-                'id'      => 'replenished_' . $movement->id,
-                'title'   => 'Stock Replenished',
-                'message' => "{$movement->drug->drug_name} has been restocked ({$movement->quantity} units)",
-                'type'    => 'success',
-                'time'    => $movement->moved_at->format('Y-m-d H:i:s'),
-                'read'    => true,
-            ];
-        }
-
-        // 4. Expired — count distinct products, not movements
-        $expiredProducts = StockMovement::where('expiry_date', '<', now())
-            ->where('quantity', '>', 0)
-            ->distinct('product_id')
-            ->count('product_id');
-
-        if ($expiredProducts > 0) {
-            $notifications[] = [
-                'id'      => 'expired_products',
-                'title'   => 'Expired Products',
-                'message' => "{$expiredProducts} products have expired",
-                'type'    => 'danger',
-                'time'    => now()->toDateTimeString(),
-                'read'    => false,
-            ];
-        }
-
-        usort($notifications, fn($a, $b) => strtotime($b['time']) - strtotime($a['time']));
-
-        return array_slice($notifications, 0, 10);
-    }
-
-    private function getColorForIndex($index)
-    {
-        $colors = ['#8B5CF6', '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#EC4899', '#F97316', '#14B8A6'];
-        return $colors[$index % count($colors)];
     }
 
     // =========================================================================
@@ -705,17 +623,17 @@ class PharmacyController extends Controller
             ->orderBy('supplier_name')
             ->get()
             ->map(fn($s) => [
-                'id'            => $s->id,
-                'supplier_code' => $s->supplier_code,
-                'supplier_name' => $s->supplier_name,
+                'id'             => $s->id,
+                'supplier_code'  => $s->supplier_code,
+                'supplier_name'  => $s->supplier_name,
                 'contact_person' => $s->contact_person,
-                'phone'         => $s->phone,
-                'email'         => $s->email,
-                'address'       => $s->address,
-                'city'          => $s->city,
-                'country'       => $s->country,
-                'rating'        => $s->rating,
-                'is_active'     => $s->is_active,
+                'phone'          => $s->phone,
+                'email'          => $s->email,
+                'address'        => $s->address,
+                'city'           => $s->city,
+                'country'        => $s->country,
+                'rating'         => $s->rating,
+                'is_active'      => $s->is_active,
             ]);
 
         return Inertia::render('pharmacies/logistics', [
@@ -753,8 +671,8 @@ class PharmacyController extends Controller
                     'sb.location',
                     'sb.supplier_id',
                     'sb.created_at',
-                    'p.product_name as product_name',   // ✅
-                    'p.product_code as product_sku',    // ✅ was p.sku
+                    'p.product_name as product_name',
+                    'p.product_code as product_sku',
                 ]);
 
             if ($search) {
@@ -769,48 +687,48 @@ class PharmacyController extends Controller
                 $batchesQuery->where('sb.remaining_quantity', '>', 0);
             }
 
-            $batches = $batchesQuery->orderBy('sb.expiry_date', 'asc')->get();
+            $batches = $batchesQuery
+                ->orderBy('sb.expiry_date', 'asc')
+                ->get()
+                ->map(function ($b) use ($today, $expiryHorizon) {
+                    $expiry    = $b->expiry_date ? Carbon::parse($b->expiry_date) : null;
+                    $daysLeft  = $expiry ? $today->diffInDays($expiry, false) : null;
+                    $received  = (int) $b->received_quantity;
+                    $remaining = (int) $b->remaining_quantity;
+                    $dispensed = max(0, $received - $remaining);
 
-            $batches = $batches->map(function ($b) use ($today, $expiryHorizon) {
-                $expiry    = $b->expiry_date ? Carbon::parse($b->expiry_date) : null;
-                $daysLeft  = $expiry ? $today->diffInDays($expiry, false) : null;
-                $received  = (int) $b->received_quantity;
-                $remaining = (int) $b->remaining_quantity;
-                $quantity  = (int) $b->quantity;
-                $dispensed = max(0, $received - $remaining);
+                    $status = 'ok';
+                    if ($remaining <= 0) {
+                        $status = 'depleted';
+                    } elseif ($expiry && $expiry->lt($today)) {
+                        $status = 'expired';
+                    } elseif ($expiry && $expiry->lte($expiryHorizon)) {
+                        $status = 'expiring_soon';
+                    } elseif ($received > 0 && $dispensed / $received >= 0.8) {
+                        $status = 'low_stock';
+                    }
 
-                $status = 'ok';
-                if ($remaining <= 0) {
-                    $status = 'depleted';
-                } elseif ($expiry && $expiry->lt($today)) {
-                    $status = 'expired';
-                } elseif ($expiry && $expiry->lte($expiryHorizon)) {
-                    $status = 'expiring_soon';
-                } elseif ($remaining > 0 && $received > 0 && $dispensed / $received >= 0.8) {
-                    $status = 'low_stock';
-                }
-
-                return [
-                    'id'                 => $b->id,
-                    'product_id'         => $b->product_id,
-                    'product_name'       => $b->product_name,
-                    'product_sku'        => $b->product_sku,
-                    'batch_number'       => $b->batch_number,
-                    'expiry_date'        => $expiry?->toDateString(),
-                    'days_to_expiry'     => $daysLeft,
-                    'received_quantity'  => $received,
-                    'remaining_quantity' => $remaining,
-                    'dispensed_quantity' => $dispensed,
-                    'original_quantity'  => $quantity,
-                    'status'             => $status,
-                    'batch_status'       => $b->status,
-                    'location'           => $b->location,
-                    'supplier_id'        => $b->supplier_id,
-                    'created_at'         => $b->created_at
-                        ? Carbon::parse($b->created_at)->toDateTimeString()
-                        : null,
-                ];
-            });
+                    return [
+                        'id'                 => $b->id,
+                        'product_id'         => $b->product_id,
+                        'product_name'       => $b->product_name,
+                        'product_sku'        => $b->product_sku,
+                        'batch_number'       => $b->batch_number,
+                        'expiry_date'        => $expiry?->toDateString(),
+                        'days_to_expiry'     => $daysLeft,
+                        'received_quantity'  => $received,
+                        'remaining_quantity' => $remaining,
+                        'dispensed_quantity' => $dispensed,
+                        'original_quantity'  => (int) $b->quantity,
+                        'status'             => $status,
+                        'batch_status'       => $b->status,
+                        'location'           => $b->location,
+                        'supplier_id'        => $b->supplier_id,
+                        'created_at'         => $b->created_at
+                            ? Carbon::parse($b->created_at)->toDateTimeString()
+                            : null,
+                    ];
+                });
 
             $expired      = $batches->where('status', 'expired')->values();
             $expiringSoon = $batches->where('status', 'expiring_soon')->values();
@@ -843,14 +761,14 @@ class PharmacyController extends Controller
                 ->when($departmentId, fn($q) => $q->where('l.department_id', $departmentId))
                 ->select([
                     'items.drug_id as product_id',
-                    'p.product_name as product_name',   // ✅
-                    'p.product_code as product_sku',    // ✅ was p.sku
+                    'p.product_name as product_name',
+                    'p.product_code as product_sku',
                     DB::raw('SUM(items.quantity_in)  as total_in'),
                     DB::raw('SUM(items.quantity_out) as total_out'),
                     DB::raw('COUNT(*) as movement_count'),
                     DB::raw('MAX(items.transaction_date) as last_movement'),
                 ])
-                ->groupBy('items.drug_id', 'p.product_name', 'p.product_code')  // ✅ was p.sku
+                ->groupBy('items.drug_id', 'p.product_name', 'p.product_code')
                 ->orderByDesc('total_out')
                 ->limit(50)
                 ->get();
@@ -869,8 +787,6 @@ class PharmacyController extends Controller
                 'expiring_units'      => $expiringSoon->sum('remaining_quantity'),
             ];
 
-            $departments = DB::table('departments')->select('id', 'name')->orderBy('name')->get();
-
             return Inertia::render('pharmacies/stock', [
                 'summary'         => $summary,
                 'batches'         => $batches->values(),
@@ -880,7 +796,7 @@ class PharmacyController extends Controller
                 'depleted'        => $depleted,
                 'deptMovement'    => $deptMovement,
                 'productMovement' => $productMovement,
-                'departments'     => $departments,
+                'departments'     => DB::table('departments')->select('id', 'name')->orderBy('name')->get(),
                 'filters'         => [
                     'department_id' => $departmentId,
                     'expiry_window' => $expiryWindow,
@@ -896,93 +812,238 @@ class PharmacyController extends Controller
                 'trace' => $e->getTraceAsString(),
             ]);
 
-            if ($request->expectsJson() || $request->header('X-Inertia')) {
+            if ($request->expectsJson() && ! $request->header('X-Inertia')) {
                 return response()->json([
                     'error'   => 'Failed to load stock monitoring.',
                     'message' => config('app.debug') ? $e->getMessage() : null,
                 ], 500);
             }
+
+            abort(500, 'Failed to load stock monitoring.');
         }
-    } 
-
-    protected function applyAdjustment(ProductAdjustment $adjustment): void
-{
-    // Bulk-store-only: department_id must be null
-    if (!$adjustment->bulk_store_id) {
-        throw new \InvalidArgumentException('Adjustment must target a bulk store.');
     }
 
-    $product = Product::lockForUpdate()->findOrFail($adjustment->product_id);
+    // =========================================================================
+    // Private helpers
+    // =========================================================================
 
-    // Opening balance = last ledger closing for this product+bulk_store
-    $lastLedger = StockLedger::where('product_id', $product->id)
-        ->where('bulk_store_id', $adjustment->bulk_store_id)
-        ->orderByDesc('ledger_date')
-        ->orderByDesc('id')
-        ->lockForUpdate()
-        ->first();
+    private function queuePrescriptions()
+    {
+        return Prescription::with(['patient', 'Items'])
+            ->whereIn('status', ['pending', 'active'])
+            ->orderBy('created_at', 'asc')
+            ->get()
+            ->map(function (Prescription $rx) {
+                $items = $rx->Items;
 
-    $openingBalance = $lastLedger?->closing_balance ?? 0;
-    $delta          = (int) $adjustment->adjustment_difference; // signed
-    $closingBalance = $openingBalance + $delta;
+                $pending = $items
+                    ->where('dispensation_status', 'pending')
+                    ->where('is_cancelled', false)
+                    ->count();
 
-    if ($closingBalance < 0 && !$product->allow_negative_stock) {
-        throw new \InvalidArgumentException('Adjustment would drive stock negative.');
+                return [
+                    'id'            => $rx->id,
+                    'token'         => $rx->visit_token,
+                    'rx_number'     => $rx->prescription_number,
+                    'patientName'  => $this->patientName($rx),
+                    'patient_id'    => $rx->patient_id,
+                    'created_at'    => $rx->created_at?->toIso8601String(),
+                    'status'        => $rx->status,
+                    'item_count'    => $items->count(),
+                    'pending_count' => $pending,
+                    'items'         => $items->map(fn(PrescriptionItem $i) => [
+                        'id'                  => $i->id,
+                        'drug_name'           => $i->drug_name,
+                        'dosage'              => $i->dosage,
+                        'dosage_unit'         => $i->dosage_unit,
+                        'frequency'           => $i->frequency,
+                        'route'               => $i->route,
+                        'duration'            => $i->duration,
+                        'duration_unit'       => $i->duration_unit,
+                        'instructions'        => $i->instructions,
+                        'quantity_prescribed' => (float) $i->quantity_prescribed,
+                        'quantity_dispensed'  => (float) $i->quantity_dispensed,
+                        'quantity_remaining'  => (float) $i->quantity_remaining,
+                        'dispensation_status' => $i->dispensation_status,
+                    ])->values(),
+                ];
+            })
+            ->values();
     }
 
-    // Movement record (audit)
-    $movement = StockMovement::create([
-        'product_id'      => $product->id,
-        'bulk_store_id'   => $adjustment->bulk_store_id,
-        'reference_type'  => get_class($adjustment),
-        'reference_id'    => $adjustment->id,
-        'reference_number'=> $adjustment->adjustment_number,
-        'quantity'        => $delta,
-        'movement_type'   => $delta > 0 ? 'adjustment_in' : 'adjustment_out',
-        'created_by'      => Auth::id(),
-    ]);
+    private function dispensedTransactions()
+    {
+        return Prescription::with(['patient', 'Items'])
+            ->whereIn('status', ['dispensed'])
+            ->orderBy('updated_at', 'desc')
+            ->get()
+            ->map(function (Prescription $rx) {
+                // Only what was actually handed out
+                $lines = $rx->Items->filter(fn($i) => (float) $i->quantity_dispensed > 0);
 
-    // Ledger row
-    StockLedger::create([
-        'ledger_uuid'      => (string) Str::uuid(),
-        'department_id'    => null, // bulk-store-only
-        'bulk_store_id'    => $adjustment->bulk_store_id,
-        'product_id'       => $product->id,
-        'ledger_date'      => now()->toDateString(),
-        'opening_balance'  => $openingBalance,
-        'total_in'         => $delta > 0 ? $delta : 0,
-        'total_out'        => $delta < 0 ? abs($delta) : 0,
-        'closing_balance'  => $closingBalance,
-        'adjustments_in'   => $delta > 0 ? $delta : 0,
-        'adjustments_out'  => $delta < 0 ? abs($delta) : 0,
-        'purchases_in'     => 0,
-        'returns_in'       => 0,
-        'transfers_in'     => 0,
-        'sales_out'        => 0,
-        'damage_out'       => 0,
-        'expiry_out'       => 0,
-        'transfers_out'    => 0,
-        'returns_out'      => 0,
-        'movement_count'   => 1,
-        'unique_batches'   => $adjustment->batch_number ? 1 : 0,
-        'avg_unit_cost'    => $adjustment->unit_cost ?? 0,
-        'batch_number'     => $adjustment->batch_number,
-        'created_by'       => Auth::id(),
-        'updated_by'       => Auth::id(),
-        'is_verified'      => 1,
-        'verified_at'      => now(),
-        'verified_by'      => Auth::id(),
-        'notes'            => "Adjustment {$adjustment->adjustment_number}: {$adjustment->reason}",
-    ]);
+                $products = $lines->map(fn($i) => [
+                    'name'     => $i->drug_name ?? 'Unknown',
+                    'quantity' => (float) $i->quantity_dispensed,
+                ])->values();
 
-    // Update product aggregate stock
-    $product->increment('current_stock', $delta);
+                // Assumes a unit_price column on prescription items; falls back to 0
+                $totalAmount = $lines->sum(
+                    fn($i) => (float) $i->quantity_dispensed * (float) ($i->unit_price ?? 0)
+                );
 
-    // Mark adjustment applied
-    $adjustment->update([
-        'status'      => 'approved',
-        'approved_by' => Auth::id(),
-        'approved_at' => now(),
-    ]);
-}
+                $date = $rx->dispensed_date ?? $rx->updated_at;
+
+                return [
+                    'id'            => (string) $rx->id,
+                    'rx_number' => $rx->prescription_number,
+                    'patientName'   => $this->patientName($rx, 'Unknown Patient'),
+                    'token'      => $rx->visit_token,
+                    'totalQuantity' => $products->sum('quantity'),
+                    'items' => $rx->items,
+                    'totalAmount'   => $totalAmount,
+                    'status'        => $this->mapStatus($rx->status),
+                    'created_at'    =>  Carbon::parse($rx->updated_at)->format("d F Y"),
+                    'patientId'     => $rx->patient_id,
+                    'patientAge'    => $rx->patient?->date_of_birth
+                        ? Carbon::parse($rx->patient->date_of_birth)->age
+                        : null,
+                    'patientGender' => $rx->patient?->gender,
+                    'patientPhone'  => $rx->patient?->phone,
+                    'patientEmail'  => $rx->patient?->email,
+                    'prescribedBy'  => $rx->prescribed_by ?? 'Dr. Unknown',
+                    'dispensedBy'   => $rx->dispensed_by ?? 'Pharm. Unknown',
+                    'subtotal'      => $totalAmount,
+                    'notes'         => $rx->dispensing_notes ?? $rx->clinical_notes,
+                ];
+            })
+            ->values();
+    }
+
+    private function patientName(Prescription $rx, string $fallback = 'Unknown'): string
+    {
+        return $rx->patient
+            ? trim($rx->patient->first_name . ' ' . $rx->patient->last_name)
+            : $fallback;
+    }
+
+    private function mapStatus(?string $status): string
+    {
+        return [
+            'dispensed' => 'completed',
+            'completed' => 'completed',
+            'active'    => 'pending',
+            'pending'   => 'pending',
+            'cancelled' => 'cancelled',
+            'void'      => 'cancelled',
+        ][$status] ?? 'pending';
+    }
+
+    private function movementsQuery($productId)
+    {
+        return StockMovement::where('product_id', $productId)
+            ->with(['supplier', 'createdBy', 'fromDepartment', 'toDepartment'])
+            ->orderBy('moved_at', 'desc');
+    }
+
+    private function errorResponse(\Throwable $e, int $status = 500)
+    {
+        return response()->json([
+            'success' => false,
+            'message' => $e->getMessage(),
+        ], $status);
+    }
+
+    private function getNotifications(): array
+    {
+        $notifications = [];
+
+        // 1. Low stock
+        $lowStockCount = 0;
+        foreach (DrugItem::where('is_active', 1)->get() as $drug) {
+            if ($lowStockCount >= 5) {
+                break;
+            }
+
+            $currentStock = StockMovement::where('product_id', $drug->id)->sum('quantity');
+            $reorder      = $drug->reorder_level ?? $drug->minimum_stock_level ?? 0;
+
+            if ($currentStock > 0 && $currentStock <= $reorder) {
+                $notifications[] = [
+                    'id'      => 'low_stock_' . $drug->id,
+                    'title'   => 'Low Stock Alert',
+                    'message' => "{$drug->drug_name} has only {$currentStock} units left",
+                    'type'    => 'warning',
+                    'time'    => now()->toDateTimeString(),
+                    'read'    => false,
+                ];
+                $lowStockCount++;
+            }
+        }
+
+        // 2. Expiring within 30 days
+        $expiring = StockMovement::where('expiry_date', '>=', now())
+            ->where('expiry_date', '<=', now()->addDays(30))
+            ->where('quantity', '>', 0)
+            ->with('drug')
+            ->limit(5)
+            ->get();
+
+        foreach ($expiring as $movement) {
+            $daysLeft = now()->diffInDays($movement->expiry_date);
+            $notifications[] = [
+                'id'      => 'expiring_' . $movement->id,
+                'title'   => 'Expiring Soon',
+                'message' => "{$movement->drug->drug_name} expires in {$daysLeft} days ({$movement->quantity} units)",
+                'type'    => 'danger',
+                'time'    => now()->toDateTimeString(),
+                'read'    => false,
+            ];
+        }
+
+        // 3. Recent receivings
+        $received = StockMovement::where('type', 'receiving')
+            ->orderBy('moved_at', 'desc')
+            ->with('drug')
+            ->limit(3)
+            ->get();
+
+        foreach ($received as $movement) {
+            $notifications[] = [
+                'id'      => 'replenished_' . $movement->id,
+                'title'   => 'Stock Replenished',
+                'message' => "{$movement->drug->drug_name} has been restocked ({$movement->quantity} units)",
+                'type'    => 'success',
+                'time'    => $movement->moved_at->format('Y-m-d H:i:s'),
+                'read'    => true,
+            ];
+        }
+
+        // 4. Expired: count distinct products, not movements
+        $expiredProducts = StockMovement::where('expiry_date', '<', now())
+            ->where('quantity', '>', 0)
+            ->distinct('product_id')
+            ->count('product_id');
+
+        if ($expiredProducts > 0) {
+            $notifications[] = [
+                'id'      => 'expired_products',
+                'title'   => 'Expired Products',
+                'message' => "{$expiredProducts} products have expired",
+                'type'    => 'danger',
+                'time'    => now()->toDateTimeString(),
+                'read'    => false,
+            ];
+        }
+
+        usort($notifications, fn($a, $b) => strtotime($b['time']) - strtotime($a['time']));
+
+        return array_slice($notifications, 0, 10);
+    }
+
+    private function getColorForIndex(int $index): string
+    {
+        $colors = ['#8B5CF6', '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#EC4899', '#F97316', '#14B8A6'];
+
+        return $colors[$index % count($colors)];
+    }
 }

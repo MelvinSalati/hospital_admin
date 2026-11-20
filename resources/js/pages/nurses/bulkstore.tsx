@@ -2,14 +2,28 @@ import PageHeader from '@/components/PageHeader';
 import ReusableTable from '@/components/ReusableTable';
 import type { Column, Action } from '@/components/ReusableTable';
 import AppLayout from '@/layouts/app/app-header-layout';
-import { Barcode, BarcodeIcon, Eye, Package } from 'lucide-react';
+import {
+    Barcode,
+    BarcodeIcon,
+    Eye,
+    Package,
+    PackageCheck,
+    Hourglass,
+    Layers,
+    ClipboardList,
+    Plus,
+    X,
+    Calendar,
+    User,
+    Building2,
+    Hash,
+    Boxes,
+} from 'lucide-react';
 import { usePage, router } from '@inertiajs/react';
 import { useState } from 'react';
 import OrderItemsModal from '@/components/OrderItemsModal';
-import OrderItemDetailsModal, {
-    type OrderedItemDetails,
-} from '@/components/OrderItemDetailsModal';
 import { cn } from '@/lib/utils';
+
 interface RequisitionItem {
     id: number;
     product_id: number;
@@ -43,15 +57,208 @@ interface OrderedItem {
     items: RequisitionItem[];
 }
 
+interface Dispensation {
+    id: number;
+    reference: string | null;
+    product_name: string;
+    product_code: string | null;
+    department: string | null;
+    quantity: number | null;
+    unit: string | null;
+    dispensed_by: string | null;
+    dispensed_at: string | null;
+    status: string | null;
+}
+
+interface ExpiringProduct {
+    id: number;
+    product_name: string;
+    product_code: string | null;
+    batch_number: string | null;
+    quantity: number | null;
+    unit: string | null;
+    expiry_date: string | null;
+    days_to_expiry: number | null;
+}
+
+interface ProductBatch {
+    id: number;
+    product_name: string;
+    product_code: string | null;
+    batch_number: string | null;
+    supplier: string | null;
+    quantity_received: number | null;
+    quantity_remaining: number | null;
+    unit: string | null;
+    received_at: string | null;
+    expiry_date: string | null;
+}
+
+type TabId = 'requests' | 'dispensations' | 'expiring' | 'batches';
+
+// ─── Shared helpers ─────────────────────────────────────────
+const formatMoney = (value: number | null | undefined) =>
+    value != null ? `$${Number(value).toFixed(2)}` : '—';
+
+const formatDate = (value: string | null | undefined) =>
+    value ? new Date(value).toLocaleDateString() : '—';
+
+const priorityClasses: Record<string, string> = {
+    low: 'bg-slate-100 text-slate-600 border-slate-200',
+    normal: 'bg-slate-100 text-slate-600 border-slate-200',
+    medium: 'bg-amber-50 text-amber-700 border-amber-200',
+    high: 'bg-orange-50 text-orange-700 border-orange-200',
+    urgent: 'bg-red-50 text-red-700 border-red-200',
+};
+
+const statusConfig: Record<
+    string,
+    { label: string; badge: string; dot: string }
+> = {
+    pending: {
+        label: 'Pending',
+        badge: 'bg-amber-50 text-amber-700 border-amber-200',
+        dot: 'bg-amber-500',
+    },
+    approved: {
+        label: 'Approved',
+        badge: 'bg-blue-50 text-blue-700 border-blue-200',
+        dot: 'bg-blue-500',
+    },
+    fulfilled: {
+        label: 'Fulfilled',
+        badge: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+        dot: 'bg-emerald-500',
+    },
+    completed: {
+        label: 'Completed',
+        badge: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+        dot: 'bg-emerald-500',
+    },
+    dispensed: {
+        label: 'Dispensed',
+        badge: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+        dot: 'bg-emerald-500',
+    },
+    rejected: {
+        label: 'Rejected',
+        badge: 'bg-red-50 text-red-700 border-red-200',
+        dot: 'bg-red-500',
+    },
+    cancelled: {
+        label: 'Cancelled',
+        badge: 'bg-slate-100 text-slate-600 border-slate-200',
+        dot: 'bg-slate-400',
+    },
+};
+
+const StatusBadge = ({ value }: { value: string | null }) => {
+    const cfg = statusConfig[value ?? ''] ?? statusConfig.pending;
+    return (
+        <span
+            className={cn(
+                'inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11px] font-medium',
+                cfg.badge,
+            )}
+        >
+            <span className={cn('h-1.5 w-1.5 rounded-full', cfg.dot)} />
+            {cfg.label}
+        </span>
+    );
+};
+
+const ExpiryBadge = ({ days }: { days: number | null }) => {
+    if (days == null) return <span className="text-slate-400">—</span>;
+
+    let cls = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+    let label = `${days} days`;
+
+    if (days <= 0) {
+        cls = 'bg-red-50 text-red-700 border-red-200';
+        label = 'Expired';
+    } else if (days <= 30) {
+        cls = 'bg-orange-50 text-orange-700 border-orange-200';
+    } else if (days <= 90) {
+        cls = 'bg-amber-50 text-amber-700 border-amber-200';
+    }
+
+    return (
+        <span
+            className={cn(
+                'inline-flex rounded-md border px-2 py-0.5 text-[11px] font-medium',
+                cls,
+            )}
+        >
+            {label}
+        </span>
+    );
+};
+
+const ProductCell = ({ name, code }: { name: string; code: string | null }) => (
+    <div className="flex items-center gap-2">
+        <div className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-slate-600">
+            <Package size={13} />
+        </div>
+        <div className="min-w-0">
+            <p className="text-sm font-semibold text-slate-800">{name}</p>
+            <p className="font-mono text-[10px] text-slate-400">
+                {code ?? '—'}
+            </p>
+        </div>
+    </div>
+);
+
+const QtyCell = ({
+    value,
+    unit,
+}: {
+    value: number | null;
+    unit: string | null;
+}) => (
+    <span className="text-sm font-medium text-slate-800 tabular-nums">
+        {value ?? 0}
+        {unit ? (
+            <span className="ml-1 text-xs text-slate-400">{unit}</span>
+        ) : null}
+    </span>
+);
+
+const TextCell = ({ value }: { value: string | null }) => (
+    <span className="text-sm text-slate-700">{value ?? '—'}</span>
+);
+
+const DateCell = ({ value }: { value: string | null }) => (
+    <span className="text-xs text-slate-600">{formatDate(value)}</span>
+);
+
 export default function BulkStore() {
-    const { orderedItems, auth } = usePage().props as {
+    const {
+        orderedItems,
+        dispensations,
+        expiringProducts,
+        productBatches,
+        auth,
+    } = usePage().props as {
         orderedItems?: OrderedItem[];
-        auth: any;
+        dispensations?: Dispensation[];
+        expiringProducts?: ExpiringProduct[];
+        productBatches?: ProductBatch[];
+        auth: {
+            user?: {
+                name?: string;
+                profile?: {
+                    department_id?: number | string;
+                    department?: string;
+                };
+            };
+        };
     };
 
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [detailsItem, setDetailsItem] = useState<OrderedItem | null>(null);
+    const [drawerOrder, setDrawerOrder] = useState<OrderedItem | null>(null);
+    const [activeTab, setActiveTab] = useState<TabId>('requests');
 
+    /* ── Product Request (orders) ── */
     const columns: Column<OrderedItem>[] = [
         {
             id: 'requisition_number',
@@ -79,16 +286,12 @@ export default function BulkStore() {
             label: 'Department',
             sortable: true,
             filterable: true,
-            format: (value) => (
-                <span className="text-sm text-slate-700">{value ?? '—'}</span>
-            ),
+            format: (value) => <TextCell value={value} />,
         },
         {
             id: 'requested_by',
             label: 'Requested By',
-            format: (value) => (
-                <span className="text-sm text-slate-700">{value ?? '—'}</span>
-            ),
+            format: (value) => <TextCell value={value} />,
         },
         {
             id: 'items_count',
@@ -107,7 +310,7 @@ export default function BulkStore() {
             sortable: true,
             format: (value) => (
                 <span className="text-sm font-medium text-slate-800 tabular-nums">
-                    {value != null ? `$${Number(value).toFixed(2)}` : '—'}
+                    {formatMoney(value)}
                 </span>
             ),
         },
@@ -116,14 +319,8 @@ export default function BulkStore() {
             label: 'Priority',
             sortable: true,
             format: (value) => {
-                const map: Record<string, string> = {
-                    low: 'bg-slate-100 text-slate-600 border-slate-200',
-                    normal: 'bg-slate-100 text-slate-600 border-slate-200',
-                    medium: 'bg-amber-50 text-amber-700 border-amber-200',
-                    high: 'bg-orange-50 text-orange-700 border-orange-200',
-                    urgent: 'bg-red-50 text-red-700 border-red-200',
-                };
-                const cls = map[value ?? ''] ?? map.normal;
+                const cls =
+                    priorityClasses[value ?? ''] ?? priorityClasses.normal;
                 return (
                     <span
                         className={cn(
@@ -169,67 +366,179 @@ export default function BulkStore() {
                 rejected: 'error',
                 cancelled: 'error',
             },
-            format: (value) => {
-                const config: Record<
-                    string,
-                    { label: string; badge: string; dot: string }
-                > = {
-                    pending: {
-                        label: 'Pending',
-                        badge: 'bg-amber-50 text-amber-700 border-amber-200',
-                        dot: 'bg-amber-500',
-                    },
-                    approved: {
-                        label: 'Approved',
-                        badge: 'bg-blue-50 text-blue-700 border-blue-200',
-                        dot: 'bg-blue-500',
-                    },
-                    fulfilled: {
-                        label: 'Fulfilled',
-                        badge: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-                        dot: 'bg-emerald-500',
-                    },
-                    completed: {
-                        label: 'Completed',
-                        badge: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-                        dot: 'bg-emerald-500',
-                    },
-                    rejected: {
-                        label: 'Rejected',
-                        badge: 'bg-red-50 text-red-700 border-red-200',
-                        dot: 'bg-red-500',
-                    },
-                    cancelled: {
-                        label: 'Cancelled',
-                        badge: 'bg-slate-100 text-slate-600 border-slate-200',
-                        dot: 'bg-slate-400',
-                    },
-                };
-                const cfg = config[value ?? ''] ?? config.pending;
-                return (
-                    <span
-                        className={cn(
-                            'inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11px] font-medium',
-                            cfg.badge,
-                        )}
-                    >
-                        <span
-                            className={cn('h-1.5 w-1.5 rounded-full', cfg.dot)}
-                        />
-                        {cfg.label}
-                    </span>
-                );
-            },
+            format: (value) => <StatusBadge value={value} />,
         },
     ];
 
-    // ─── Row action: open details ───
     const actions: Action<OrderedItem>[] = [
         {
-            label: 'View Details',
+            label: 'View Items',
             icon: <Eye size={16} />,
             color: 'info',
-            onClick: (row) => setDetailsItem(row),
+            onClick: (row) => setDrawerOrder(row),
+        },
+    ];
+
+    /* ── Dispensations ── */
+    const dispensationColumns: Column<Dispensation>[] = [
+        {
+            id: 'reference',
+            label: 'Reference',
+            sortable: true,
+            filterable: true,
+            format: (value, row) => (
+                <span className="font-mono text-xs font-semibold text-slate-800">
+                    {value ?? `DSP-${row.id}`}
+                </span>
+            ),
+        },
+        {
+            id: 'product_name',
+            label: 'Product',
+            sortable: true,
+            filterable: true,
+            format: (value, row) => (
+                <ProductCell name={value} code={row.product_code} />
+            ),
+        },
+        {
+            id: 'department',
+            label: 'Department',
+            sortable: true,
+            filterable: true,
+            format: (value) => <TextCell value={value} />,
+        },
+        {
+            id: 'quantity',
+            label: 'Quantity',
+            sortable: true,
+            format: (value, row) => <QtyCell value={value} unit={row.unit} />,
+        },
+        {
+            id: 'dispensed_by',
+            label: 'Dispensed By',
+            format: (value) => <TextCell value={value} />,
+        },
+        {
+            id: 'dispensed_at',
+            label: 'Date',
+            sortable: true,
+            format: (value) => <DateCell value={value} />,
+        },
+        {
+            id: 'status',
+            label: 'Status',
+            sortable: true,
+            filterable: true,
+            filterType: 'status',
+            statusColors: {
+                pending: 'warning',
+                dispensed: 'success',
+                completed: 'success',
+                cancelled: 'error',
+            },
+            format: (value) => <StatusBadge value={value ?? 'dispensed'} />,
+        },
+    ];
+
+    /* ── Expiring Products ── */
+    const expiringColumns: Column<ExpiringProduct>[] = [
+        {
+            id: 'product_name',
+            label: 'Product',
+            sortable: true,
+            filterable: true,
+            format: (value, row) => (
+                <ProductCell name={value} code={row.product_code} />
+            ),
+        },
+        {
+            id: 'batch_number',
+            label: 'Batch',
+            sortable: true,
+            filterable: true,
+            format: (value) => (
+                <span className="font-mono text-xs text-slate-700">
+                    {value ?? '—'}
+                </span>
+            ),
+        },
+        {
+            id: 'quantity',
+            label: 'On Hand',
+            sortable: true,
+            format: (value, row) => <QtyCell value={value} unit={row.unit} />,
+        },
+        {
+            id: 'expiry_date',
+            label: 'Expiry Date',
+            sortable: true,
+            format: (value) => (
+                <span className="font-mono text-xs text-slate-700">
+                    {value ?? '—'}
+                </span>
+            ),
+        },
+        {
+            id: 'days_to_expiry',
+            label: 'Time Left',
+            sortable: true,
+            format: (value) => <ExpiryBadge days={value} />,
+        },
+    ];
+
+    /* ── Product Batch ── */
+    const batchColumns: Column<ProductBatch>[] = [
+        {
+            id: 'product_name',
+            label: 'Product',
+            sortable: true,
+            filterable: true,
+            format: (value, row) => (
+                <ProductCell name={value} code={row.product_code} />
+            ),
+        },
+        {
+            id: 'batch_number',
+            label: 'Batch #',
+            sortable: true,
+            filterable: true,
+            format: (value) => (
+                <span className="font-mono text-xs font-semibold text-slate-800">
+                    {value ?? '—'}
+                </span>
+            ),
+        },
+        {
+            id: 'supplier',
+            label: 'Supplier',
+            sortable: true,
+            filterable: true,
+            format: (value) => <TextCell value={value} />,
+        },
+        {
+            id: 'quantity_received',
+            label: 'Received',
+            sortable: true,
+            format: (value, row) => <QtyCell value={value} unit={row.unit} />,
+        },
+        {
+            id: 'quantity_remaining',
+            label: 'Remaining',
+            sortable: true,
+            format: (value, row) => <QtyCell value={value} unit={row.unit} />,
+        },
+        {
+            id: 'received_at',
+            label: 'Received On',
+            sortable: true,
+            format: (value) => <DateCell value={value} />,
+        },
+        {
+            id: 'expiry_date',
+            label: 'Expiry',
+            sortable: true,
+            format: (value) => <DateCell value={value} />,
         },
     ];
 
@@ -241,54 +550,357 @@ export default function BulkStore() {
     return (
         <AppLayout
             breadcrumbs={[
-                { title: 'Nurses', href: '/bulk-store' },
+                { title: 'Radiology', href: '/bulk-store' },
                 { title: 'Bulk Store', href: '' },
             ]}
         >
+            <PageHeader
+                icon={<BarcodeIcon className="h-5 w-5" />}
+                title="Bulk Store"
+                subtitle="Order from bulk store"
+                tabVariant="underline"
+                actions={[
+                    {
+                        label: 'Expiring Products',
+                        variant:
+                            activeTab === 'expiring' ? 'default' : 'outline',
+                        size: 'sm',
+                        icon: <Hourglass size={14} />,
+                        onClick: () => setActiveTab('expiring'),
+                    },
+                    {
+                        label: 'Product Batch',
+                        variant:
+                            activeTab === 'batches' ? 'default' : 'outline',
+                        size: 'sm',
+                        icon: <Layers size={14} />,
+                        onClick: () => setActiveTab('batches'),
+                    },
+                    {
+                        label: 'Product Request',
+                        variant:
+                            activeTab === 'requests' ? 'default' : 'outline',
+                        size: 'sm',
+                        icon: <ClipboardList size={14} />,
+                        onClick: () => setActiveTab('requests'),
+                    },
+                ]}
+                defaultTabId="overview"
+            />
             <div className="h-full space-y-4 bg-blue-50 p-4">
-                <PageHeader
-                    icon={<BarcodeIcon className="h-5 w-5" />}
-                    title="Bulk Store"
-                    subtitle="Order from bulk store"
-                    tabVariant="underline"
-                    actions={[
-                        {
-                            label: 'Order from Bulk Store',
-                            onClick: () => setIsModalOpen(true),
-                        },
-                    ]}
-                    defaultTabId="overview"
-                />
+                {activeTab === 'requests' && (
+                    <>
+                        <div className="flex justify-end">
+                            <button
+                                type="button"
+                                onClick={() => setIsModalOpen(true)}
+                                className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-blue-700"
+                            >
+                                <Plus size={14} />
+                                New Request
+                            </button>
+                        </div>
+                        <ReusableTable
+                            columns={columns}
+                            data={orderedItems ?? []}
+                            actions={actions}
+                            loading={false}
+                            filterPlaceholder="Search orders..."
+                            rowsPerPageOptions={[8, 15, 25, 50]}
+                            defaultRowsPerPage={8}
+                            emptyMessage="No orders found. Start by ordering from the bulk store."
+                            className="shadow-sm"
+                        />
+                    </>
+                )}
 
-                <ReusableTable
-                    title="Ordered Items"
-                    columns={columns}
-                    data={orderedItems ?? []}
-                    actions={actions} // ← add this
-                    loading={false}
-                    filterPlaceholder="Search by product..."
-                    rowsPerPageOptions={[8, 15, 25, 50]}
-                    defaultRowsPerPage={8}
-                    emptyMessage="No orders found. Start by ordering from the bulk store."
-                    className="shadow-sm"
-                />
+                {activeTab === 'expiring' && (
+                    <ReusableTable
+                        columns={expiringColumns}
+                        data={expiringProducts ?? []}
+                        loading={false}
+                        filterPlaceholder="Search expiring products..."
+                        rowsPerPageOptions={[8, 15, 25, 50]}
+                        defaultRowsPerPage={8}
+                        emptyMessage="No products are close to expiry."
+                        className="shadow-sm"
+                    />
+                )}
 
-                {/* Order creation modal */}
+                {activeTab === 'batches' && (
+                    <ReusableTable
+                        columns={batchColumns}
+                        data={productBatches ?? []}
+                        loading={false}
+                        filterPlaceholder="Search batches..."
+                        rowsPerPageOptions={[8, 15, 25, 50]}
+                        defaultRowsPerPage={8}
+                        emptyMessage="No product batches found."
+                        className="shadow-sm"
+                    />
+                )}
+
                 <OrderItemsModal
                     isOpen={isModalOpen}
                     onClose={() => setIsModalOpen(false)}
                     onSuccess={handleOrderSubmit}
                     authenticated={auth}
-                    departmentId={auth?.user?.departmentId ?? 6}
+                    departmentId={auth?.user?.profile?.department_id}
                 />
 
-                {/* Details modal */}
-                <OrderItemDetailsModal
-                    isOpen={!!detailsItem}
-                    onClose={() => setDetailsItem(null)}
-                    item={detailsItem as OrderedItemDetails | null}
+                <OrderDrawer
+                    order={drawerOrder}
+                    onClose={() => setDrawerOrder(null)}
                 />
             </div>
         </AppLayout>
+    );
+}
+
+/* ============================================================
+ * Right-side sliding drawer (narrow, professional)
+ * ============================================================ */
+function OrderDrawer({
+    order,
+    onClose,
+}: {
+    order: OrderedItem | null;
+    onClose: () => void;
+}) {
+    const open = !!order;
+    const items = order?.items ?? [];
+
+    return (
+        <>
+            {/* Backdrop */}
+            <div
+                className={cn(
+                    'fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-[1px] transition-opacity',
+                    open ? 'opacity-100' : 'pointer-events-none opacity-0',
+                )}
+                onClick={onClose}
+                aria-hidden={!open}
+            />
+
+            {/* Drawer panel */}
+            <aside
+                role="dialog"
+                aria-modal="true"
+                aria-label="Order items"
+                className={cn(
+                    'fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col bg-white shadow-2xl transition-transform duration-300 ease-out',
+                    open ? 'translate-x-0' : 'translate-x-full',
+                )}
+            >
+                {/* Header */}
+                <header className="flex items-start justify-between gap-4 bg-blue-200 px-4 py-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-blue-600">
+                            <Boxes size={15} className="text-white" />
+                        </div>
+                        <div className="min-w-0">
+                            <h2 className="truncate text-sm font-semibold text-white">
+                                {order?.requisition_number ?? 'Requisition'}
+                            </h2>
+                            <p className="font-mono text-[10px] text-slate-400">
+                                {order?.requisition_uuid?.slice(0, 12)}
+                            </p>
+                        </div>
+                    </div>
+                    <button
+                        onClick={onClose}
+                        className="shrink-0 rounded-md p-1.5 text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-700"
+                        aria-label="Close drawer"
+                    >
+                        <X size={18} />
+                    </button>
+                </header>
+
+                {/* Meta strip — requested_by appears ONCE here */}
+                {order && (
+                    <div className="grid grid-cols-2 gap-2.5 border-b border-slate-200 bg-white px-4 py-3 text-xs">
+                        <Meta
+                            icon={<User size={12} />}
+                            label="Requested by"
+                            value={order.requested_by ?? '—'}
+                        />
+                        <Meta
+                            icon={<Building2 size={12} />}
+                            label="Department"
+                            value={order.department ?? '—'}
+                        />
+                        <Meta
+                            icon={<Calendar size={12} />}
+                            label="Requested"
+                            value={
+                                order.requested_at
+                                    ? new Date(
+                                          order.requested_at,
+                                      ).toLocaleDateString()
+                                    : '—'
+                            }
+                        />
+                        <Meta
+                            icon={<Hash size={12} />}
+                            label="Items"
+                            value={`${order.items_count ?? items.length}`}
+                        />
+                        {order.justification && (
+                            <div className="col-span-2 rounded-md border border-slate-200 bg-slate-50 p-2 text-[11px] text-slate-600">
+                                <span className="font-medium text-slate-500">
+                                    Justification:{' '}
+                                </span>
+                                {order.justification}
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Item list */}
+                <div className="flex-1 overflow-y-auto px-4 py-3">
+                    {items.length === 0 ? (
+                        <div className="flex h-full flex-col items-center justify-center text-center text-slate-400">
+                            <Package size={32} className="mb-2 opacity-50" />
+                            <p className="text-sm">
+                                No items on this requisition.
+                            </p>
+                        </div>
+                    ) : (
+                        <ul className="space-y-2">
+                            {items.map((item, idx) => (
+                                <li
+                                    key={item.id}
+                                    className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm"
+                                >
+                                    {/* Top row: index + name (left) · qty (right) */}
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="flex min-w-0 items-start gap-2">
+                                            <span className="mt-0.5 flex h-5 min-w-[20px] shrink-0 items-center justify-center rounded bg-slate-100 px-1.5 text-[10px] font-semibold text-slate-500">
+                                                {idx + 1}
+                                            </span>
+                                            <div className="min-w-0">
+                                                <p className="truncate text-sm font-semibold text-slate-800">
+                                                    {item.product_name}
+                                                </p>
+                                                <p className="font-mono text-[10px] text-slate-400">
+                                                    {item.product_code ??
+                                                        `PID ${item.product_id}`}
+                                                    {item.unit
+                                                        ? ` · ${item.unit}`
+                                                        : ''}
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        <div className="shrink-0 text-right">
+                                            <p className="text-[9px] tracking-wide text-slate-400 uppercase">
+                                                Qty
+                                            </p>
+                                            <p className="text-base font-semibold text-slate-800 tabular-nums">
+                                                {item.quantity_requested ?? 0}
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    {/* Status + batch / expiry / notes */}
+                                    {(item.status ||
+                                        item.batch_number ||
+                                        item.expiry_date ||
+                                        item.notes) && (
+                                        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-100 pt-2 text-[10px] text-slate-500">
+                                            {item.status && (
+                                                <StatusBadge
+                                                    value={item.status}
+                                                />
+                                            )}
+                                            {item.batch_number && (
+                                                <span>
+                                                    Batch:{' '}
+                                                    <span className="font-mono text-slate-700">
+                                                        {item.batch_number}
+                                                    </span>
+                                                </span>
+                                            )}
+                                            {item.expiry_date && (
+                                                <span>
+                                                    Expiry:{' '}
+                                                    <span className="text-slate-700">
+                                                        {new Date(
+                                                            item.expiry_date,
+                                                        ).toLocaleDateString()}
+                                                    </span>
+                                                </span>
+                                            )}
+                                            {item.notes && (
+                                                <span className="basis-full text-slate-600">
+                                                    <span className="font-medium text-slate-500">
+                                                        Notes:{' '}
+                                                    </span>
+                                                    {item.notes}
+                                                </span>
+                                            )}
+                                        </div>
+                                    )}
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </div>
+
+                {/* ─── Professional footer with badges ─── */}
+                {order && (
+                    <footer className="relative border-t border-slate-200 bg-gradient-to-r from-slate-50 via-white to-slate-50 px-4 py-3">
+                        <span className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-blue-500 via-indigo-500 to-emerald-500" />
+
+                        <div className="flex items-center justify-between gap-3">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                                <StatusBadge value={order.status} />
+                                <span
+                                    className={cn(
+                                        'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold capitalize',
+                                        priorityClasses[order.priority ?? ''] ??
+                                            priorityClasses.normal,
+                                    )}
+                                >
+                                    {order.priority ?? 'Normal'}
+                                </span>
+                            </div>
+
+                            <div className="text-right">
+                                <p className="text-[9px] tracking-wide text-slate-400 uppercase">
+                                    Estimated total
+                                </p>
+                                <p className="text-lg font-bold text-slate-900 tabular-nums">
+                                    {formatMoney(order.estimated_total)}
+                                </p>
+                            </div>
+                        </div>
+                    </footer>
+                )}
+            </aside>
+        </>
+    );
+}
+
+/* ─── Small presentational helper ─────────────────────────── */
+function Meta({
+    icon,
+    label,
+    value,
+}: {
+    icon: React.ReactNode;
+    label: string;
+    value: string;
+}) {
+    return (
+        <div className="min-w-0">
+            <p className="flex items-center gap-1 text-[10px] tracking-wide text-slate-400 uppercase">
+                {icon}
+                {label}
+            </p>
+            <p className="truncate text-xs font-medium text-slate-700">
+                {value}
+            </p>
+        </div>
     );
 }

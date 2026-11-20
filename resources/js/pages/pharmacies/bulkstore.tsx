@@ -7,6 +7,11 @@ import {
     BarcodeIcon,
     Eye,
     Package,
+    PackageCheck,
+    Hourglass,
+    Layers,
+    ClipboardList,
+    Plus,
     X,
     Calendar,
     User,
@@ -52,9 +57,51 @@ interface OrderedItem {
     items: RequisitionItem[];
 }
 
+interface Dispensation {
+    id: number;
+    reference: string | null;
+    product_name: string;
+    product_code: string | null;
+    department: string | null;
+    quantity: number | null;
+    unit: string | null;
+    dispensed_by: string | null;
+    dispensed_at: string | null;
+    status: string | null;
+}
+
+interface ExpiringProduct {
+    id: number;
+    product_name: string;
+    product_code: string | null;
+    batch_number: string | null;
+    quantity: number | null;
+    unit: string | null;
+    expiry_date: string | null;
+    days_to_expiry: number | null;
+}
+
+interface ProductBatch {
+    id: number;
+    product_name: string;
+    product_code: string | null;
+    batch_number: string | null;
+    supplier: string | null;
+    quantity_received: number | null;
+    quantity_remaining: number | null;
+    unit: string | null;
+    received_at: string | null;
+    expiry_date: string | null;
+}
+
+type TabId = 'requests' | 'dispensations' | 'expiring' | 'batches';
+
 // ─── Shared helpers ─────────────────────────────────────────
 const formatMoney = (value: number | null | undefined) =>
     value != null ? `$${Number(value).toFixed(2)}` : '—';
+
+const formatDate = (value: string | null | undefined) =>
+    value ? new Date(value).toLocaleDateString() : '—';
 
 const priorityClasses: Record<string, string> = {
     low: 'bg-slate-100 text-slate-600 border-slate-200',
@@ -88,6 +135,11 @@ const statusConfig: Record<
         badge: 'bg-emerald-50 text-emerald-700 border-emerald-200',
         dot: 'bg-emerald-500',
     },
+    dispensed: {
+        label: 'Dispensed',
+        badge: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+        dot: 'bg-emerald-500',
+    },
     rejected: {
         label: 'Rejected',
         badge: 'bg-red-50 text-red-700 border-red-200',
@@ -115,9 +167,82 @@ const StatusBadge = ({ value }: { value: string | null }) => {
     );
 };
 
+const ExpiryBadge = ({ days }: { days: number | null }) => {
+    if (days == null) return <span className="text-slate-400">—</span>;
+
+    let cls = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+    let label = `${days} days`;
+
+    if (days <= 0) {
+        cls = 'bg-red-50 text-red-700 border-red-200';
+        label = 'Expired';
+    } else if (days <= 30) {
+        cls = 'bg-orange-50 text-orange-700 border-orange-200';
+    } else if (days <= 90) {
+        cls = 'bg-amber-50 text-amber-700 border-amber-200';
+    }
+
+    return (
+        <span
+            className={cn(
+                'inline-flex rounded-md border px-2 py-0.5 text-[11px] font-medium',
+                cls,
+            )}
+        >
+            {label}
+        </span>
+    );
+};
+
+const ProductCell = ({ name, code }: { name: string; code: string | null }) => (
+    <div className="flex items-center gap-2">
+        <div className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-slate-600">
+            <Package size={13} />
+        </div>
+        <div className="min-w-0">
+            <p className="text-sm font-semibold text-slate-800">{name}</p>
+            <p className="font-mono text-[10px] text-slate-400">
+                {code ?? '—'}
+            </p>
+        </div>
+    </div>
+);
+
+const QtyCell = ({
+    value,
+    unit,
+}: {
+    value: number | null;
+    unit: string | null;
+}) => (
+    <span className="text-sm font-medium text-slate-800 tabular-nums">
+        {value ?? 0}
+        {unit ? (
+            <span className="ml-1 text-xs text-slate-400">{unit}</span>
+        ) : null}
+    </span>
+);
+
+const TextCell = ({ value }: { value: string | null }) => (
+    <span className="text-sm text-slate-700">{value ?? '—'}</span>
+);
+
+const DateCell = ({ value }: { value: string | null }) => (
+    <span className="text-xs text-slate-600">{formatDate(value)}</span>
+);
+
 export default function BulkStore() {
-    const { orderedItems, auth } = usePage().props as {
+    const {
+        orderedItems,
+        dispensations,
+        expiringProducts,
+        productBatches,
+        auth,
+    } = usePage().props as {
         orderedItems?: OrderedItem[];
+        dispensations?: Dispensation[];
+        expiringProducts?: ExpiringProduct[];
+        productBatches?: ProductBatch[];
         auth: {
             user?: {
                 name?: string;
@@ -131,7 +256,9 @@ export default function BulkStore() {
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [drawerOrder, setDrawerOrder] = useState<OrderedItem | null>(null);
+    const [activeTab, setActiveTab] = useState<TabId>('requests');
 
+    /* ── Product Request (orders) ── */
     const columns: Column<OrderedItem>[] = [
         {
             id: 'requisition_number',
@@ -159,16 +286,12 @@ export default function BulkStore() {
             label: 'Department',
             sortable: true,
             filterable: true,
-            format: (value) => (
-                <span className="text-sm text-slate-700">{value ?? '—'}</span>
-            ),
+            format: (value) => <TextCell value={value} />,
         },
         {
             id: 'requested_by',
             label: 'Requested By',
-            format: (value) => (
-                <span className="text-sm text-slate-700">{value ?? '—'}</span>
-            ),
+            format: (value) => <TextCell value={value} />,
         },
         {
             id: 'items_count',
@@ -256,6 +379,169 @@ export default function BulkStore() {
         },
     ];
 
+    /* ── Dispensations ── */
+    const dispensationColumns: Column<Dispensation>[] = [
+        {
+            id: 'reference',
+            label: 'Reference',
+            sortable: true,
+            filterable: true,
+            format: (value, row) => (
+                <span className="font-mono text-xs font-semibold text-slate-800">
+                    {value ?? `DSP-${row.id}`}
+                </span>
+            ),
+        },
+        {
+            id: 'product_name',
+            label: 'Product',
+            sortable: true,
+            filterable: true,
+            format: (value, row) => (
+                <ProductCell name={value} code={row.product_code} />
+            ),
+        },
+        {
+            id: 'department',
+            label: 'Department',
+            sortable: true,
+            filterable: true,
+            format: (value) => <TextCell value={value} />,
+        },
+        {
+            id: 'quantity',
+            label: 'Quantity',
+            sortable: true,
+            format: (value, row) => <QtyCell value={value} unit={row.unit} />,
+        },
+        {
+            id: 'dispensed_by',
+            label: 'Dispensed By',
+            format: (value) => <TextCell value={value} />,
+        },
+        {
+            id: 'dispensed_at',
+            label: 'Date',
+            sortable: true,
+            format: (value) => <DateCell value={value} />,
+        },
+        {
+            id: 'status',
+            label: 'Status',
+            sortable: true,
+            filterable: true,
+            filterType: 'status',
+            statusColors: {
+                pending: 'warning',
+                dispensed: 'success',
+                completed: 'success',
+                cancelled: 'error',
+            },
+            format: (value) => <StatusBadge value={value ?? 'dispensed'} />,
+        },
+    ];
+
+    /* ── Expiring Products ── */
+    const expiringColumns: Column<ExpiringProduct>[] = [
+        {
+            id: 'product_name',
+            label: 'Product',
+            sortable: true,
+            filterable: true,
+            format: (value, row) => (
+                <ProductCell name={value} code={row.product_code} />
+            ),
+        },
+        {
+            id: 'batch_number',
+            label: 'Batch',
+            sortable: true,
+            filterable: true,
+            format: (value) => (
+                <span className="font-mono text-xs text-slate-700">
+                    {value ?? '—'}
+                </span>
+            ),
+        },
+        {
+            id: 'quantity',
+            label: 'On Hand',
+            sortable: true,
+            format: (value, row) => <QtyCell value={value} unit={row.unit} />,
+        },
+        {
+            id: 'expiry_date',
+            label: 'Expiry Date',
+            sortable: true,
+            format: (value) => (
+                <span className="font-mono text-xs text-slate-700">
+                    {value ?? '—'}
+                </span>
+            ),
+        },
+        {
+            id: 'days_to_expiry',
+            label: 'Time Left',
+            sortable: true,
+            format: (value) => <ExpiryBadge days={value} />,
+        },
+    ];
+
+    /* ── Product Batch ── */
+    const batchColumns: Column<ProductBatch>[] = [
+        {
+            id: 'product_name',
+            label: 'Product',
+            sortable: true,
+            filterable: true,
+            format: (value, row) => (
+                <ProductCell name={value} code={row.product_code} />
+            ),
+        },
+        {
+            id: 'batch_number',
+            label: 'Batch #',
+            sortable: true,
+            filterable: true,
+            format: (value) => (
+                <span className="font-mono text-xs font-semibold text-slate-800">
+                    {value ?? '—'}
+                </span>
+            ),
+        },
+        {
+            id: 'supplier',
+            label: 'Supplier',
+            sortable: true,
+            filterable: true,
+            format: (value) => <TextCell value={value} />,
+        },
+        {
+            id: 'quantity_received',
+            label: 'Received',
+            sortable: true,
+            format: (value, row) => <QtyCell value={value} unit={row.unit} />,
+        },
+        {
+            id: 'quantity_remaining',
+            label: 'Remaining',
+            sortable: true,
+            format: (value, row) => <QtyCell value={value} unit={row.unit} />,
+        },
+        {
+            id: 'received_at',
+            label: 'Received On',
+            sortable: true,
+            format: (value) => <DateCell value={value} />,
+        },
+        {
+            id: 'expiry_date',
+            label: 'Expiry',
+            sortable: true,
+            format: (value) => <DateCell value={value} />,
+        },
+    ];
+
     const handleOrderSubmit = () => {
         setIsModalOpen(false);
         router.reload({ only: ['orderedItems'] });
@@ -268,33 +554,91 @@ export default function BulkStore() {
                 { title: 'Bulk Store', href: '' },
             ]}
         >
+            <PageHeader
+                icon={<BarcodeIcon className="h-5 w-5" />}
+                title="Bulk Store"
+                subtitle="Order from bulk store"
+                tabVariant="underline"
+                actions={[
+                    {
+                        label: 'Expiring Products',
+                        variant:
+                            activeTab === 'expiring' ? 'default' : 'outline',
+                        size: 'sm',
+                        icon: <Hourglass size={14} />,
+                        onClick: () => setActiveTab('expiring'),
+                    },
+                    {
+                        label: 'Product Batch',
+                        variant:
+                            activeTab === 'batches' ? 'default' : 'outline',
+                        size: 'sm',
+                        icon: <Layers size={14} />,
+                        onClick: () => setActiveTab('batches'),
+                    },
+                    {
+                        label: 'Product Request',
+                        variant:
+                            activeTab === 'requests' ? 'default' : 'outline',
+                        size: 'sm',
+                        icon: <ClipboardList size={14} />,
+                        onClick: () => setActiveTab('requests'),
+                    },
+                ]}
+                defaultTabId="overview"
+            />
             <div className="h-full space-y-4 bg-blue-50 p-4">
-                <PageHeader
-                    icon={<BarcodeIcon className="h-5 w-5" />}
-                    title="Bulk Store"
-                    subtitle="Order from bulk store"
-                    tabVariant="underline"
-                    actions={[
-                        {
-                            label: 'Order from Bulk Store',
-                            onClick: () => setIsModalOpen(true),
-                        },
-                    ]}
-                    defaultTabId="overview"
-                />
+                {activeTab === 'requests' && (
+                    <>
+                        <div className="flex justify-end">
+                            <button
+                                type="button"
+                                onClick={() => setIsModalOpen(true)}
+                                className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-blue-700"
+                            >
+                                <Plus size={14} />
+                                New Request
+                            </button>
+                        </div>
+                        <ReusableTable
+                            columns={columns}
+                            data={orderedItems ?? []}
+                            actions={actions}
+                            loading={false}
+                            filterPlaceholder="Search orders..."
+                            rowsPerPageOptions={[8, 15, 25, 50]}
+                            defaultRowsPerPage={8}
+                            emptyMessage="No orders found. Start by ordering from the bulk store."
+                            className="shadow-sm"
+                        />
+                    </>
+                )}
 
-                <ReusableTable
-                    title="Ordered Items"
-                    columns={columns}
-                    data={orderedItems ?? []}
-                    actions={actions}
-                    loading={false}
-                    filterPlaceholder="Search orders..."
-                    rowsPerPageOptions={[8, 15, 25, 50]}
-                    defaultRowsPerPage={8}
-                    emptyMessage="No orders found. Start by ordering from the bulk store."
-                    className="shadow-sm"
-                />
+                {activeTab === 'expiring' && (
+                    <ReusableTable
+                        columns={expiringColumns}
+                        data={expiringProducts ?? []}
+                        loading={false}
+                        filterPlaceholder="Search expiring products..."
+                        rowsPerPageOptions={[8, 15, 25, 50]}
+                        defaultRowsPerPage={8}
+                        emptyMessage="No products are close to expiry."
+                        className="shadow-sm"
+                    />
+                )}
+
+                {activeTab === 'batches' && (
+                    <ReusableTable
+                        columns={batchColumns}
+                        data={productBatches ?? []}
+                        loading={false}
+                        filterPlaceholder="Search batches..."
+                        rowsPerPageOptions={[8, 15, 25, 50]}
+                        defaultRowsPerPage={8}
+                        emptyMessage="No product batches found."
+                        className="shadow-sm"
+                    />
+                )}
 
                 <OrderItemsModal
                     isOpen={isModalOpen}

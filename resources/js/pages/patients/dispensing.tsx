@@ -8,6 +8,8 @@ import {
     Layers,
     ClipboardList,
     Truck,
+    Receipt,
+    ReceiptIcon,
 } from 'lucide-react';
 import Notiflix from 'notiflix';
 import React, { useState } from 'react';
@@ -15,6 +17,13 @@ import PageHeader from '@/components/PageHeader';
 import type { Column, Action } from '@/components/ReusableTable';
 import ReusableTable from '@/components/ReusableTable';
 import PatientLayout from '@/layouts/patients/PatientLayout';
+import {
+    printReceipt,
+    RECEIPT_FACILITY,
+    type ReceiptData,
+    type ReceiptLine,
+    type PaperWidth,
+} from '@/utils/printReceipt';
 import { dispensationAPI } from '@/services/api';
 
 // Import modals
@@ -87,6 +96,13 @@ export const parsePrice = (raw: unknown): number => {
 
 export const getItemQuantity = (item: PrescriptionItem): number =>
     item.quantity ?? item.dosage_amount ?? 1;
+
+const getItemName = (item: PrescriptionItem): string =>
+    item.name ||
+    item.medicine_name ||
+    item.drug_name ||
+    item.service_name ||
+    'Drug';
 
 // ─── Priority meta ───────────────────────────────────────────────────────────
 
@@ -175,6 +191,50 @@ export default function Dispensation() {
     const handleViewItems = (prescription: Dispensation) => {
         setSelectedPrescription(prescription);
         setViewItemsModalOpen(true);
+    };
+
+    /**
+     * Thermal receipt (80mm Epson-style, monospace).
+     * - Nothing dispensed yet  -> PRESCRIPTION (what was prescribed)
+     * - Anything dispensed     -> DISPENSING RECEIPT (only what was handed out)
+     * Change the second argument to 58 for 58mm rolls.
+     */
+    const handlePrintReceipt = (prescription: Dispensation) => {
+        const items = prescription.items || [];
+        const hasDispensed = getTotalDispensedQuantity(items) > 0;
+
+        const sourceItems = hasDispensed
+            ? items.filter((i) => (i.quantity_dispensed || 0) > 0)
+            : items;
+
+        printReceipt(
+            {
+                type: hasDispensed ? 'dispensing' : 'prescription',
+                number: prescription.prescription_number,
+                patientName: prescription.patient_name,
+                patientNumber: prescription.patient_number,
+                status: prescription.status,
+                priority: getOverallPriority(prescription),
+                date: formatDate(
+                    prescription.created_at || prescription.prescribed_date,
+                ),
+                lines: sourceItems.map((item) => ({
+                    name: getItemName(item),
+                    detail: [
+                        item.dosage || item.strength,
+                        item.frequency,
+                        item.route,
+                    ]
+                        .filter(Boolean)
+                        .join(' | '),
+                    qty: getItemQuantity(item),
+                    dispensedQty: item.quantity_dispensed || 0,
+                    price: parsePrice(item.price),
+                })),
+                total: getTotalAmount(sourceItems),
+            },
+            80,
+        );
     };
 
     const handleDispenseClick = (prescription: Dispensation) => {
@@ -399,14 +459,7 @@ export default function Dispensation() {
             sortable: false,
             format: (_, row) => {
                 const items = row.items || [];
-                const names = items.map(
-                    (item) =>
-                        item.name ||
-                        item.medicine_name ||
-                        item.drug_name ||
-                        item.service_name ||
-                        'Drug',
-                );
+                const names = items.map((item) => getItemName(item));
                 const total = names.length;
                 return (
                     <div className="space-y-1">
@@ -556,10 +609,10 @@ export default function Dispensation() {
                 const config = getStatusBadge(value);
                 return (
                     <span
-                        className={`inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r ${config.gradient} px-3 py-1 text-xs font-medium text-white shadow-sm`}
+                        className={`inline-flex items-center gap-1.5 rounded-full bg-green-50 px-3 py-1 text-xs font-medium text-green-600 shadow-sm`}
                     >
                         {config.icon}
-                        {config.label}
+                        {value}
                     </span>
                 );
             },
@@ -570,6 +623,12 @@ export default function Dispensation() {
 
     const actions: Action<Dispensation>[] = [
         {
+            label: 'Print receipt',
+            icon: <ReceiptIcon size={16} />,
+            color: 'info',
+            onClick: (row) => handlePrintReceipt(row),
+        },
+        {
             label: 'View Items',
             icon: <Eye size={16} />,
             color: 'info',
@@ -577,7 +636,7 @@ export default function Dispensation() {
         },
         {
             label: 'Dispense',
-            icon: <Truck size={16} />,
+            icon: <Pill size={16} />,
             color: 'success',
             show: (row) =>
                 row.status !== 'dispensed' &&
@@ -598,15 +657,15 @@ export default function Dispensation() {
                 { title: 'Dispensation', href: '#' },
             ]}
         >
-            <div className="h-full space-y-6 bg-blue-50 p-2">
-                <PageHeader
-                    icon={<ClipboardList className="h-6 w-6" />}
-                    title="Dispensation"
-                    subtitle="Dispense prescribed medications to patients"
-                />
+            <PageHeader
+                icon={<ClipboardList className="h-6 w-6" />}
+                title="Dispensation"
+                subtitle="Dispense prescribed medications to patients"
+            />
 
+            <div className="h-full space-y-6 bg-blue-50 p-2">
                 <ReusableTable
-                    title="Prescriptions for Dispensation"
+                    // title="Prescriptions for Dispensation"
                     columns={columns}
                     data={displayData}
                     actions={actions}

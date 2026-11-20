@@ -10,6 +10,7 @@ import {
     Calendar,
     CreditCard,
     DollarSign,
+    Printer,
 } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
@@ -27,6 +28,13 @@ import {
 } from './components/payments';
 import StatusBadge from './components/payments/StatusBadge';
 import PageHeader from '@/components/PageHeader';
+import {
+    printReceipt,
+    RECEIPT_FACILITY,
+    type ReceiptData,
+    type ReceiptLine,
+    type PaperWidth,
+} from '@/utils/printReceipt';
 
 // ============================================================================
 // Types
@@ -157,6 +165,11 @@ const formatDate = (dateStr?: string): string => {
     }
 };
 
+const toNumber = (value: unknown): number => {
+    const n = typeof value === 'string' ? parseFloat(value) : Number(value);
+    return Number.isFinite(n) ? n : 0;
+};
+
 // ============================================================================
 // InvoiceDetailsModal (inlined)
 // ============================================================================
@@ -166,16 +179,20 @@ const InvoiceDetailsModal = ({
     onClose,
     invoice,
     onProceedToPay,
+    onPrintReceipt,
 }: {
     isOpen: boolean;
     onClose: () => void;
     invoice: Invoice | null;
     onProceedToPay?: (invoice: Invoice) => void;
+    onPrintReceipt?: (invoice: Invoice) => void;
 }) => {
     if (!isOpen || !invoice) return null;
 
     const items = invoice.items || [];
     const canPay = invoice.status !== 'paid' && invoice.status !== 'cancelled';
+    // Receipt exists once any money has been paid on the invoice
+    const canPrintReceipt = toNumber(invoice.paid_amount) > 0;
 
     return (
         <div className="fixed inset-0 z-50 flex w-full items-center justify-center p-3">
@@ -306,7 +323,7 @@ const InvoiceDetailsModal = ({
                                         {items.length === 0 && (
                                             <tr>
                                                 <td
-                                                    colSpan={4}
+                                                    colSpan={5}
                                                     className="px-3 py-8 text-center text-sm text-slate-400"
                                                 >
                                                     No items
@@ -317,7 +334,7 @@ const InvoiceDetailsModal = ({
                                     <tfoot className="border-t border-slate-200 bg-slate-50">
                                         <tr>
                                             <td
-                                                colSpan={3}
+                                                colSpan={4}
                                                 className="px-3 py-2 text-right text-sm font-medium text-slate-600"
                                             >
                                                 Total
@@ -329,7 +346,7 @@ const InvoiceDetailsModal = ({
                                         {invoice.paid_amount > 0 && (
                                             <tr>
                                                 <td
-                                                    colSpan={3}
+                                                    colSpan={4}
                                                     className="px-3 py-1 text-right text-xs text-slate-500"
                                                 >
                                                     Paid
@@ -345,7 +362,7 @@ const InvoiceDetailsModal = ({
                                         {invoice.due_amount > 0 && (
                                             <tr>
                                                 <td
-                                                    colSpan={3}
+                                                    colSpan={4}
                                                     className="px-3 py-1 text-right text-xs font-semibold text-slate-600"
                                                 >
                                                     Balance Due
@@ -383,6 +400,16 @@ const InvoiceDetailsModal = ({
                     >
                         Close
                     </Button>
+                    {canPrintReceipt && onPrintReceipt && (
+                        <Button
+                            variant="outline"
+                            onClick={() => onPrintReceipt(invoice)}
+                            className="border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                        >
+                            <Printer className="mr-1.5 h-3.5 w-3.5" />
+                            Print Receipt
+                        </Button>
+                    )}
                     {canPay && onProceedToPay && (
                         <Button
                             onClick={() => onProceedToPay(invoice)}
@@ -403,9 +430,15 @@ const InvoiceDetailsModal = ({
 // ============================================================================
 
 export default function Payments() {
-    const { invoices, payments, paymentMethods, insuranceProviders, patient } =
-        usePage<PaymentsPageProps>().props;
-    console.log('Patients --', invoices);
+    const {
+        invoices,
+        payments,
+        paymentMethods,
+        insuranceProviders,
+        patient,
+        auth,
+    } = usePage<PaymentsPageProps>().props;
+
     // Prefer patient id from Inertia props; fall back to the URL.
     const patientId = useMemo(() => {
         if (patient?.id) return String(patient.id);
@@ -462,6 +495,51 @@ export default function Payments() {
         setPaymentModal({ open: true, invoice: inv });
     };
 
+    /**
+     * Thermal payment receipt (80mm Epson-style, monospace).
+     * Lists every item on the invoice, the total, the amount paid, the balance
+     * and each payment recorded against this invoice (method, reference, date).
+     * Change the second argument to 58 for 58mm rolls.
+     */
+    const handlePrintReceipt = (inv: Invoice) => {
+        const invoicePayments = (payments || []).filter(
+            (p) => p.invoice_id === inv.id,
+        );
+
+        printReceipt(
+            {
+                type: 'payment',
+                number: inv.invoice_number,
+                patientName,
+                patientNumber: patient?.patient_number,
+                status: inv.status,
+                date: formatDate(inv.issue_date || inv.created_at),
+                lines: (inv.items || []).map((item) => ({
+                    name:
+                        item.description ??
+                        item.service_name ??
+                        item.name ??
+                        'Item',
+                    detail: item.service_category || undefined,
+                    qty: toNumber(item.quantity) || 1,
+                    unitPrice: toNumber(item.price),
+                    price: toNumber(item.total),
+                })),
+                total: toNumber(inv.total),
+                paid: toNumber(inv.paid_amount),
+                balance: toNumber(inv.due_amount),
+                payments: invoicePayments.map((p) => ({
+                    method: String(p.payment_method ?? '').replace(/_/g, ' '),
+                    reference: p.reference_number || undefined,
+                    date: formatDate(p.payment_date),
+                    amount: toNumber(p.amount),
+                })),
+                receivedBy: auth?.user?.name,
+            },
+            80,
+        );
+    };
+
     if (loading) {
         return (
             <PatientLayout
@@ -484,12 +562,12 @@ export default function Payments() {
                 { title: 'Payments', href: '/' },
             ]}
         >
-            <div className="h-full space-y-4 bg-blue-50 p-6">
-                <PageHeader
-                    icon={<DollarSign />}
-                    title={'Payments'}
-                    subtitle={'Manage Payments'}
-                />
+            <PageHeader
+                icon={<DollarSign />}
+                title={'Payments'}
+                subtitle={'Manage Payments'}
+            />
+            <div className="h-full space-y-4 bg-blue-50 p-4">
                 <InvoicesTable
                     invoices={invoices}
                     onPay={(inv) =>
@@ -517,6 +595,7 @@ export default function Payments() {
                     }
                     invoice={invoiceModal.invoice}
                     onProceedToPay={handleProceedToPay}
+                    onPrintReceipt={handlePrintReceipt}
                 />
 
                 <AddPaymentMethodModal

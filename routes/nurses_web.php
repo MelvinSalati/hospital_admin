@@ -19,7 +19,7 @@ Route::prefix('nurses')->group(function () {
     Route::get('/appointments/{departmentId}', [AppointmentController::class, 'index']);
     Route::get('/bills/{departmentId}', [BillController::class, 'index']);
     Route::inertia('/reports/{departmentId}', 'nurses/reports');
-    Route::get('/bulk-store/{departmentId}', [BulkStoreController::class, 'index']);
+    Route::get('/bulk-store/{departmentId}', [NursesController::class, 'bulkstore']);
     Route::get('/insurance/{departmentId}', [BillController::class, 'insurance']);
     Route::get('/queue/{departmentId}', [NursesController::class, 'visit']);
     Route::get('/in-patient/{departmentId}', [NursesController::class, 'inPatients']);

@@ -1,13 +1,13 @@
 import { Link, usePage, router } from '@inertiajs/react';
 import {
     ArrowLeftCircle,
-    ArrowRightCircle,
     BarChart2,
     BarChart3,
     Barcode,
     Boxes,
     CalendarClock,
     CalendarDays,
+    ChevronDown,
     ClipboardCheck,
     Cog,
     DollarSign,
@@ -159,21 +159,29 @@ const roleNavItems: Record<string, NavEntry[]> = {
             title: 'User Management',
             href: '/admin/manage-users',
             icon: Users,
-            children: [
-                {
-                    title: 'Users',
-                    href: '/admin/manage-users',
-                },
-                {
-                    title: 'Roles & Permissions',
-                    href: '/admin/roles',
-                },
-            ],
         },
         {
             title: 'Manage Budgets',
             href: '/admin/budgets',
             icon: DollarSign,
+            children: [
+                {
+                    title: 'All Budgets',
+                    href: '/admin/budgets',
+                },
+                {
+                    title: 'Create Budget',
+                    href: '/admin/budgets/create',
+                },
+                {
+                    title: 'Planned Budgets',
+                    href: '/admin/budgets/planned',
+                },
+                {
+                    title: 'Petty Cash',
+                    href: '/admin/budgets/petty-cash',
+                },
+            ],
         },
         {
             title: 'Purchase Requisitions',
@@ -593,15 +601,15 @@ const roleNavItems: Record<string, NavEntry[]> = {
         },
         {
             title: 'Encounters',
-            href: '/laboratory/queue',
+            href: '/laboratory/encounters',
             icon: Users,
             badge: 'encounters',
         },
-        {
-            title: 'Processed',
-            href: '/laboratory/processed',
-            icon: ArrowRightCircle,
-        },
+        // {
+        //     title: 'Processed',
+        //     href: '/laboratory/processed',
+        //     icon: ArrowRightCircle,
+        // },
         {
             title: 'Bulk Store Orders',
             href: '/laboratory/bulk-orders',
@@ -628,7 +636,7 @@ const roleNavItems: Record<string, NavEntry[]> = {
         {
             // Rename this freely: the badge follows `badge`, not the title.
             title: 'Encounters',
-            href: '/radiology/queue',
+            href: '/radiology/encounter',
             icon: Users,
             badge: 'encounters',
         },
@@ -750,7 +758,7 @@ const DEPARTMENT_HREF_RULES: Record<string, DepartmentHrefRule[]> = {
 
     lab_technician: [
         departmentRule('Dashboard', '/laboratory/dashboard'),
-        departmentRule('Encounters', '/laboratory/queue'),
+        departmentRule('Encounters', '/laboratory/encounters'),
         departmentRule('Processed', '/laboratory/processed'), // add if needed
         departmentRule('Bulk Store Orders', '/laboratory/bulk-orders'),
         departmentRule('Reports', '/laboratory/reports'),
@@ -765,7 +773,7 @@ const DEPARTMENT_HREF_RULES: Record<string, DepartmentHrefRule[]> = {
 
     radiologist: [
         departmentRule('Dashboard', '/radiology/dashboard'),
-        departmentRule('Encounters', '/radiology/queue'),
+        departmentRule('Encounters', '/radiology/encounter'),
         departmentRule('Bulk Store Orders', '/radiology/bulk-orders'),
         departmentRule('Manage Billables', '/billables/department'),
         departmentRule('Reports', '/radiology/reports'),
@@ -848,28 +856,6 @@ const ORDER_BADGE_CONFIG: Record<string, OrderBadgeConfig> = {
             'Issue Stock': 'bulkOrders',
         },
     },
-
-    lab_technician: [
-        { title: 'Dashboard', href: '/laboratory/dashboard', icon: LayoutGrid },
-        {
-            title: 'Encounters', // was 'Emcounters'
-            href: '/laboratory/queue',
-            icon: Users,
-            badge: 'encounters',
-        },
-        {
-            title: 'Processed',
-            href: '/laboratory/processed',
-            icon: ArrowRightCircle,
-        },
-        {
-            title: 'Bulk Store Orders',
-            href: '/laboratory/bulk-orders',
-            icon: ShoppingBag,
-        },
-        { title: 'Reports', href: '/laboratory/reports', icon: BarChart3 },
-        { title: 'Account', href: ACCOUNT_HREF, icon: UserSquare },
-    ],
 
     pharmacist: {
         countKey: 'pharmacyOrders',
@@ -1042,6 +1028,10 @@ interface NavLinkProps {
     variant?: 'default' | 'settings';
 }
 
+/**
+ * Plain links navigate. Items with `children` (Manage Budgets, Reports, ...)
+ * are collapsible groups: click the row to expand or collapse it.
+ */
 function NavLink({
     item,
     orderCount = null,
@@ -1054,66 +1044,125 @@ function NavLink({
     const iconGap = variant === 'settings' ? 'gap-3' : 'gap-6';
 
     const path = url.split('?')[0];
-    const isActive = path === item.href || path.startsWith(`${item.href}/`);
-    const hasActiveChild =
-        item.children?.some((child) => path.startsWith(child.href)) ?? false;
-    const expanded = isActive || hasActiveChild;
+    const matches = (href: string) =>
+        path === href || path.startsWith(`${href}/`);
+
+    const children = item.children ?? [];
+    const hasChildren = children.length > 0;
+
+    // Only the most specific child is highlighted, so "All Budgets"
+    // (/admin/budgets) is not lit up while on /admin/budgets/create.
+    const activeChildHref = children
+        .filter((child) => matches(child.href))
+        .sort((a, b) => b.href.length - a.href.length)[0]?.href;
+
+    const hasActiveChild = Boolean(activeChildHref);
+    const isActive = hasChildren ? hasActiveChild : matches(item.href);
+
+    // Groups start open when you are inside them, and open again when
+    // you navigate into one. Otherwise the user controls them.
+    const [open, setOpen] = useState(hasActiveChild);
+
+    useEffect(() => {
+        if (hasActiveChild) setOpen(true);
+    }, [hasActiveChild]);
 
     const showEncounterBadge = encounterCount !== null && encounterCount > 0;
     const showOrderBadge =
         !showEncounterBadge && orderCount !== null && orderCount > 0;
 
+    // Same look for plain links and group headers
+    const rowClass = `group flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm font-medium transition-all hover:bg-blue-50 hover:text-blue-700 dark:hover:bg-blue-900/30 dark:hover:text-blue-400 ${
+        isActive
+            ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+            : 'text-gray-700 dark:text-gray-300'
+    }`;
+
+    const rowContent = (
+        <>
+            <div className={`flex items-center ${iconGap}`}>
+                {Icon && (
+                    <Icon className="h-4 w-4 shrink-0 text-gray-500 group-hover:text-blue-600 dark:text-gray-400 dark:group-hover:text-blue-400" />
+                )}
+
+                <span className="group-data-[collapsible=icon]:hidden">
+                    {item.title}
+                </span>
+            </div>
+
+            {showEncounterBadge && <EncounterBadge count={encounterCount} />}
+
+            {showOrderBadge && (
+                <Badge
+                    variant="destructive"
+                    className="ml-auto h-5 min-w-[20px] rounded-full bg-red-500 px-1.5 text-xs font-medium text-white group-data-[collapsible=icon]:hidden hover:bg-red-600"
+                >
+                    {orderCount}
+                </Badge>
+            )}
+
+            {hasChildren && (
+                <ChevronDown
+                    className={`ml-auto h-4 w-4 shrink-0 text-gray-400 transition-transform duration-200 group-data-[collapsible=icon]:hidden ${
+                        open ? 'rotate-180' : ''
+                    }`}
+                />
+            )}
+        </>
+    );
+
+    if (!hasChildren) {
+        return (
+            <div>
+                <Link href={item.href} className={rowClass}>
+                    {rowContent}
+                </Link>
+            </div>
+        );
+    }
+
+    const panelId = `nav-group-${item.title.replace(/\s+/g, '-').toLowerCase()}`;
+
     return (
         <div>
-            <Link
-                href={item.href}
-                className={`group flex items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-all hover:bg-blue-50 hover:text-blue-700 dark:hover:bg-blue-900/30 dark:hover:text-blue-400 ${
-                    isActive
-                        ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                        : 'text-gray-700 dark:text-gray-300'
+            <button
+                type="button"
+                aria-expanded={open}
+                aria-controls={panelId}
+                onClick={() => setOpen((prev) => !prev)}
+                className={rowClass}
+            >
+                {rowContent}
+            </button>
+
+            {/* grid-rows trick gives a smooth height animation */}
+            <div
+                id={panelId}
+                className={`grid transition-all duration-200 ease-out group-data-[collapsible=icon]:hidden motion-reduce:transition-none ${
+                    open
+                        ? 'grid-rows-[1fr] opacity-100'
+                        : 'grid-rows-[0fr] opacity-0'
                 }`}
             >
-                <div className={`flex items-center ${iconGap}`}>
-                    {Icon && (
-                        <Icon className="h-4 w-4 shrink-0 text-gray-500 group-hover:text-blue-600 dark:text-gray-400 dark:group-hover:text-blue-400" />
-                    )}
-
-                    <span className="group-data-[collapsible=icon]:hidden">
-                        {item.title}
-                    </span>
+                <div className="overflow-hidden">
+                    <div className="mt-1 ml-9 space-y-1 border-l border-gray-200 pl-3 dark:border-gray-700">
+                        {children.map((child) => (
+                            <Link
+                                key={child.title}
+                                href={child.href}
+                                tabIndex={open ? 0 : -1}
+                                className={`block rounded-md px-2 py-1.5 text-xs font-medium hover:text-blue-700 dark:hover:text-blue-400 ${
+                                    child.href === activeChildHref
+                                        ? 'text-blue-700 dark:text-blue-400'
+                                        : 'text-gray-600 dark:text-gray-400'
+                                }`}
+                            >
+                                {child.title}
+                            </Link>
+                        ))}
+                    </div>
                 </div>
-
-                {showEncounterBadge && (
-                    <EncounterBadge count={encounterCount} />
-                )}
-
-                {showOrderBadge && (
-                    <Badge
-                        variant="destructive"
-                        className="ml-auto h-5 min-w-[20px] rounded-full bg-red-500 px-1.5 text-xs font-medium text-white group-data-[collapsible=icon]:hidden hover:bg-red-600"
-                    >
-                        {orderCount}
-                    </Badge>
-                )}
-            </Link>
-
-            {item.children && expanded && (
-                <div className="mt-1 ml-9 space-y-1 border-l border-gray-200 pl-3 group-data-[collapsible=icon]:hidden dark:border-gray-700">
-                    {item.children.map((child) => (
-                        <Link
-                            key={child.title}
-                            href={child.href}
-                            className={`block rounded-md px-2 py-1.5 text-xs font-medium hover:text-blue-700 dark:hover:text-blue-400 ${
-                                path.startsWith(child.href)
-                                    ? 'text-blue-700 dark:text-blue-400'
-                                    : 'text-gray-600 dark:text-gray-400'
-                            }`}
-                        >
-                            {child.title}
-                        </Link>
-                    ))}
-                </div>
-            )}
+            </div>
         </div>
     );
 }

@@ -249,6 +249,7 @@ class ReceivingController extends Controller
                 $this->updateStockLedger(
                     $productId,
                     $departmentId,
+                    $item['batch_number'],
                     $bulkStoreId,
                     $data['total_quantity'],
                     $data['total_cost'],
@@ -285,7 +286,7 @@ class ReceivingController extends Controller
     /**
      * Update Stock Ledger with proper calculations
      */
-    protected function updateStockLedger($productId, $departmentId, $bulkStoreId, $quantity, $totalCost, $createdBy)
+    protected function updateStockLedger($productId, $departmentId, $productBatch, $bulkStoreId, $quantity, $totalCost, $createdBy)
     {
         $today = now()->toDateString();
 
@@ -299,6 +300,7 @@ class ReceivingController extends Controller
             [
                 'ledger_uuid' => (string) Str::uuid(),
                 'bulk_store_id' => $bulkStoreId,
+                'batch_number' => $productBatch,
                 'opening_balance' => 0,
                 'total_in' => 0,
                 'total_out' => 0,

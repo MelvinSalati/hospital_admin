@@ -2,9 +2,11 @@ import {
     AlertTriangle,
     Bell,
     Info,
+    KeyRound,
     Loader2,
     ScrollText,
     Send,
+    ShieldCheck,
     ShieldOff,
     UsersIcon,
     Zap,
@@ -39,6 +41,16 @@ interface SystemUser {
     // Backend may send an array, a JSON string, a plain string, or null
     roles?: unknown;
     read?: boolean;
+    // Profile photo — backend may use any of these names
+    avatar?: string | null;
+    avatar_url?: string | null;
+    profile_photo_url?: string | null;
+    profile_photo_path?: string | null;
+    photo?: string | null;
+    image?: string | null;
+    // Used to pick a matching illustrated avatar (optional)
+    gender?: string | null;
+    sex?: string | null;
 }
 
 interface AuditLog {
@@ -137,6 +149,118 @@ const getInitials = (name: string) =>
         .join('')
         .toUpperCase()
         .slice(0, 2) || '?';
+
+// ============================================
+// AVATAR — real photo, else illustrated (DiceBear), else initials
+// ============================================
+
+const AVATAR_BASE_URL = 'https://api.dicebear.com/9.x/avataaars/svg';
+
+const AVATAR_STYLE = {
+    skinColor: '614335,ae5d29',
+    hairColor: '2c1b18,4a312c',
+    backgroundColor: 'dbeafe,e0e7ff',
+    maleTops:
+        'shortCurly,shortFlat,shortRound,frizzle,theCaesar,dreads01,dreads02,sides',
+    femaleTops: 'bob,bun,curly,curvy,dreads,fro,froBand,bigHair',
+    neutralTops: 'shortCurly,shortFlat,bob,curly,fro,frizzle',
+};
+
+// Same user id always gets the same illustrated face
+const getIllustratedAvatarUrl = (
+    userId: number,
+    gender: string | null | undefined,
+    pixels: number,
+): string => {
+    const g = (gender || '').toLowerCase();
+    const isMale = g === 'male' || g === 'm';
+    const isFemale = g === 'female' || g === 'f';
+
+    const params = new URLSearchParams({
+        seed: `user-${userId}`,
+        size: String(pixels),
+        skinColor: AVATAR_STYLE.skinColor,
+        hairColor: AVATAR_STYLE.hairColor,
+        backgroundColor: AVATAR_STYLE.backgroundColor,
+        top: isMale
+            ? AVATAR_STYLE.maleTops
+            : isFemale
+              ? AVATAR_STYLE.femaleTops
+              : AVATAR_STYLE.neutralTops,
+        facialHairProbability: isMale ? '25' : '0',
+        facialHairColor: '2c1b18',
+        accessoriesProbability: '0',
+    });
+
+    return `${AVATAR_BASE_URL}?${params.toString()}`;
+};
+
+// Picks the first uploaded-photo field the backend sent. Bare file paths
+// (e.g. "avatars/jane.jpg") are served from /storage/ (Laravel default).
+const getUserPhoto = (user: SystemUser): string | undefined => {
+    const raw =
+        user.avatar_url ??
+        user.profile_photo_url ??
+        user.avatar ??
+        user.profile_photo_path ??
+        user.photo ??
+        user.image;
+    if (!raw || typeof raw !== 'string') return undefined;
+    const src = raw.trim();
+    if (!src) return undefined;
+    if (/^(https?:|data:|blob:|\/)/i.test(src)) return src;
+    return `/storage/${src.replace(/^\/+/, '')}`;
+};
+
+function Avatar({
+    user,
+    size = 'md',
+}: {
+    user: SystemUser;
+    size?: 'sm' | 'md' | 'lg';
+}) {
+    const [failed, setFailed] = useState(false);
+
+    const dimension = {
+        sm: 'h-8 w-8 text-[11px]',
+        md: 'h-10 w-10 text-xs',
+        lg: 'h-12 w-12 text-sm',
+    }[size];
+    const pixels = size === 'lg' ? 96 : 72;
+
+    const src =
+        getUserPhoto(user) ??
+        (user.id !== undefined && user.id !== null
+            ? getIllustratedAvatarUrl(user.id, user.gender ?? user.sex, pixels)
+            : undefined);
+
+    // Retry when the user (or their photo) changes
+    useEffect(() => {
+        setFailed(false);
+    }, [src]);
+
+    if (!src || failed) {
+        return (
+            <div
+                aria-hidden="true"
+                className={`flex ${dimension} shrink-0 items-center justify-center rounded-full bg-blue-100 font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300`}
+            >
+                {getInitials(user.name)}
+            </div>
+        );
+    }
+
+    return (
+        <img
+            src={src}
+            alt={user.name}
+            loading="lazy"
+            referrerPolicy="no-referrer"
+            onError={() => setFailed(true)}
+            className={`${dimension} shrink-0 rounded-full bg-blue-100 object-cover dark:bg-blue-900/40`}
+        />
+    );
+}
 
 // ============================================
 // ROLE BADGE — mature tinted palette
@@ -369,9 +493,7 @@ function UserCard({ user }: { user: SystemUser }) {
     return (
         <div className="rounded-lg border border-slate-200 bg-white p-4">
             <div className="flex items-center gap-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-800 text-xs font-medium text-white">
-                    {getInitials(user.name)}
-                </span>
+                <Avatar user={user} />
                 <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-slate-900">
                         {user.name}
@@ -1335,6 +1457,286 @@ function UserServiceDrawer({
 }
 
 // ============================================
+// USER PERMISSIONS DRAWER (extra responsibilities)
+// ============================================
+
+interface PermissionDef {
+    key: string;
+    label: string;
+    description: string;
+}
+
+interface PermissionGroup {
+    title: string;
+    permissions: PermissionDef[];
+}
+
+// Extra responsibilities that can be switched on per user.
+// `key` must match the permission name your backend expects.
+const PERMISSION_GROUPS: PermissionGroup[] = [
+    {
+        title: 'Procurement',
+        permissions: [
+            {
+                key: 'approve-purchase-order',
+                label: 'Approve purchase orders',
+                description: 'Can approve or reject purchase orders.',
+            },
+            {
+                key: 'approve-grn',
+                label: 'Approve GRN',
+                description: 'Can approve goods received notes.',
+            },
+        ],
+    },
+    {
+        title: 'Services',
+        permissions: [
+            {
+                key: 'add-services',
+                label: 'Add services',
+                description: 'Can create new billable services.',
+            },
+            {
+                key: 'remove-services',
+                label: 'Remove services',
+                description: 'Can delete or deactivate existing services.',
+            },
+        ],
+    },
+];
+
+const ALL_PERMISSION_KEYS = PERMISSION_GROUPS.flatMap((g) =>
+    g.permissions.map((p) => p.key),
+);
+
+function Toggle({
+    checked,
+    onChange,
+    label,
+    disabled,
+}: {
+    checked: boolean;
+    onChange: (v: boolean) => void;
+    label: string;
+    disabled?: boolean;
+}) {
+    return (
+        <button
+            type="button"
+            role="switch"
+            aria-checked={checked}
+            aria-label={label}
+            disabled={disabled}
+            onClick={() => onChange(!checked)}
+            className={`relative h-6 w-11 shrink-0 rounded-full transition-colors focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 focus-visible:outline-none disabled:opacity-50 ${
+                checked ? 'bg-teal-700' : 'bg-slate-300'
+            }`}
+        >
+            <span
+                className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
+                    checked ? 'translate-x-5' : 'translate-x-0'
+                }`}
+            />
+        </button>
+    );
+}
+
+// Accepts ['approve-grn'], [{name:'approve-grn'}], or { 'approve-grn': true }
+const normalizeGranted = (raw: unknown): string[] => {
+    if (Array.isArray(raw)) {
+        return raw
+            .map((p) =>
+                typeof p === 'string'
+                    ? p
+                    : ((p as { name?: string; key?: string })?.name ??
+                      (p as { key?: string })?.key ??
+                      ''),
+            )
+            .filter(Boolean);
+    }
+    if (raw && typeof raw === 'object') {
+        return Object.entries(raw as Record<string, unknown>)
+            .filter(([, v]) => Boolean(v))
+            .map(([k]) => k);
+    }
+    return [];
+};
+
+function PermissionsDrawer({
+    user,
+    onClose,
+    onDone,
+}: {
+    user: SystemUser | null;
+    onClose: () => void;
+    onDone: () => void;
+}) {
+    const [granted, setGranted] = useState<string[]>([]);
+    const [original, setOriginal] = useState<string[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [saving, setSaving] = useState(false);
+
+    useEffect(() => {
+        if (!user?.id) return;
+        let cancelled = false;
+
+        const load = async () => {
+            setLoading(true);
+            setGranted([]);
+            setOriginal([]);
+            try {
+                // TODO: adjust endpoint
+                const res = await Http.get(
+                    `/admin/users/${user.id}/permissions`,
+                );
+                const list = normalizeGranted(
+                    res.data?.permissions ?? res.data?.granted,
+                ).filter((k) => ALL_PERMISSION_KEYS.includes(k));
+                if (!cancelled) {
+                    setGranted(list);
+                    setOriginal(list);
+                }
+            } catch (error) {
+                if (!cancelled)
+                    toast.error(
+                        getErrorMessage(error, 'Failed to load permissions'),
+                    );
+            } finally {
+                if (!cancelled) setLoading(false);
+            }
+        };
+
+        load();
+        return () => {
+            cancelled = true;
+        };
+    }, [user]);
+
+    const toggle = (key: string, on: boolean) =>
+        setGranted((prev) =>
+            on ? [...new Set([...prev, key])] : prev.filter((k) => k !== key),
+        );
+
+    const dirty =
+        granted.length !== original.length ||
+        granted.some((k) => !original.includes(k));
+
+    const save = async () => {
+        if (!user?.id || !dirty) return;
+        setSaving(true);
+        try {
+            // TODO: adjust endpoint / payload
+            const res = await Http.put(`/admin/users/${user.id}/permissions`, {
+                permissions: granted,
+            });
+            if (res.data?.success === false) {
+                toast.error(res.data?.message ?? 'Could not save permissions');
+                return;
+            }
+            toast.success(`Permissions updated for ${user.name}`);
+            onDone();
+            onClose();
+        } catch (error) {
+            toast.error(getErrorMessage(error, 'Could not save permissions'));
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <DrawerShell
+            open={!!user}
+            onClose={onClose}
+            locked={saving}
+            accent="teal"
+            icon={<ShieldCheck className="h-5 w-5" />}
+            title="User permissions"
+            description="Grant extra responsibilities"
+            footer={
+                <div className="flex gap-2">
+                    <Button
+                        variant="outline"
+                        className="flex-1"
+                        onClick={onClose}
+                        disabled={saving}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={save}
+                        disabled={!dirty || saving || loading}
+                        className="flex-1 bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-40"
+                    >
+                        {saving ? (
+                            <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                        ) : (
+                            <ShieldCheck className="mr-1.5 h-4 w-4" />
+                        )}
+                        Save changes
+                    </Button>
+                </div>
+            }
+        >
+            {user && <UserCard user={user} />}
+
+            {loading ? (
+                <div className="space-y-2.5">
+                    {[0, 1, 2, 3].map((i) => (
+                        <div
+                            key={i}
+                            className="animate-pulse rounded-lg border border-slate-200 bg-white p-4"
+                        >
+                            <div className="h-3 w-1/2 rounded bg-slate-200" />
+                            <div className="mt-2 h-3 w-4/5 rounded bg-slate-100" />
+                        </div>
+                    ))}
+                </div>
+            ) : (
+                PERMISSION_GROUPS.map((group) => (
+                    <div key={group.title}>
+                        <h4 className={`mb-2 ${sectionLabel}`}>
+                            {group.title}
+                        </h4>
+                        <div className="divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white">
+                            {group.permissions.map((p) => {
+                                const on = granted.includes(p.key);
+                                return (
+                                    <div
+                                        key={p.key}
+                                        className="flex items-center justify-between gap-4 p-4"
+                                    >
+                                        <div className="min-w-0">
+                                            <p className="text-sm font-medium text-slate-900">
+                                                {p.label}
+                                            </p>
+                                            <p className="mt-0.5 text-xs text-slate-500">
+                                                {p.description}
+                                            </p>
+                                        </div>
+                                        <Toggle
+                                            checked={on}
+                                            label={p.label}
+                                            disabled={saving}
+                                            onChange={(v) => toggle(p.key, v)}
+                                        />
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                ))
+            )}
+
+            <p className="text-xs text-slate-400">
+                Changes apply as soon as you save and are recorded in the audit
+                log.
+            </p>
+        </DrawerShell>
+    );
+}
+
+// ============================================
 // PAGE
 // ============================================
 
@@ -1345,6 +1747,7 @@ export default function Users() {
     const [auditUser, setAuditUser] = useState<SystemUser | null>(null);
     const [revokeUser, setRevokeUser] = useState<SystemUser | null>(null);
     const [notifyTarget, setNotifyTarget] = useState<NotifyTarget>(null);
+    const [permUser, setPermUser] = useState<SystemUser | null>(null);
 
     const getUsers = async () => {
         try {
@@ -1392,14 +1795,19 @@ export default function Users() {
         {
             id: 'user_details',
             label: 'Personal Information',
-            minWidth: 220,
+            minWidth: 240,
             sortable: true,
             format: (_value: unknown, row: SystemUser) => (
-                <div>
-                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                        {row.name}
-                    </p>
-                    <span className="text-xs text-slate-400">{row.email}</span>
+                <div className="flex items-center gap-3">
+                    <Avatar user={row} size="sm" />
+                    <div className="min-w-0">
+                        <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                            {row.name}
+                        </p>
+                        <span className="text-xs text-slate-400">
+                            {row.email}
+                        </span>
+                    </div>
                 </div>
             ),
         },
@@ -1457,6 +1865,13 @@ export default function Users() {
                     >
                         <Zap className="h-4 w-4" />
                     </ActionButton>
+                    <ActionButton
+                        label="Manage permissions"
+                        tone="warning"
+                        onClick={() => setPermUser(row)}
+                    >
+                        <KeyRound className="h-4 w-4" />
+                    </ActionButton>
                 </div>
             ),
         },
@@ -1469,55 +1884,31 @@ export default function Users() {
                 { title: 'Registered Users', href: '/' },
             ]}
         >
-            <div className="bg-slate-100">
-                <Container>
-                    <PageHeader
-                        title="Users Management"
-                        icon={<UsersIcon />}
-                        subtitle="Manage all system users, roles and permissions"
-                    >
-                        <div className="flex items-center gap-2 self-center">
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                // FIX: was setServiceUser(true) — that passed a boolean
-                                // as the "user", so user.id was undefined.
-                                onClick={() => setServiceTarget('pick')}
-                                className="border-slate-300 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900"
-                            >
-                                <Zap className="h-3.5 w-3.5 sm:mr-1.5" />
-                                <span className="hidden sm:inline">
-                                    Specialist Costs
-                                </span>
-                            </Button>
-
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setNotifyTarget('all')}
-                                className="border-slate-300 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900"
-                            >
-                                <Bell className="h-3.5 w-3.5 sm:mr-1.5" />
-                                <span className="hidden sm:inline">
-                                    Notify all users
-                                </span>
-                            </Button>
-                        </div>
-                    </PageHeader>
-
+            <div className="h-full bg-blue-50">
+                <PageHeader
+                    title="Users Management"
+                    icon={<UsersIcon />}
+                    subtitle="Manage all system users, roles and permissions"
+                />
+                <div className="p-4">
                     <ReusableTable
-                        title="Users Management"
                         columns={columns}
                         data={usersAll}
                         loading={loading}
                     />
-                </Container>
+                </div>
             </div>
 
             <UserServiceDrawer
                 target={serviceTarget}
                 users={usersAll}
                 onClose={() => setServiceTarget(null)}
+                onDone={getUsers}
+            />
+
+            <PermissionsDrawer
+                user={permUser}
+                onClose={() => setPermUser(null)}
                 onDone={getUsers}
             />
 

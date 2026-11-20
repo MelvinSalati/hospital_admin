@@ -17,7 +17,7 @@ Route::prefix('/laboratory')->middleware(['auth', 'verified'])->group(function (
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::prefix('/laboratory')->group(function () {
-        Route::get('/queue/{departmentId}', [LaboratoryController::class, 'laboratoryQueue']);
+        Route::get('/encounters/{departmentId}', [LaboratoryController::class, 'laboratoryQueue']);
         Route::get('/dashboard/{departmentId}', [LaboratoryController::class, 'dashboard']);
         Route::get('/processed/{departmentId}', [LaboratoryController::class, 'processed']);
         Route::get('/logistics/{departmentId}', [LaboratoryController::class, 'logistics']);

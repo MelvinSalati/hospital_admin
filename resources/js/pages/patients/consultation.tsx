@@ -53,7 +53,6 @@ function ConsultationModal({
     onClose,
     patientName,
     children,
-    vitalSign,
 }: ConsultationModalProps) {
     const dialogRef = useRef<HTMLDivElement>(null);
 
@@ -200,9 +199,12 @@ export default function Consultation({
     const patientIdFromUrl = Number.isFinite(Number(lastSegment))
         ? Number(lastSegment)
         : null;
-    const { latestVitalSigns } = usePage().props;
-    console.log('vital-signs', latestVitalSigns);
+    const { auth } = usePage().props;
+
     const patientId = patient?.id ?? patientIdFromUrl;
+
+    /* ---- Logged-in user: sent with the new consultation as createdBy ---- */
+    const createdBy: number | undefined = auth?.user?.id;
 
     /* ---- State ---- */
     const [patientData, setPatientData] = useState<Patient | null>(
@@ -321,7 +323,7 @@ export default function Consultation({
                 { title: 'Consultations', href: '' },
             ]}
         >
-            <div className="flex h-full flex-col bg-blue-50 p-6">
+            <div className="flex h-full flex-col">
                 <PageHeader
                     icon={<PlusCircleIcon />}
                     title={'Interactions'}
@@ -330,14 +332,14 @@ export default function Consultation({
                         {
                             label: 'Add Consultation',
                             onClick() {
-                                openAddModal(true);
+                                openAddModal();
                             },
                         },
                     ]}
                 />
 
-                <div className="flex flex-1 overflow-hidden">
-                    <main className="flex-1 overflow-y-auto">
+                <div className="flex flex-1 overflow-hidden bg-blue-50">
+                    <main className="flex-1 overflow-y-auto p-4">
                         {/* Recent Interactions workspace */}
                         {!isLoadingPatient && (
                             <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -355,8 +357,8 @@ export default function Consultation({
             {/* ============================================================ */}
             {/* Custom full-width modal                                      */}
             {/* Contains the EXISTING ConsultationTabs form.                 */}
-            {/* Submission endpoint, method, payload, validation and         */}
-            {/* success/error handling remain completely unchanged.          */}
+            {/* createdBy (logged-in user id) is handed to the form so it    */}
+            {/* can be included in the create-consultation payload.          */}
             {/* ============================================================ */}
             <ConsultationModal
                 open={isModalOpen}
@@ -365,6 +367,7 @@ export default function Consultation({
             >
                 <ConsultationTabs
                     patientId={patientId}
+                    createdBy={createdBy}
                     onSuccess={handleConsultationSuccess}
                 />
             </ConsultationModal>

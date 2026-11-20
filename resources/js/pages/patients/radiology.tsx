@@ -1272,18 +1272,18 @@ export default function RadiologyOrdersTable({
                 { title: 'Radiology', href: '/' },
             ]}
         >
+            <PageHeader
+                icon={<RadiationIcon />}
+                title="Imaging / Radiology"
+                subtitle="Manage radiology orders"
+                actions={[
+                    {
+                        label: 'Order Imaging',
+                        onClick: handleNewOrder,
+                    },
+                ]}
+            />
             <div className="h-full space-y-4 bg-blue-50 p-4">
-                <PageHeader
-                    icon={<RadiationIcon />}
-                    title="Imaging / Radiology"
-                    subtitle="Manage radiology orders"
-                    actions={[
-                        {
-                            label: 'Order Imaging',
-                            onClick: handleNewOrder,
-                        },
-                    ]}
-                />
                 {enhancedOrders.length > 0 ? (
                     <div className="rounded-sm bg-white p-4">
                         {/* Filter Toolbar */}

@@ -917,12 +917,12 @@ export default function PharmacyDashboard({
     return (
         <AppLayout
             breadcrumbs={[
+                { href: '/dashboard', title: 'Altaf Memorial Hospital' },
                 { href: '/dashboard', title: 'Dashboard' },
                 { href: '', title: 'Pharmacy' },
-                { href: '', title: 'Queue' },
             ]}
         >
-            <div className="bg-blue-50 p-2">
+            <div>
                 <PageHeader
                     icon={<Package className="h-5 w-5" />}
                     title="Pharmacy Department"

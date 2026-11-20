@@ -12,6 +12,9 @@ use App\Models\UserProfile;
 use Illuminate\Support\Facades\Log;
 use App\Models\Nurses\Admission;
 use App\Services\Nurses\NursesDashboardService;
+use App\Models\BulkStores\DepartmentRequisition;
+use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
 
 
 
@@ -27,6 +30,139 @@ class NursesController extends Controller
     public function dashboard(int $departmentId)
     {
         return Inertia::render('nurses/dashboard', $this->service->getDashboardData($departmentId));
+    }
+
+    public function bulkstore(int $departmentId)
+    {
+        /* ---------- 1. Product requests (orderedItems) ---------- */
+        $orderedItems = DepartmentRequisition::with([
+            'department:id,name',
+            'requestedBy:id,name',
+            'items.product:id,product_name,product_code',
+        ])
+            ->where('department_id', $departmentId)
+            ->latest('requested_at')
+            ->get()
+            ->map(function ($req) {
+                return [
+                    'id'                 => $req->id,
+                    'requisition_uuid'   => $req->requisition_uuid,
+                    'requisition_number' => $req->requisition_number,
+                    'status'             => $req->status,
+                    'priority'           => $req->priority,
+                    'requested_at'       => $req->requested_at?->toIso8601String(),
+                    'required_by_date'   => $req->required_by_date?->format('Y-m-d'),
+                    'estimated_total'    => (float) ($req->estimated_total ?? 0),
+                    'items_count'        => $req->items->count(),
+                    'department'         => $req->department?->name,
+                    'requested_by'       => $req->requestedBy?->name,
+                    'justification'      => $req->justification,
+
+                    // line items for the details drawer
+                    'items' => $req->items->map(function ($item) {
+                        return [
+                            'id'                   => $item->id,
+                            'product_id'           => $item->product_id,
+                            'product_name'         => $item->product?->product_name ?? 'Unknown',
+                            'product_code'         => $item->product?->product_code,
+                            'quantity_requested'   => $item->quantity_requested,
+                            'quantity_approved'    => $item->quantity_approved,
+                            'quantity_fulfilled'   => $item->quantity_fulfilled,
+                            'unit'                 => $item->unit,
+                            'estimated_unit_price' => (float) ($item->estimated_unit_price ?? 0),
+                            'estimated_total'      => (float) ($item->estimated_total ?? 0),
+                            'batch_number'         => $item->batch_number,
+                            'expiry_date'          => $item->expiry_date
+                                ? Carbon::parse($item->expiry_date)->format('Y-m-d')
+                                : null,
+                            'status'               => $item->status,
+                            'notes'                => $item->notes,
+                        ];
+                    })->values()->all(),
+                ];
+            })
+            ->values()
+            ->all();
+
+        /* ---------- 2. Batches for products this department holds ----------
+         * One row per stock batch (no join against ledger rows, so batches are
+         * never duplicated), with explicit columns so `id` is the batch id.
+         */
+        $today = Carbon::today();
+
+        $batchRows = DB::table('stock_batches as sb')
+            ->join('products as p', 'p.id', '=', 'sb.product_id')
+            ->leftJoin('suppliers as s', 's.id', '=', 'sb.supplier_id')
+            ->whereIn('sb.product_id', function ($q) use ($departmentId) {
+                $q->select('drug_id')
+                    ->from('department_stock_ledger_items')
+                    ->where('department_id', $departmentId);
+            })
+            ->select([
+                'sb.id',
+                'sb.batch_number',
+                'sb.expiry_date',
+                'sb.received_quantity',
+                'sb.remaining_quantity',
+                'sb.created_at',
+                'p.product_name',
+                'p.product_code',
+                's.supplier_name',
+            ])
+            ->orderBy('sb.expiry_date', 'asc')
+            ->get()
+            ->map(function ($b) use ($today) {
+                $expiry = $b->expiry_date ? Carbon::parse($b->expiry_date)->startOfDay() : null;
+
+                return [
+                    'id'                 => $b->id,
+                    'product_name'       => $b->product_name,
+                    'product_code'       => $b->product_code,
+                    'batch_number'       => $b->batch_number,
+                    'supplier'           => $b->supplier_name,
+                    'quantity_received'  => (int) $b->received_quantity,
+                    'quantity_remaining' => (int) $b->remaining_quantity,
+                    'unit'               => null,
+                    'received_at'        => $b->created_at
+                        ? Carbon::parse($b->created_at)->format('d F Y')
+                        : null,
+                    'expiry_date'        => $expiry?->format('d F Y'),
+                    // negative = already expired
+                    'days_to_expiry'     => $expiry ? (int) $today->diffInDays($expiry, false) : null,
+                ];
+            });
+
+        // ExpiringProduct[]: every batch that still has stock and an expiry date,
+        // soonest expiry first (already-expired batches come first, as negative days)
+        $expiringProducts = $batchRows
+            ->filter(fn($b) => $b['quantity_remaining'] > 0
+                && $b['days_to_expiry'] !== null)
+            ->sortBy('days_to_expiry')
+            ->map(fn($b) => [
+                'id'             => $b['id'],
+                'product_name'   => $b['product_name'],
+                'product_code'   => $b['product_code'],
+                'batch_number'   => $b['batch_number'],
+                'quantity'       => $b['quantity_remaining'],
+                'unit'           => $b['unit'],
+                'expiry_date'    => $b['expiry_date'],
+                'days_to_expiry' => $b['days_to_expiry'],
+            ])
+            ->values()
+            ->all();
+
+        // ProductBatch[]: every batch, without the helper field the page does not use
+        $productBatches = $batchRows
+            ->map(fn($b) => collect($b)->except('days_to_expiry')->all())
+            ->values()
+            ->all();
+
+        return Inertia::render('pharmacies/bulkstore', [
+            'services'         => \App\Models\Services\Service::all(),
+            'orderedItems'     => $orderedItems,
+            'expiringProducts' => $expiringProducts,
+            'productBatches'   => $productBatches,
+        ]);
     }
     /**
      * Display the nurses dashboard with queue

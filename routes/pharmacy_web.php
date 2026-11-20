@@ -12,7 +12,7 @@ Route::prefix('pharmacy')->group(function () {
     Route::get('/', [RadiologyController::class, 'index']);
     Route::get('prescriptions', [PharmacyController::class, 'index']);
     Route::inertia('/reports/{departmentId}', 'pharmacies/reports');
-    Route::get('bulk-orders/{departmentId}', [RadiologyBulkStoreController::class, 'index']);
+    Route::get('bulk-orders/{departmentId}', [PharmacyController::class, 'bulkstore']);
     // dashboard for pharamcy
     Route::get('/dashboard/{departmentId}', [PharmacyDashboardController::class, 'index']);
 });

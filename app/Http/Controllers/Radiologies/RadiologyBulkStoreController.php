@@ -63,7 +63,7 @@ class RadiologyBulkStoreController extends Controller
             ->values()
             ->all();
 
-        return Inertia::render('radiologies/bulkstore', [
+        return Inertia::render('pharmacies/bulkstore', [
             'services'     => Service::all(),
             'orderedItems' => $orderedItems,
         ]);
