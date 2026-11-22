@@ -50,7 +50,7 @@ import {
 import { Label } from '@/components/ui/label';
 import AppLayout from '@/layouts/app-layout';
 import Http from '@/utils/Http';
-import CreateBudgetForm from './components/CreateBudgetForm';
+import CreateBudgetForm from './components/createBudgetForm';
 import CreateTransactionForm from './components/CreateTransactionForm';
 
 // ============================================
