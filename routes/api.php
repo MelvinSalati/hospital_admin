@@ -26,7 +26,75 @@ use App\Http\Controllers\Patients\TheaterController;
 use App\Http\Controllers\Patients\DentalController;
 use App\Http\Controllers\Pharmacies\SupplierController;
 use App\Http\Controllers\Laboratories\LaboratorySettingsController;
+use App\Http\Controllers\Budgets\BudgetAllocationController;
 use App\Models\PatientVisit;
+
+use App\Http\Controllers\Budgets\BudgetTransactionController;
+
+/*
+|--------------------------------------------------------------------------
+| API Routes - v1
+|--------------------------------------------------------------------------
+*/
+
+Route::prefix('v1')->group(function () {
+
+    Route::prefix('/admin')->group(function () {
+
+        // =====================================================
+        // BUDGET ALLOCATIONS
+        // =====================================================
+
+        Route::prefix('budget-allocations')->name('admin.budget-allocations.')->group(function () {
+            Route::get('/', [BudgetAllocationController::class, 'index'])
+                ->name('/index');
+
+            Route::post('/create', [BudgetAllocationController::class, 'store'])
+                ->name('store');
+
+            Route::get('/{id}', [BudgetAllocationController::class, 'show'])
+                ->whereNumber('id')
+                ->name('show');
+
+            Route::put('/{id}', [BudgetAllocationController::class, 'update'])
+                ->whereNumber('id')
+                ->name('update');
+
+            Route::delete('/{id}', [BudgetAllocationController::class, 'destroy'])
+                ->whereNumber('id')
+                ->name('destroy');
+        });
+
+
+        // =====================================================
+        // BUDGET TRANSACTIONS
+        // =====================================================
+
+        Route::prefix('budget-transactions')->name('admin.budget-transactions.')->group(function () {
+            Route::get('/', [BudgetTransactionController::class, 'index'])
+                ->name('index');
+
+            Route::post('/', [BudgetTransactionController::class, 'store'])
+                ->name('store');
+
+            Route::get('/{id}', [BudgetTransactionController::class, 'show'])
+                ->whereNumber('id')
+                ->name('show');
+
+            Route::post('/{id}/approve', [BudgetTransactionController::class, 'approve'])
+                ->whereNumber('id')
+                ->name('approve');
+
+            Route::post('/{id}/reject', [BudgetTransactionController::class, 'reject'])
+                ->whereNumber('id')
+                ->name('reject');
+
+            Route::delete('/{id}', [BudgetTransactionController::class, 'destroy'])
+                ->whereNumber('id')
+                ->name('destroy');
+        });
+    });
+});
 /*
 |--------------------------------------------------------------------------
 | API V1 Routes
@@ -385,3 +453,4 @@ require __DIR__ . '/dental_api.php';
 require __DIR__ . '/opthamology_api.php';
 require __DIR__ . '/service_api.php';
 require __DIR__ . '/reception_api.php';
+require __DIR__ . '/finance_api.php';

@@ -805,22 +805,20 @@ export default function PurchaseOrder() {
     return (
         <AppLayout
             breadcrumbs={[
-                {
-                    title: 'Admin',
-                    href: '',
-                },
+                { title: 'Altaf Memorial Hospital', href: '/' },
+                { title: 'Administration', href: '' },
                 {
                     title: 'Purchase Orders',
                     href: '',
                 },
             ]}
         >
-            <div className="h-full bg-blue-50 p-2 ">
-                <PageHeader
-                    title={'Purchase Orders'}
-                    subtitle="Manage all approved purchase orders for the release of funds"
-                />
-
+            <PageHeader
+                icon={<Wallet className="h-6 w-6" />}
+                title={'Purchase Orders'}
+                subtitle="Manage all approved purchase orders for the release of funds"
+            />
+            <div className="h-full bg-blue-50 p-4">
                 <ReusableTable
                     title={'Purchase Orders'}
                     data={purchaseOrders}

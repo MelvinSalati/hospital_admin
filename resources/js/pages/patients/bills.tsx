@@ -516,11 +516,11 @@ export default function Bills() {
                 { title: 'Bills', href: '/' },
             ]}
         >
-            <div className="h-full space-y-6 bg-blue-50 p-2">
+            <div className="bg-blue-50">
                 <PageHeader
                     icon={<Receipt className="h-6 w-6" />}
-                    title="Patient Bills"
-                    subtitle={`${patientName} • ${safeInvoices.length} invoice${
+                    title="Bills"
+                    subtitle={`Client has  • ${safeInvoices.length} unpaid invoice${
                         safeInvoices.length !== 1 ? 's' : ''
                     }`}
                     actions={[
@@ -530,22 +530,15 @@ export default function Bills() {
                         },
                     ]}
                 />
-
+            </div>
+            <div className="h-full space-y-6 bg-blue-50 p-4">
                 <ReusableTable
-                    title="Invoices"
                     columns={columns}
                     data={safeInvoices}
                     actions={actions}
                     loading={false}
                     filterPlaceholder="Search by invoice # or item name..."
                     statusFilterKey="status"
-                    statusOptions={[
-                        { value: 'paid', label: 'Paid' },
-                        { value: 'unpaid', label: 'Unpaid' },
-                        { value: 'partial', label: 'Partial' },
-                        { value: 'draft', label: 'Draft' },
-                        { value: 'cancelled', label: 'Cancelled' },
-                    ]}
                     rowsPerPageOptions={[8, 15, 25, 50]}
                     defaultRowsPerPage={8}
                     defaultOrderBy="issue_date"

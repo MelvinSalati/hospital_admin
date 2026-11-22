@@ -10,6 +10,7 @@ import {
     ChevronDown,
     ClipboardCheck,
     Cog,
+    Coins,
     DollarSign,
     Download,
     FileText,
@@ -156,43 +157,59 @@ const roleNavItems: Record<string, NavEntry[]> = {
             icon: LayoutGrid,
         },
         {
-            title: 'User Management',
+            title: 'Employees',
             href: '/admin/manage-users',
             icon: Users,
         },
         {
-            title: 'Manage Budgets',
+            title: 'Budget',
             href: '/admin/budgets',
             icon: DollarSign,
+            // children: [
+            //     {
+            //         title: 'Overview',
+            //         href: '/admin/budgets/overview',
+            //         icon: DollarSign,
+            //     },
+            //     {
+            //         title: 'All Budgets',
+            //         href: '/admin/budgets',
+            //     },
+            //     {
+            //         title: 'Create Budget',
+            //         href: '/admin/budgets/create',
+            //     },
+            //     {
+            //         title: 'Planned Budgets',
+            //         href: '/admin/budgets/planned',
+            //     },
+            //     {
+            //         title: 'Petty Cash',
+            //         href: '/admin/budgets/petty-cash',
+            //     },
+            // ],
+        },
+        {
+            title: 'Finance',
+            href: '/admin/finance',
+            icon: Coins,
+        },
+        {
+            title: 'Purchases',
+            href: '/admin/purchase-requisitions', // not navigated to: group rows only toggle
+            icon: ShoppingBag,
             children: [
                 {
-                    title: 'All Budgets',
-                    href: '/admin/budgets',
+                    title: 'Requisitions',
+                    href: '/admin/purchase-requisitions',
                 },
                 {
-                    title: 'Create Budget',
-                    href: '/admin/budgets/create',
-                },
-                {
-                    title: 'Planned Budgets',
-                    href: '/admin/budgets/planned',
-                },
-                {
-                    title: 'Petty Cash',
-                    href: '/admin/budgets/petty-cash',
+                    title: 'Orders',
+                    href: '/admin/purchase-orders',
                 },
             ],
         },
-        {
-            title: 'Purchase Requisitions',
-            href: '/admin/purchase-requisitions',
-            icon: Boxes,
-        },
-        {
-            title: 'Purchase Orders',
-            href: '/admin/purchase-orders',
-            icon: FileText,
-        },
+
         {
             title: 'Reports',
             href: '/admin/reports',

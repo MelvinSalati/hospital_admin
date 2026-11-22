@@ -1630,18 +1630,11 @@ const PrescribedDrugsTable = ({
     return (
         <div className="mt-6">
             <ReusableTable
-                title="Prescribed Drugs"
                 columns={columns}
                 data={groupedData}
                 actions={actions}
                 loading={false}
                 filterPlaceholder="Search by prescription or drug name..."
-                statusFilterKey="status"
-                statusOptions={[
-                    { value: 'active', label: 'Active' },
-                    { value: 'completed', label: 'Completed' },
-                    { value: 'cancelled', label: 'Cancelled' },
-                ]}
                 rowsPerPageOptions={[8, 15, 25, 50]}
                 defaultRowsPerPage={8}
                 defaultOrderBy="prescribedDate"
@@ -1776,7 +1769,7 @@ const PrescriptionsTab = ({
     };
 
     return (
-        <div className="space-y-6 bg-blue-50">
+        <div className="">
             <PageHeader
                 icon={<PillBottleIcon />}
                 title="Prescriptions"
@@ -1789,7 +1782,9 @@ const PrescriptionsTab = ({
                 ]}
             />
 
-            <PrescribedDrugsTable prescriptions={prescriptions} />
+            <div className="p-4">
+                <PrescribedDrugsTable prescriptions={prescriptions} />
+            </div>
 
             <AddPrescriptionModal
                 isOpen={isModalOpen}
@@ -1831,7 +1826,7 @@ export default function Prescription() {
                 { title: 'Prescription', href: '' },
             ]}
         >
-            <div className="h-full space-y-6 bg-blue-50 p-2">
+            <div className="h-full bg-blue-50">
                 <PrescriptionsTab
                     patientId={patientId ?? 0}
                     services={normalizedServices}

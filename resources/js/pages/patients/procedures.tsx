@@ -500,7 +500,7 @@ export default function Procedures() {
                 { title: 'Procedures', href: '#' },
             ]}
         >
-            <div className="min-h-screen bg-blue-50 p-4">
+            <div className="min-h-screen bg-blue-50">
                 <PageHeader
                     icon={<ScissorsIcon className="h-5 w-5" />}
                     title="Procedure Items"
@@ -508,13 +508,14 @@ export default function Procedures() {
                     actions={[
                         {
                             label: 'Add Items',
+                            variant: 'outline',
                             onClick: () => setShowModal(true),
                             icon: <Plus className="h-4 w-4" />,
                         },
                     ]}
                 />
 
-                <div className="mt-4">
+                <div className="p-4">
                     {error ? (
                         <div className="flex min-h-[400px] flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50 p-8 text-center">
                             <div className="rounded-full bg-slate-100 p-4">

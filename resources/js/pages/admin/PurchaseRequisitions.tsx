@@ -1086,7 +1086,7 @@ const ActionDrawer: React.FC<ActionDrawerProps> = ({
                                   )
                         }
                         placeholder="Enter your approval code"
-                            autoComplete="new-password"
+                        autoComplete="new-password"
                         className={`w-full rounded-lg border py-2 pr-3 pl-10 font-mono text-sm tracking-wider uppercase focus:ring-2 focus:outline-none ${
                             isApprove
                                 ? 'border-slate-300 focus:border-emerald-500 focus:ring-emerald-500/20 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100'
@@ -1731,72 +1731,68 @@ export default function PurchaseRequisition() {
     return (
         <AppLayout
             breadcrumbs={[
-                { title: 'Home', href: '/' },
-                { title: 'Procurement', href: '' },
+                { title: 'Altaf Memorial Hospital', href: '/' },
+                { title: 'Administration', href: '' },
                 { title: 'Purchase Requisitions', href: '' },
             ]}
         >
-            <Head title="Purchase Requisitions" />
+            <div className="min-h-screen bg-blue-50">
+                <PageHeader
+                    icon={<ShoppingCart className="h-6 w-6" />}
+                    title="Purchase Requisitions"
+                    subtitle="Manage purchase requisitions and approvals"
+                />
 
-            <div className="min-h-screen bg-slate-100 px-4 py-6 dark:bg-slate-900">
-                <Container>
-                    <PageHeader
-                        icon={<ShoppingCart className="h-6 w-6" />}
+                <div className="p-4">
+                    <ReusableTable
+                        columns={columns}
+                        data={orders}
+                        actions={actions}
+                        loading={loading}
                         title="Purchase Requisitions"
-                        subtitle="Manage purchase requisitions and approvals"
+                        rowsPerPageOptions={[10, 25, 50, 100]}
+                        defaultRowsPerPage={propPagination.pageSize}
+                        defaultOrderBy="created_at"
+                        defaultOrder="desc"
+                        filterPlaceholder="Search by PR #, department..."
+                        statusFilterKey="status"
+                        statusOptions={statusOptions}
+                        additionalFilters={[
+                            {
+                                key: 'priority',
+                                label: 'Priority',
+                                options: priorityOptions,
+                                value: priorityFilter,
+                                onChange: (v: string) => {
+                                    setPriorityFilter(v);
+                                    visit({ priority: v, page: 1 });
+                                },
+                            },
+                            {
+                                key: 'department',
+                                label: 'Department',
+                                options: departmentOptions,
+                                value: departmentFilter,
+                                onChange: (v: string) => {
+                                    setDepartmentFilter(v);
+                                    visit({ department: v, page: 1 });
+                                },
+                            },
+                        ]}
+                        emptyMessage="No purchase requisitions found"
+                        onSearchChange={(value) => {
+                            setSearchTerm(value);
+                            visit({ search: value, page: 1 });
+                        }}
+                        onPageChange={(page) => {
+                            visit({ page });
+                        }}
+                        onPageSizeChange={(size) => {
+                            visit({ page_size: size, page: 1 });
+                        }}
+                        pagination={propPagination}
                     />
-
-                    <div className="mt-4">
-                        <ReusableTable
-                            columns={columns}
-                            data={orders}
-                            actions={actions}
-                            loading={loading}
-                            title="Purchase Requisitions"
-                            rowsPerPageOptions={[10, 25, 50, 100]}
-                            defaultRowsPerPage={propPagination.pageSize}
-                            defaultOrderBy="created_at"
-                            defaultOrder="desc"
-                            filterPlaceholder="Search by PR #, department..."
-                            statusFilterKey="status"
-                            statusOptions={statusOptions}
-                            additionalFilters={[
-                                {
-                                    key: 'priority',
-                                    label: 'Priority',
-                                    options: priorityOptions,
-                                    value: priorityFilter,
-                                    onChange: (v: string) => {
-                                        setPriorityFilter(v);
-                                        visit({ priority: v, page: 1 });
-                                    },
-                                },
-                                {
-                                    key: 'department',
-                                    label: 'Department',
-                                    options: departmentOptions,
-                                    value: departmentFilter,
-                                    onChange: (v: string) => {
-                                        setDepartmentFilter(v);
-                                        visit({ department: v, page: 1 });
-                                    },
-                                },
-                            ]}
-                            emptyMessage="No purchase requisitions found"
-                            onSearchChange={(value) => {
-                                setSearchTerm(value);
-                                visit({ search: value, page: 1 });
-                            }}
-                            onPageChange={(page) => {
-                                visit({ page });
-                            }}
-                            onPageSizeChange={(size) => {
-                                visit({ page_size: size, page: 1 });
-                            }}
-                            pagination={propPagination}
-                        />
-                    </div>
-                </Container>
+                </div>
             </div>
 
             {/* ================= DRAWER 1: DETAILS ================= */}

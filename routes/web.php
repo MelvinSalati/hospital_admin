@@ -822,3 +822,4 @@ require __DIR__ . '/dental_web.php';
 require __DIR__ . '/opthamology_web.php';
 
 require __DIR__ . '/service_web.php';
+require __DIR__ . '/finance.php';

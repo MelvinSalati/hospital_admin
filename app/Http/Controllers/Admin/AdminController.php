@@ -7,19 +7,34 @@ use App\Models\Budgets\BudgetAllocation;
 use App\Models\Budgets\BudgetTransaction;
 use App\Models\BulkStores\PurchaseRequisition;
 use App\Models\User;
+use App\Models\UserActivityLog;
 use App\Policies\ApprovePurchaseRequestPolicy;
 use App\Services\Budgets\BudgetService;
 use App\Services\UserService;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 class AdminController extends Controller
 {
+    /**
+     * Permission key (sent by the React page) => users table column.
+     */
+    private const PERMISSION_COLUMNS = [
+        'approve-purchase-order' => 'approve_requisition',
+        'approve-grn'            => 'approve_grn',
+        'add-services'           => 'add_service',
+        'remove-services'        => 'remove_service',
+        'create-budget'          => 'create_budget',
+    ];
+
     protected UserService $userService;
     protected BudgetService $budgetService;
     protected ApprovePurchaseRequestPolicy $policy;
@@ -34,13 +49,17 @@ class AdminController extends Controller
         $this->policy = $policy;
     }
 
+    // ==================================================================
+    // USERS & PERMISSIONS
+    // ==================================================================
+
     /**
      * Get all system users
      */
     public function getSystemUsers()
     {
         try {
-            $allUsers = $this->userService->getUsers();
+            $allUsers = $this->withLiveStatus($this->userService->getUsers());
             return response()->json([
                 'users' => $allUsers,
                 'success' => true
@@ -52,6 +71,233 @@ class AdminController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Adds live status (is_online, last_seen_at, current_activity, ...) to every user row.
+     * Reads straight from the users table, so it does not depend on UserService's select list.
+     */
+    private function withLiveStatus($users): array
+    {
+        $cutoff = now()->subMinutes(15);
+
+        $live = DB::table('users')
+            ->select('id', 'last_login_at', 'last_seen_at', 'current_activity', 'last_activity_at', 'revoked_at')
+            ->get()
+            ->keyBy('id');
+
+        $iso = fn($value) => $value ? \Illuminate\Support\Carbon::parse($value)->toIso8601String() : null;
+
+        return collect($users)->map(function ($user) use ($live, $cutoff, $iso) {
+            $row = json_decode(json_encode($user), true) ?? [];
+            $status = $live->get($row['id'] ?? null);
+
+            if (!$status) {
+                $row['is_online'] = false;
+                return $row;
+            }
+
+            $seen = $status->last_seen_at ? \Illuminate\Support\Carbon::parse($status->last_seen_at) : null;
+
+            $row['is_online']        = $seen !== null && $seen->gte($cutoff) && $status->revoked_at === null;
+            $row['last_seen_at']     = $iso($status->last_seen_at);
+            $row['last_login_at']    = $iso($status->last_login_at);
+            $row['last_activity_at'] = $iso($status->last_activity_at);
+            $row['current_activity'] = $status->current_activity;
+
+            return $row;
+        })->values()->all();
+    }
+
+    /**
+     * Update a user's permissions.
+     * Payload: { "user_id": 5, "updated_by": 1, "permissions": ["approve-grn", "create-budget"] }
+     * Listed keys become true, every other permission becomes false.
+     */
+    public function updatePermission(Request $request, int $userId): JsonResponse
+    {
+        $validated = $request->validate([
+            'user_id'       => ['nullable', 'integer', Rule::in([$userId])],
+            'updated_by'    => ['required', 'integer', 'exists:users,id'],
+            'permissions'   => ['present', 'array'],
+            'permissions.*' => ['string', Rule::in(array_keys(self::PERMISSION_COLUMNS))],
+        ]);
+
+        // Works with or without a logged-in session/token
+        $actor = $request->user() ?? User::find($validated['updated_by']);
+
+        abort_unless($actor?->is_admin, 403, 'Only administrators can change permissions.');
+
+        $user = User::findOrFail($userId);
+
+        $columns = [];
+        foreach (self::PERMISSION_COLUMNS as $key => $column) {
+            $columns[$column] = in_array($key, $validated['permissions'], true);
+        }
+
+        $user->forceFill($columns)->save();
+
+        Log::info('User permissions updated', [
+            'target_user_id' => $user->id,
+            'updated_by'     => $actor->id,
+            'permissions'    => $validated['permissions'],
+        ]);
+
+        return response()->json([
+            'success'     => true,
+            'message'     => 'Permissions updated',
+            'permissions' => $this->permissionsFor($user),
+        ]);
+    }
+
+    /**
+     * Revoke a user's access: clears every extra permission, removes roles
+     * (when a roles package is installed) and marks the account as revoked.
+     * Payload: { "user_id": 5, "revoked_by": 1 }
+     */
+    public function revokePermissions(Request $request, int $userId): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'user_id'    => ['nullable', 'integer', Rule::in([$userId])],
+                'revoked_by' => ['required', 'integer', 'exists:users,id'],
+            ]);
+
+            // Works with or without a logged-in session/token
+            $actor = $request->user() ?? User::find($validated['revoked_by']);
+
+            if (!$actor?->is_admin) {
+                throw new \DomainException('Only administrators can revoke access.', 403);
+            }
+            if ((int) $actor->id === $userId) {
+                throw new \DomainException('You cannot revoke your own access.', 422);
+            }
+
+            DB::beginTransaction();
+
+            $user = User::lockForUpdate()->findOrFail($userId);
+
+            if ($user->revoked_at) {
+                throw new \DomainException('Access has already been revoked for this user.', 409);
+            }
+
+            // 1) every extra permission off
+            $columns = [];
+            foreach (self::PERMISSION_COLUMNS as $column) {
+                $columns[$column] = false;
+            }
+
+            // 2) mark the account as revoked
+            $columns['revoked_at'] = now();
+            $columns['revoked_by'] = $actor->id;
+
+            $user->forceFill($columns)->save();
+
+            // 3) roles (only if a roles package such as spatie/laravel-permission is installed)
+            if (method_exists($user, 'syncRoles')) {
+                $user->syncRoles([]);
+            }
+
+            DB::commit();
+
+            Log::info('User access revoked', [
+                'target_user_id' => $user->id,
+                'revoked_by'     => $actor->id,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Access revoked successfully',
+                'user'    => ['id' => $user->id, 'revoked_at' => $user->revoked_at],
+            ]);
+        } catch (\Throwable $e) {
+            return $this->failure($e, 'Failed to revoke permissions', ['user_id' => $userId]);
+        }
+    }
+
+    /**
+     * Activity log for one user on one day.
+     * GET ?date=YYYY-MM-DD&requested_by=1  =>  { success, logs: [...] }
+     */
+    public function getUserAuditLogs(Request $request, int $userId): JsonResponse
+    {
+        $validated = $request->validate([
+            'date'         => ['nullable', 'date_format:Y-m-d'],
+            'requested_by' => ['nullable', 'integer', 'exists:users,id'],
+        ]);
+
+        // Works with or without a logged-in session/token
+        $actor = $request->user() ?? User::find($validated['requested_by'] ?? null);
+
+        abort_unless($actor?->is_admin, 403, 'Only administrators can view activity logs.');
+
+        $date = $validated['date'] ?? now()->toDateString();
+
+        $iso = fn($value) => \Illuminate\Support\Carbon::parse($value)->toIso8601String();
+
+        // What the user did in the system (page visits, every create / update / delete)
+        $activity = UserActivityLog::where('user_id', $userId)
+            ->whereDate('created_at', $date)
+            ->orderByDesc('created_at')
+            ->limit(500)
+            ->get(['id', 'action', 'module', 'is_financial', 'severity', 'description', 'ip_address', 'created_at'])
+            ->map(fn($l) => [
+                'id'           => 'a-' . $l->id,
+                'action'       => $l->action,
+                'module'       => $l->module,
+                'is_financial' => (bool) $l->is_financial,
+                'severity'     => $l->severity,
+                'description'  => $l->description,
+                'ip_address'   => $l->ip_address,
+                'created_at'   => $iso($l->created_at),
+            ]);
+
+        // Business events already written to audit_logs (e.g. invoice item removed)
+        $business = collect();
+        if (Schema::hasTable('audit_logs')) {
+            $business = DB::table('audit_logs')
+                ->where('user_id', $userId)
+                ->whereDate('created_at', $date)
+                ->orderByDesc('created_at')
+                ->limit(500)
+                ->get(['id', 'action', 'module', 'summary', 'severity', 'user_ip', 'created_at'])
+                ->map(fn($l) => [
+                    'id'           => 'b-' . $l->id,
+                    'action'       => ucfirst(str_replace('_', ' ', (string) $l->action)),
+                    'module'       => $l->module ? ucfirst($l->module) : null,
+                    'is_financial' => true,
+                    'severity'     => $l->severity ?? 'info',
+                    'description'  => $l->summary,
+                    'ip_address'   => $l->user_ip,
+                    'created_at'   => $iso($l->created_at),
+                ]);
+        }
+
+        $logs = $activity->concat($business)
+            ->sortByDesc(fn($l) => \Illuminate\Support\Carbon::parse($l['created_at'])->timestamp)
+            ->values()
+            ->take(500);
+
+        return response()->json([
+            'success' => true,
+            'logs'    => $logs,
+        ]);
+    }
+
+    /**
+     * Reverse mapping (columns => keys), useful for pre-ticking checkboxes.
+     */
+    private function permissionsFor(User $user): array
+    {
+        return collect(self::PERMISSION_COLUMNS)
+            ->filter(fn(string $column) => (bool) $user->{$column})
+            ->keys()
+            ->values()
+            ->all();
+    }
+
+    // ==================================================================
+    // BUDGETS
+    // ==================================================================
 
     /**
      * Get all active budgets
@@ -71,6 +317,10 @@ class AdminController extends Controller
             ], 500);
         }
     }
+
+    // ==================================================================
+    // PURCHASE REQUISITIONS
+    // ==================================================================
 
     /**
      * Get all pending purchase requisitions

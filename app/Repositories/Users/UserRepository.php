@@ -15,6 +15,8 @@ class UserRepository
                 'users.id',
                 'users.name',
                 'users.email',
+                'users.revoked_at',
+                'users.revoked_by',
                 'user_profiles.first_name',
                 'user_profiles.surname',
                 'departments.name as department_name',

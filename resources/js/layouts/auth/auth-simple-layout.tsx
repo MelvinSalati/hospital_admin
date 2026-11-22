@@ -3,7 +3,7 @@ import AppLogoIcon from '@/components/app-logo-icon';
 import { home } from '@/routes';
 import type { AuthLayoutProps } from '@/types';
 import Img from '../../../assets/img/logo.jpg';
-import bg from './test.jpg';
+import bg from './pill.jpg';
 import wallpaper from './pills.jpg';
 export default function AuthSimpleLayout({
     children,

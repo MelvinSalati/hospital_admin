@@ -1,6 +1,10 @@
 import {
     AlertTriangle,
     Bell,
+    CalendarDays,
+    ChevronLeft,
+    ChevronRight,
+    History,
     Info,
     KeyRound,
     Loader2,
@@ -8,15 +12,25 @@ import {
     Send,
     ShieldCheck,
     ShieldOff,
+    UserCheck,
     UsersIcon,
+    UserX,
+    Wifi,
     Zap,
 } from 'lucide-react';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { toast } from 'react-hot-toast';
 import Container from '@/components/container';
 import PageHeader from '@/components/PageHeader';
 import ReusableTable from '@/components/ReusableTable';
 import { Button } from '@/components/ui/button';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
 import {
     Sheet,
     SheetContent,
@@ -26,6 +40,7 @@ import {
 } from '@/components/ui/sheet';
 import AppLayout from '@/layouts/app-layout';
 import Http from '@/utils/Http';
+import { usePage } from '@inertiajs/react';
 
 // ============================================
 // TYPES
@@ -51,6 +66,15 @@ interface SystemUser {
     // Used to pick a matching illustrated avatar (optional)
     gender?: string | null;
     sex?: string | null;
+    // Session / access state — used by the Logged In / Active / Revoked tabs
+    is_online?: boolean;
+    is_logged_in?: boolean;
+    last_seen_at?: string | null;
+    last_login_at?: string | null;
+    last_logged_in_at?: string | null;
+    access_revoked?: boolean;
+    revoked_at?: string | null;
+    status?: string | null;
 }
 
 interface AuditLog {
@@ -520,18 +544,60 @@ function UserCard({ user }: { user: SystemUser }) {
 }
 
 // ============================================
-// AUDIT LOGS DRAWER
+// ACTIVITY LOG MODAL (one day at a time)
 // ============================================
 
-function AuditLogsDrawer({
+const toLocalISODate = (d: Date) => {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+
+const shiftDate = (iso: string, days: number) => {
+    const d = new Date(`${iso}T00:00:00`);
+    d.setDate(d.getDate() + days);
+    return toLocalISODate(d);
+};
+
+const formatLongDate = (iso: string) => {
+    const d = new Date(`${iso}T00:00:00`);
+    return Number.isNaN(d.getTime())
+        ? iso
+        : d.toLocaleDateString('en-GB', {
+              weekday: 'long',
+              day: 'numeric',
+              month: 'long',
+              year: 'numeric',
+          });
+};
+
+const formatTimeOnly = (iso: string) => {
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime())
+        ? '—'
+        : d.toLocaleTimeString('en-GB', {
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+          });
+};
+
+function ActivityLogModal({
     user,
     onClose,
 }: {
     user: SystemUser | null;
     onClose: () => void;
 }) {
+    const [date, setDate] = useState(toLocalISODate(new Date()));
     const [logs, setLogs] = useState<AuditLog[]>([]);
     const [loading, setLoading] = useState(false);
+
+    const today = toLocalISODate(new Date());
+
+    // Every time a different user is opened, start on today
+    useEffect(() => {
+        if (user) setDate(toLocalISODate(new Date()));
+    }, [user]);
 
     useEffect(() => {
         if (!user?.id) return;
@@ -541,16 +607,17 @@ function AuditLogsDrawer({
             setLoading(true);
             setLogs([]);
             try {
-                // TODO: adjust endpoint
+                // TODO: adjust endpoint (expects ?date=YYYY-MM-DD, returns { logs: [] })
                 const res = await Http.get(
                     `/admin/users/${user.id}/audit-logs`,
+                    { params: { date } },
                 );
                 const data = res.data?.logs;
                 if (!cancelled) setLogs(Array.isArray(data) ? data : []);
             } catch (error) {
                 if (!cancelled)
                     toast.error(
-                        getErrorMessage(error, 'Failed to load audit logs'),
+                        getErrorMessage(error, 'Failed to load activity log'),
                     );
             } finally {
                 if (!cancelled) setLoading(false);
@@ -561,103 +628,179 @@ function AuditLogsDrawer({
         return () => {
             cancelled = true;
         };
-    }, [user]);
+    }, [user, date]);
+
+    // Safety net: if the backend ignores ?date, still show only the chosen day
+    const dayLogs = useMemo(
+        () =>
+            logs
+                .filter((l) => {
+                    const d = new Date(l.created_at);
+                    return !Number.isNaN(d.getTime())
+                        ? toLocalISODate(d) === date
+                        : true;
+                })
+                .sort(
+                    (a, b) =>
+                        new Date(b.created_at).getTime() -
+                        new Date(a.created_at).getTime(),
+                ),
+        [logs, date],
+    );
 
     return (
-        <DrawerShell
-            open={!!user}
-            onClose={onClose}
-            accent="slate"
-            icon={<ScrollText className="h-5 w-5" />}
-            title="Audit logs"
-            description="Recent activity on this account"
-            footer={
-                <Button variant="outline" className="w-full" onClick={onClose}>
-                    Close
-                </Button>
-            }
-        >
-            {user && <UserCard user={user} />}
-
-            <div>
-                <div className="mb-3 flex items-center justify-between">
-                    <h4 className={sectionLabel}>Activity</h4>
-                    {!loading && (
-                        <span className="text-xs text-slate-500 tabular-nums">
-                            {logs.length}{' '}
-                            {logs.length === 1 ? 'entry' : 'entries'}
+        <Dialog open={!!user} onOpenChange={(o) => !o && onClose()}>
+            <DialogContent className="flex max-h-[90vh] flex-col gap-0 overflow-hidden bg-slate-50 p-0 sm:max-w-2xl">
+                <DialogHeader className="shrink-0 border-b border-slate-200 bg-white px-6 py-5 pr-12 text-left">
+                    <div className="flex items-center gap-3.5">
+                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700 ring-1 ring-slate-200 ring-inset">
+                            <ScrollText className="h-5 w-5" />
                         </span>
-                    )}
+                        <div className="min-w-0">
+                            <DialogTitle className="text-base leading-tight font-semibold text-slate-900">
+                                Activity log
+                            </DialogTitle>
+                            <DialogDescription className="mt-0.5 text-sm text-slate-500">
+                                Everything {user?.name ?? 'this user'} did on
+                                the selected day
+                            </DialogDescription>
+                        </div>
+                    </div>
+                </DialogHeader>
+
+                <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5">
+                    {user && <UserCard user={user} />}
+
+                    {/* day picker */}
+                    <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            className="h-9 w-9"
+                            aria-label="Previous day"
+                            onClick={() => setDate((d) => shiftDate(d, -1))}
+                        >
+                            <ChevronLeft className="h-4 w-4" />
+                        </Button>
+                        <input
+                            type="date"
+                            value={date}
+                            max={today}
+                            onChange={(e) =>
+                                e.target.value && setDate(e.target.value)
+                            }
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 focus:outline-none"
+                        />
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            className="h-9 w-9"
+                            aria-label="Next day"
+                            disabled={date >= today}
+                            onClick={() => setDate((d) => shiftDate(d, 1))}
+                        >
+                            <ChevronRight className="h-4 w-4" />
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            disabled={date === today}
+                            onClick={() => setDate(today)}
+                        >
+                            Today
+                        </Button>
+                    </div>
+
+                    <div>
+                        <div className="mb-3 flex items-center justify-between">
+                            <h4 className={sectionLabel}>
+                                {formatLongDate(date)}
+                            </h4>
+                            {!loading && (
+                                <span className="text-xs text-slate-500 tabular-nums">
+                                    {dayLogs.length}{' '}
+                                    {dayLogs.length === 1
+                                        ? 'activity'
+                                        : 'activities'}
+                                </span>
+                            )}
+                        </div>
+
+                        {loading ? (
+                            <div className="space-y-2.5">
+                                {[0, 1, 2, 3].map((i) => (
+                                    <div
+                                        key={i}
+                                        className="animate-pulse rounded-lg border border-slate-200 bg-white p-3"
+                                    >
+                                        <div className="h-3 w-1/3 rounded bg-slate-200" />
+                                        <div className="mt-2 h-3 w-4/5 rounded bg-slate-100" />
+                                    </div>
+                                ))}
+                            </div>
+                        ) : dayLogs.length === 0 ? (
+                            <div className="flex flex-col items-center rounded-lg border border-dashed border-slate-300 bg-white px-4 py-12 text-center">
+                                <CalendarDays className="mb-2 h-6 w-6 text-slate-400" />
+                                <p className="text-sm font-medium text-slate-700">
+                                    No activity on this day
+                                </p>
+                                <p className="mt-0.5 text-xs text-slate-500">
+                                    Try another date using the picker above.
+                                </p>
+                            </div>
+                        ) : (
+                            <ol className="relative ml-1.5 border-l border-slate-200">
+                                {dayLogs.map((log) => (
+                                    <li
+                                        key={log.id}
+                                        className="relative pb-3 pl-5 last:pb-0"
+                                    >
+                                        <span
+                                            className={`absolute top-4 -left-[5px] h-2.5 w-2.5 rounded-full ring-4 ring-slate-50 ${getAuditDot(log.action)}`}
+                                        />
+                                        <div className="rounded-lg border border-slate-200 bg-white p-3">
+                                            <div className="flex items-start justify-between gap-3">
+                                                <p className="text-sm font-medium text-slate-900">
+                                                    {log.action}
+                                                </p>
+                                                <span className="shrink-0 font-mono text-xs text-slate-500 tabular-nums">
+                                                    {formatTimeOnly(
+                                                        log.created_at,
+                                                    )}
+                                                </span>
+                                            </div>
+                                            {log.description && (
+                                                <p className="mt-1 text-sm text-slate-600">
+                                                    {log.description}
+                                                </p>
+                                            )}
+                                            {log.ip_address && (
+                                                <p className="mt-2 font-mono text-xs text-slate-400">
+                                                    {log.ip_address}
+                                                </p>
+                                            )}
+                                        </div>
+                                    </li>
+                                ))}
+                            </ol>
+                        )}
+                    </div>
                 </div>
 
-                {loading ? (
-                    <div className="space-y-2.5">
-                        {[0, 1, 2, 3].map((i) => (
-                            <div
-                                key={i}
-                                className="animate-pulse rounded-lg border border-slate-200 bg-white p-3"
-                            >
-                                <div className="h-3 w-1/3 rounded bg-slate-200" />
-                                <div className="mt-2 h-3 w-4/5 rounded bg-slate-100" />
-                            </div>
-                        ))}
-                    </div>
-                ) : logs.length === 0 ? (
-                    <div className="flex flex-col items-center rounded-lg border border-dashed border-slate-300 bg-white px-4 py-12 text-center">
-                        <ScrollText className="mb-2 h-6 w-6 text-slate-400" />
-                        <p className="text-sm font-medium text-slate-700">
-                            No audit entries yet
-                        </p>
-                        <p className="mt-0.5 text-xs text-slate-500">
-                            Activity for this user will appear here.
-                        </p>
-                    </div>
-                ) : (
-                    <ol className="relative ml-1.5 border-l border-slate-200">
-                        {logs.map((log) => (
-                            <li
-                                key={log.id}
-                                className="relative pb-3 pl-5 last:pb-0"
-                            >
-                                <span
-                                    className={`absolute top-4 -left-[5px] h-2.5 w-2.5 rounded-full ring-4 ring-slate-50 ${getAuditDot(log.action)}`}
-                                />
-                                <div className="rounded-lg border border-slate-200 bg-white p-3">
-                                    <div className="flex items-start justify-between gap-3">
-                                        <p className="text-sm font-medium text-slate-900">
-                                            {log.action}
-                                        </p>
-                                        <span
-                                            title={formatDateTime(
-                                                log.created_at,
-                                            )}
-                                            className="shrink-0 text-xs text-slate-400 tabular-nums"
-                                        >
-                                            {formatRelative(log.created_at)}
-                                        </span>
-                                    </div>
-                                    {log.description && (
-                                        <p className="mt-1 text-sm text-slate-600">
-                                            {log.description}
-                                        </p>
-                                    )}
-                                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
-                                        <span>
-                                            {formatDateTime(log.created_at)}
-                                        </span>
-                                        {log.ip_address && (
-                                            <span className="font-mono text-slate-500">
-                                                {log.ip_address}
-                                            </span>
-                                        )}
-                                    </div>
-                                </div>
-                            </li>
-                        ))}
-                    </ol>
-                )}
-            </div>
-        </DrawerShell>
+                <div className="shrink-0 border-t border-slate-200 bg-white px-6 py-4">
+                    <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={onClose}
+                    >
+                        Close
+                    </Button>
+                </div>
+            </DialogContent>
+        </Dialog>
     );
 }
 
@@ -676,6 +819,8 @@ function RevokeDrawer({
 }) {
     const [submitting, setSubmitting] = useState(false);
     const [understood, setUnderstood] = useState(false);
+    const authUserId: number | undefined = (usePage().props as any).auth?.user
+        ?.id;
 
     useEffect(() => {
         setUnderstood(false);
@@ -690,6 +835,7 @@ function RevokeDrawer({
             // TODO: adjust endpoint
             const res = await Http.post(
                 `/admin/users/${user.id}/revoke-permissions`,
+                { user_id: user.id, revoked_by: authUserId },
             );
             if (res.data?.success === false) {
                 toast.error(
@@ -1502,6 +1648,11 @@ const PERMISSION_GROUPS: PermissionGroup[] = [
                 label: 'Remove services',
                 description: 'Can delete or deactivate existing services.',
             },
+            {
+                key: 'create-budget',
+                label: 'Create Budget',
+                description: 'Create Budget',
+            },
         ],
     },
 ];
@@ -1572,6 +1723,9 @@ function PermissionsDrawer({
     onClose: () => void;
     onDone: () => void;
 }) {
+    const { props } = usePage();
+    const authUserId: number | undefined = (props as any).auth?.user?.id;
+
     const [granted, setGranted] = useState<string[]>([]);
     const [original, setOriginal] = useState<string[]>([]);
     const [loading, setLoading] = useState(false);
@@ -1589,6 +1743,7 @@ function PermissionsDrawer({
                 // TODO: adjust endpoint
                 const res = await Http.get(
                     `/admin/users/${user.id}/permissions`,
+                    { params: { user_id: user.id } },
                 );
                 const list = normalizeGranted(
                     res.data?.permissions ?? res.data?.granted,
@@ -1624,10 +1779,19 @@ function PermissionsDrawer({
 
     const save = async () => {
         if (!user?.id || !dirty) return;
+
+        if (!authUserId) {
+            toast.error(
+                'Could not identify the signed-in user. Please log in again.',
+            );
+            return;
+        }
+
         setSaving(true);
         try {
-            // TODO: adjust endpoint / payload
             const res = await Http.put(`/admin/users/${user.id}/permissions`, {
+                user_id: user.id, // user being changed
+                updated_by: authUserId, // user making the change
                 permissions: granted,
             });
             if (res.data?.success === false) {
@@ -1740,11 +1904,53 @@ function PermissionsDrawer({
 // PAGE
 // ============================================
 
+type TabId = 'logged-in' | 'active' | 'revoked';
+
+const TAB_META: Record<TabId, { label: string; title: string; empty: string }> =
+    {
+        'logged-in': {
+            label: 'Currently Logged In',
+            title: 'Currently logged in',
+            empty: 'Nobody is logged in right now',
+        },
+        active: {
+            label: 'Active',
+            title: 'Active employees',
+            empty: 'No active employees found',
+        },
+        revoked: {
+            label: 'Revoked Access',
+            title: 'Revoked access',
+            empty: 'No employees have had access revoked',
+        },
+    };
+
+// A user counts as "logged in" if the backend flags them online,
+// or they were seen within this window.
+const ONLINE_WINDOW_MS = 15 * 60_000;
+
+const isRevoked = (u: SystemUser) =>
+    Boolean(u.access_revoked) ||
+    Boolean(u.revoked_at) ||
+    (u.status ?? '').toLowerCase() === 'revoked';
+
+const isLoggedIn = (u: SystemUser) => {
+    if (isRevoked(u)) return false;
+    if (u.is_online || u.is_logged_in) return true;
+    if (!u.last_seen_at) return false;
+    const seen = new Date(u.last_seen_at).getTime();
+    return !Number.isNaN(seen) && Date.now() - seen <= ONLINE_WINDOW_MS;
+};
+
+const getLastLogin = (u: SystemUser) =>
+    u.last_login_at ?? u.last_logged_in_at ?? null;
+
 export default function Users() {
     const [usersAll, setUsersAll] = useState<SystemUser[]>([]);
     const [loading, setLoading] = useState(false);
+    const [activeTab, setActiveTab] = useState<TabId>('active');
     const [serviceTarget, setServiceTarget] = useState<ServiceTarget>(null);
-    const [auditUser, setAuditUser] = useState<SystemUser | null>(null);
+    const [activityUser, setActivityUser] = useState<SystemUser | null>(null);
     const [revokeUser, setRevokeUser] = useState<SystemUser | null>(null);
     const [notifyTarget, setNotifyTarget] = useState<NotifyTarget>(null);
     const [permUser, setPermUser] = useState<SystemUser | null>(null);
@@ -1771,9 +1977,18 @@ export default function Users() {
         getUsers();
     }, []);
 
+    const groups = useMemo<Record<TabId, SystemUser[]>>(
+        () => ({
+            'logged-in': usersAll.filter(isLoggedIn),
+            active: usersAll.filter((u) => !isRevoked(u)),
+            revoked: usersAll.filter(isRevoked),
+        }),
+        [usersAll],
+    );
+
     const textClass = 'text-sm text-slate-700 dark:text-slate-300';
 
-    const columns = [
+    const baseColumns = [
         {
             id: 'serial_number',
             label: 'SN',
@@ -1799,7 +2014,15 @@ export default function Users() {
             sortable: true,
             format: (_value: unknown, row: SystemUser) => (
                 <div className="flex items-center gap-3">
-                    <Avatar user={row} size="sm" />
+                    <div className="relative">
+                        <Avatar user={row} size="sm" />
+                        {isLoggedIn(row) && (
+                            <span
+                                title="Online"
+                                className="absolute -right-0.5 -bottom-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white"
+                            />
+                        )}
+                    </div>
                     <div className="min-w-0">
                         <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
                             {row.name}
@@ -1849,52 +2072,134 @@ export default function Users() {
             label: 'Last Logged In',
             minWidth: 140,
             sortable: true,
-            format: () => <p className={textClass}>---</p>,
-        },
-        {
-            id: 'actions',
-            label: 'Actions',
-            minWidth: 150,
-            sortable: false,
-            format: (_value: unknown, row: SystemUser) => (
-                <div className="flex items-center gap-1">
-                    <ActionButton
-                        label="Set consultation fee"
-                        tone="info"
-                        onClick={() => setServiceTarget(row)}
+            format: (_value: unknown, row: SystemUser) => {
+                const last = getLastLogin(row);
+                return (
+                    <p
+                        className={textClass}
+                        title={last ? formatDateTime(last) : undefined}
                     >
-                        <Zap className="h-4 w-4" />
-                    </ActionButton>
-                    <ActionButton
-                        label="Manage permissions"
-                        tone="warning"
-                        onClick={() => setPermUser(row)}
-                    >
-                        <KeyRound className="h-4 w-4" />
-                    </ActionButton>
-                </div>
-            ),
+                        {last ? formatRelative(last) : '---'}
+                    </p>
+                );
+            },
         },
     ];
+
+    const buildColumns = (tab: TabId) => {
+        // Only shown on the "Currently Logged In" tab
+        const liveColumn = {
+            id: 'current_activity',
+            label: 'Currently Doing',
+            minWidth: 200,
+            sortable: false,
+            format: (_value: unknown, row: SystemUser) => {
+                const what = row.current_activity ?? row.current_page;
+                return (
+                    <div className="min-w-0">
+                        <p className={textClass}>{what || '---'}</p>
+                        {row.last_activity_at && (
+                            <span className="text-xs text-slate-400">
+                                {formatRelative(row.last_activity_at)}
+                            </span>
+                        )}
+                    </div>
+                );
+            },
+        };
+
+        return [
+            ...baseColumns,
+            ...(tab === 'logged-in' ? [liveColumn] : []),
+            {
+                id: 'actions',
+                label: 'Actions',
+                minWidth: 200,
+                sortable: false,
+                format: (_value: unknown, row: SystemUser) => (
+                    <div className="flex items-center gap-1">
+                        {/* Activity log: Logged In tab (and Revoked for audit), not Active */}
+                        {tab !== 'active' && (
+                            <ActionButton
+                                label="View activity log"
+                                tone="default"
+                                onClick={() => setActivityUser(row)}
+                            >
+                                <History className="h-4 w-4" />
+                            </ActionButton>
+                        )}
+                        {tab !== 'revoked' && (
+                            <ActionButton
+                                label="Set consultation fee"
+                                tone="info"
+                                onClick={() => setServiceTarget(row)}
+                            >
+                                <Zap className="h-4 w-4" />
+                            </ActionButton>
+                        )}
+                        <ActionButton
+                            label={
+                                tab === 'revoked'
+                                    ? 'Restore permissions'
+                                    : 'Manage permissions'
+                            }
+                            tone="warning"
+                            onClick={() => setPermUser(row)}
+                        >
+                            <KeyRound className="h-4 w-4" />
+                        </ActionButton>
+                        {tab !== 'revoked' && (
+                            <ActionButton
+                                label="Revoke rights"
+                                tone="danger"
+                                onClick={() => setRevokeUser(row)}
+                            >
+                                <ShieldOff className="h-4 w-4" />
+                            </ActionButton>
+                        )}
+                    </div>
+                ),
+            },
+        ];
+    };
+
+    const tabIcons: Record<TabId, ReactNode> = {
+        'logged-in': <Wifi />,
+        active: <UserCheck />,
+        revoked: <UserX />,
+    };
+
+    const tabOrder: TabId[] = ['logged-in', 'active', 'revoked'];
+    const meta = TAB_META[activeTab];
 
     return (
         <AppLayout
             breadcrumbs={[
-                { title: 'Admin', href: '/' },
-                { title: 'Registered Users', href: '/' },
+                { title: 'Altaf Memorial Hospital', href: '/' },
+                { title: 'Administration', href: '/' },
+                { title: 'Employee', href: '/' },
             ]}
         >
             <div className="h-full bg-blue-50">
                 <PageHeader
-                    title="Users Management"
+                    title="Employees"
                     icon={<UsersIcon />}
                     subtitle="Manage all system users, roles and permissions"
+                    actions={tabOrder.map((id) => ({
+                        label: `${TAB_META[id].label} (${groups[id].length})`,
+                        onClick: () => setActiveTab(id),
+                        icon: tabIcons[id],
+                        variant: activeTab === id ? 'cyan' : 'default',
+                    }))}
                 />
                 <div className="p-4">
                     <ReusableTable
-                        columns={columns}
-                        data={usersAll}
+                        key={activeTab}
+                        title={meta.title}
+                        columns={buildColumns(activeTab)}
+                        data={groups[activeTab]}
                         loading={loading}
+                        emptyMessage={meta.empty}
                     />
                 </div>
             </div>
@@ -1912,9 +2217,9 @@ export default function Users() {
                 onDone={getUsers}
             />
 
-            <AuditLogsDrawer
-                user={auditUser}
-                onClose={() => setAuditUser(null)}
+            <ActivityLogModal
+                user={activityUser}
+                onClose={() => setActivityUser(null)}
             />
             <RevokeDrawer
                 user={revokeUser}

@@ -280,7 +280,7 @@ const InvoiceDetailsModal = ({
                                                 Item
                                             </th>
                                             <th className="px-3 py-2 text-left text-[11px] font-semibold tracking-wider text-slate-500 uppercase">
-                                                Department
+                                               Service Category
                                             </th>
                                             <th className="px-3 py-2 text-right text-[11px] font-semibold tracking-wider text-slate-500 uppercase">
                                                 Qty
@@ -307,6 +307,7 @@ const InvoiceDetailsModal = ({
                                                 </td>
                                                 <td className="px-3 py-2.5 text-sm text-slate-800">
                                                     {item.service_category ||
+                                                        item.category ||
                                                         'Pharmacy'}
                                                 </td>
                                                 <td className="px-3 py-2.5 text-right text-sm text-slate-600 tabular-nums">

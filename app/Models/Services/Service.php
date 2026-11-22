@@ -12,6 +12,7 @@ class Service extends Model
 
     protected $fillable = [
         'scheme_type',
+        'user_id',
         'service_uuid',
         'product_uuid',
         'department_id',

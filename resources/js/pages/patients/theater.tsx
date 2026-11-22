@@ -83,21 +83,21 @@ export default function Theater() {
                 { title: 'Procedures', href: '/' },
             ]}
         >
-            <div className="h-full space-y-6 bg-blue-50 p-2">
-                <PageHeader
-                    icon={<Scissors className="h-6 w-6" />}
-                    title="Theater Procedures"
-                    subtitle="Order and track surgical procedures for this patient"
-                    actions={[
-                        {
-                            label: 'Order Procedure',
-                            icon: <Plus className="h-4 w-4" />,
-                            onClick: () => setIsOrderModalOpen(true),
-                        },
-                    ]}
-                />
+            <PageHeader
+                icon={<Scissors className="h-6 w-6" />}
+                title="Theater Procedures"
+                subtitle="Order and track surgical procedures for this patient"
+                actions={[
+                    {
+                        label: 'Order Procedure',
+                        icon: <Plus className="h-4 w-4" />,
+                        onClick: () => setIsOrderModalOpen(true),
+                    },
+                ]}
+            />
 
-                <div className="rounded-sm bg-white p-4">
+            <div className="h-full  bg-blue-50">
+                <div className="rounded-sm p-4">
                     <PreviousOrdersTable
                         patientId={patientId}
                         services={services}

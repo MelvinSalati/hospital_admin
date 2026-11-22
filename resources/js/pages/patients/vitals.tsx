@@ -1,17 +1,27 @@
 import { usePage, router } from '@inertiajs/react';
 import { format } from 'date-fns';
 import {
-    Heart,
     Activity,
-    Search,
-    AlertCircle,
+    AlertTriangle,
     ChevronLeft,
     ChevronRight,
     ChevronsLeft,
     ChevronsRight,
+    Clock,
+    Droplet,
+    Droplets,
+    Gauge,
+    Heart,
+    HeartPulse,
     Plus,
+    Ruler,
     Save,
+    Scale,
+    Search,
     Stethoscope,
+    Thermometer,
+    User,
+    Wind,
 } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { toast } from 'react-hot-toast';
@@ -35,6 +45,11 @@ import Http from '@/utils/Http';
 // 1. UTILITY FUNCTIONS
 // ============================================================
 
+const num = (value) => {
+    const n = parseFloat(value);
+    return Number.isFinite(n) ? n : null;
+};
+
 const formatVitalValue = (value) => {
     if (
         value === null ||
@@ -56,15 +71,12 @@ const calculateBMI = (heightCm, weightKg) => {
     return Math.round(bmi * 100) / 100;
 };
 
-const getLatestVital = (vitals) => {
-    if (!vitals || vitals.length === 0) return null;
-    const sorted = [...vitals].sort((a, b) => {
-        const dateA = new Date(a.recorded_at || a.created_at);
-        const dateB = new Date(b.recorded_at || b.created_at);
-        return dateB - dateA;
-    });
-    return sorted[0] || null;
-};
+const getVitalDate = (vital) => vital?.recorded_at || vital?.created_at;
+
+const sortVitalsDesc = (vitals) =>
+    [...(vitals || [])].sort(
+        (a, b) => new Date(getVitalDate(b)) - new Date(getVitalDate(a)),
+    );
 
 const formatDate = (date) => {
     if (!date) return '—';
@@ -84,99 +96,334 @@ const formatTime = (date) => {
     }
 };
 
+// ------------------------------------------------------------
+// Clinical status (adult reference ranges — visual aid only)
+// ------------------------------------------------------------
+
+const LEVEL_STYLES = {
+    normal: {
+        text: 'text-emerald-700',
+        soft: 'bg-emerald-50',
+        border: 'border-emerald-200',
+        dot: 'bg-emerald-500',
+        stroke: '#059669',
+    },
+    warning: {
+        text: 'text-amber-700',
+        soft: 'bg-amber-50',
+        border: 'border-amber-200',
+        dot: 'bg-amber-500',
+        stroke: '#d97706',
+    },
+    critical: {
+        text: 'text-red-700',
+        soft: 'bg-red-50',
+        border: 'border-red-200',
+        dot: 'bg-red-500',
+        stroke: '#dc2626',
+    },
+    none: {
+        text: 'text-gray-800',
+        soft: 'bg-white',
+        border: 'border-gray-200',
+        dot: 'bg-gray-300',
+        stroke: '#2563eb',
+    },
+};
+
+const BANDS = {
+    temperature: { critLow: 35, warnLow: 36, warnHigh: 37.5, critHigh: 39 },
+    pulse_rate: { critLow: 50, warnLow: 60, warnHigh: 100, critHigh: 120 },
+    respiratory_rate: { critLow: 9, warnLow: 12, warnHigh: 20, critHigh: 25 },
+    spO2: { critLow: 90, warnLow: 95 },
+    blood_glucose: { critLow: 54, warnLow: 70, warnHigh: 140, critHigh: 300 },
+};
+
+const bandAssess = (value, cfg) => {
+    const v = num(value);
+    if (v === null) return null;
+    if (cfg.critLow !== undefined && v < cfg.critLow)
+        return { level: 'critical', label: 'Very low' };
+    if (cfg.critHigh !== undefined && v >= cfg.critHigh)
+        return { level: 'critical', label: 'Very high' };
+    if (cfg.warnLow !== undefined && v < cfg.warnLow)
+        return { level: 'warning', label: 'Low' };
+    if (cfg.warnHigh !== undefined && v > cfg.warnHigh)
+        return { level: 'warning', label: 'High' };
+    return { level: 'normal', label: 'Normal' };
+};
+
+const assessBP = (systolic, diastolic) => {
+    const s = num(systolic);
+    const d = num(diastolic);
+    if (s === null || d === null) return null;
+    if (s >= 180 || d >= 120)
+        return { level: 'critical', label: 'Hypertensive crisis' };
+    if (s < 80) return { level: 'critical', label: 'Severe low' };
+    if (s >= 140 || d >= 90) return { level: 'warning', label: 'High' };
+    if (s < 90 || d < 60) return { level: 'warning', label: 'Low' };
+    return { level: 'normal', label: 'Normal' };
+};
+
+const assessBMI = (bmi) => {
+    const v = num(bmi);
+    if (v === null) return null;
+    if (v < 16) return { level: 'critical', label: 'Severely underweight' };
+    if (v < 18.5) return { level: 'warning', label: 'Underweight' };
+    if (v < 25) return { level: 'normal', label: 'Normal' };
+    if (v < 30) return { level: 'warning', label: 'Overweight' };
+    if (v < 40) return { level: 'warning', label: 'Obese' };
+    return { level: 'critical', label: 'Severely obese' };
+};
+
+const getBMI = (vital) => {
+    if (!vital) return null;
+    if (vital.bmi) return vital.bmi;
+    return calculateBMI(num(vital.height), num(vital.weight));
+};
+
+const getBPDisplay = (vital) =>
+    vital?.systolic_bp && vital?.diastolic_bp
+        ? `${vital.systolic_bp}/${vital.diastolic_bp}`
+        : null;
+
+const getReadings = (vital) => {
+    if (!vital) return [];
+    return [
+        {
+            key: 'temperature',
+            label: 'Temperature',
+            value: vital.temperature,
+            unit: '°C',
+            assessment: bandAssess(vital.temperature, BANDS.temperature),
+        },
+        {
+            key: 'bp',
+            label: 'Blood pressure',
+            value: getBPDisplay(vital),
+            unit: 'mmHg',
+            assessment: assessBP(vital.systolic_bp, vital.diastolic_bp),
+        },
+        {
+            key: 'pulse_rate',
+            label: 'Pulse',
+            value: vital.pulse_rate,
+            unit: 'bpm',
+            assessment: bandAssess(vital.pulse_rate, BANDS.pulse_rate),
+        },
+        {
+            key: 'respiratory_rate',
+            label: 'Resp. rate',
+            value: vital.respiratory_rate,
+            unit: '/min',
+            assessment: bandAssess(
+                vital.respiratory_rate,
+                BANDS.respiratory_rate,
+            ),
+        },
+        {
+            key: 'spO2',
+            label: 'SpO₂',
+            value: vital.spO2,
+            unit: '%',
+            assessment: bandAssess(vital.spO2, BANDS.spO2),
+        },
+        {
+            key: 'blood_glucose',
+            label: 'Glucose',
+            value: vital.blood_glucose,
+            unit: 'mg/dL',
+            assessment: bandAssess(vital.blood_glucose, BANDS.blood_glucose),
+        },
+        {
+            key: 'bmi',
+            label: 'BMI',
+            value: getBMI(vital),
+            unit: 'kg/m²',
+            assessment: assessBMI(getBMI(vital)),
+        },
+    ];
+};
+
+const getAlerts = (vital) =>
+    getReadings(vital).filter(
+        (r) => r.assessment && r.assessment.level !== 'normal',
+    );
+
+const buildSeries = (vitalsAsc, getter) =>
+    vitalsAsc
+        .map(getter)
+        .map(num)
+        .filter((n) => n !== null)
+        .slice(-8);
+
 // ============================================================
 // 2. SUB-COMPONENTS
 // ============================================================
 
-const VitalMetric = ({ label, value, unit, status, className = '' }) => {
-    const displayValue = formatVitalValue(value);
-    const statusColor =
-        status === 'normal'
-            ? 'text-green-700'
-            : status === 'warning'
-              ? 'text-yellow-700'
-              : status === 'critical'
-                ? 'text-red-700'
-                : 'text-gray-700';
+const StatusPill = ({ assessment }) => {
+    if (!assessment) return null;
+    const s = LEVEL_STYLES[assessment.level];
+    return (
+        <span
+            className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium ${s.border} ${s.soft} ${s.text}`}
+        >
+            <span className={`h-1.5 w-1.5 rounded-full ${s.dot}`} />
+            {assessment.label}
+        </span>
+    );
+};
+
+const Sparkline = ({ data, stroke }) => {
+    if (!data || data.length < 2) return null;
+    const w = 96;
+    const h = 28;
+    const pad = 3;
+    const min = Math.min(...data);
+    const max = Math.max(...data);
+    const span = max - min || 1;
+    const pts = data.map((v, i) => [
+        pad + (i * (w - pad * 2)) / (data.length - 1),
+        h - pad - ((v - min) / span) * (h - pad * 2),
+    ]);
+    const d = pts
+        .map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)},${p[1].toFixed(1)}`)
+        .join(' ');
+    const last = pts[pts.length - 1];
 
     return (
-        <div className={`text-center ${className}`}>
-            <div className="text-xs font-medium tracking-wider text-gray-500 uppercase">
-                {label}
+        <svg
+            width={w}
+            height={h}
+            viewBox={`0 0 ${w} ${h}`}
+            className="shrink-0"
+            aria-hidden="true"
+        >
+            <path
+                d={d}
+                fill="none"
+                stroke={stroke}
+                strokeWidth="1.75"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            />
+            <circle cx={last[0]} cy={last[1]} r="2.5" fill={stroke} />
+        </svg>
+    );
+};
+
+const MetricCard = ({
+    icon: Icon,
+    label,
+    value,
+    unit,
+    assessment,
+    trend,
+    trendLabel,
+}) => {
+    const s = LEVEL_STYLES[assessment?.level || 'none'];
+    const display = formatVitalValue(value);
+    const hasValue = display !== '—';
+
+    return (
+        <div
+            className={`flex flex-col justify-between rounded-xl border p-4 ${s.border} ${s.soft}`}
+        >
+            <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2 text-xs font-semibold tracking-wider text-gray-500 uppercase">
+                    <Icon className="h-4 w-4 text-gray-400" />
+                    {label}
+                </div>
+                <StatusPill assessment={assessment} />
             </div>
-            <div className={`text-base font-semibold ${statusColor}`}>
-                {displayValue}
-                {displayValue !== '—' && unit && (
-                    <span className="ml-0.5 text-xs font-normal text-gray-500">
-                        {unit}
+
+            <div className="mt-3 flex items-end justify-between gap-3">
+                <div>
+                    <span
+                        className={`text-2xl font-semibold ${hasValue ? s.text : 'text-gray-300'}`}
+                    >
+                        {display}
                     </span>
-                )}
+                    {hasValue && unit && (
+                        <span className="ml-1 text-xs text-gray-500">
+                            {unit}
+                        </span>
+                    )}
+                </div>
+                <div className="flex flex-col items-end">
+                    <Sparkline data={trend} stroke={s.stroke} />
+                    {trend && trend.length > 1 && (
+                        <span className="mt-0.5 text-[10px] text-gray-400">
+                            {trendLabel || `last ${trend.length}`}
+                        </span>
+                    )}
+                </div>
             </div>
         </div>
     );
 };
 
-const AnthropometrySummary = ({ height, weight, bmi }) => (
-    <div className="space-y-1">
-        <div className="text-xs font-semibold tracking-wider text-blue-500 uppercase">
-            Anthropometry
-        </div>
-        <div className="grid grid-cols-3 gap-2">
-            <VitalMetric label="Height" value={height} unit="cm" />
-            <VitalMetric label="Weight" value={weight} unit="kg" />
-            <VitalMetric label="BMI" value={bmi} unit="kg/m²" />
-        </div>
-    </div>
-);
-
-const VitalSignsSummary = ({
-    temperature,
-    systolic_bp,
-    diastolic_bp,
-    pulse_rate,
-    respiratory_rate,
-    spO2,
-}) => {
-    const bpDisplay =
-        systolic_bp && diastolic_bp
-            ? `${formatVitalValue(systolic_bp)}/${formatVitalValue(diastolic_bp)}`
-            : '—';
-    const bpUnit = systolic_bp && diastolic_bp ? 'mmHg' : '';
+const AnthropometryTile = ({ icon: Icon, label, value, unit, assessment }) => {
+    const s = LEVEL_STYLES[assessment?.level || 'none'];
+    const display = formatVitalValue(value);
 
     return (
-        <div className="space-y-1">
-            <div className="text-xs font-semibold tracking-wider text-gray-500 uppercase">
-                Vital Signs
+        <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50">
+                <Icon className="h-4 w-4 text-blue-600" />
             </div>
-            <div className="grid gap-2 rounded-lg bg-green-50 p-3 sm:grid-cols-3 lg:grid-cols-5">
-                <VitalMetric
-                    label="Temperature"
-                    value={temperature}
-                    unit="°C"
-                />
-                <VitalMetric
-                    label="Blood Pressure"
-                    value={bpDisplay}
-                    unit={bpUnit}
-                />
-                <VitalMetric label="Pulse Rate" value={pulse_rate} unit="bpm" />
-                <VitalMetric
-                    label="Respiratory Rate"
-                    value={respiratory_rate}
-                    unit="breaths/min"
-                />
-                <VitalMetric label="SpO₂" value={spO2} unit="%" />
+            <div className="min-w-0 flex-1">
+                <div className="text-[11px] font-semibold tracking-wider text-gray-500 uppercase">
+                    {label}
+                </div>
+                <div className={`text-base font-semibold ${s.text}`}>
+                    {display}
+                    {display !== '—' && unit && (
+                        <span className="ml-1 text-xs font-normal text-gray-500">
+                            {unit}
+                        </span>
+                    )}
+                </div>
             </div>
+            <StatusPill assessment={assessment} />
+        </div>
+    );
+};
+
+const AttentionBanner = ({ alerts }) => {
+    if (!alerts || alerts.length === 0) return null;
+    const hasCritical = alerts.some((a) => a.assessment.level === 'critical');
+    const tone = hasCritical
+        ? 'border-red-200 bg-red-50 text-red-800'
+        : 'border-amber-200 bg-amber-50 text-amber-800';
+
+    return (
+        <div
+            className={`mb-4 flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2 text-sm ${tone}`}
+        >
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            <span className="font-medium">Needs attention:</span>
+            {alerts.map((a) => (
+                <span
+                    key={a.key}
+                    className="rounded-full bg-white/70 px-2 py-0.5 text-xs font-medium"
+                >
+                    {a.label} {a.value}
+                    {a.unit ? ` ${a.unit}` : ''} · {a.assessment.label}
+                </span>
+            ))}
         </div>
     );
 };
 
 const EmptyState = ({ onAddVital }) => (
     <Card>
-        <CardContent className="py-12 text-center">
+        <CardContent className="py-14 text-center">
             <div className="flex flex-col items-center justify-center text-gray-500">
-                <Heart className="mb-4 h-12 w-12 text-gray-300" />
-                <p className="text-lg font-medium text-gray-400">
+                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-50">
+                    <Heart className="h-8 w-8 text-blue-300" />
+                </div>
+                <p className="text-lg font-medium text-gray-500">
                     No vital signs recorded
                 </p>
                 <p className="mt-1 text-sm text-gray-400">
@@ -191,42 +438,38 @@ const EmptyState = ({ onAddVital }) => (
     </Card>
 );
 
-const LoadingState = () => (
-    <Card>
-        <CardContent className="py-8">
-            <div className="flex items-center justify-center space-x-3">
-                <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600" />
-                <span className="text-sm text-gray-500">Loading vitals...</span>
-            </div>
-        </CardContent>
-    </Card>
-);
-
-const ErrorState = ({ onRetry }) => (
-    <div className="p-2">
-        <Card>
-            <CardContent className="py-8">
-                <div className="flex flex-col items-center justify-center text-gray-500">
-                    <AlertCircle className="mb-2 h-8 w-8 text-red-400" />
-                    <p className="text-sm font-medium text-red-600">
-                        Unable to load vital signs
-                    </p>
-                    <Button
-                        variant="outline"
-                        onClick={onRetry}
-                        className="mt-3"
-                    >
-                        Retry
-                    </Button>
-                </div>
-            </CardContent>
-        </Card>
-    </div>
-);
-
 // ============================================================
 // ADD VITAL FORM
 // ============================================================
+
+const Field = ({ id, label, error, assessment, children, className = '' }) => (
+    <div className={className}>
+        <Label htmlFor={id} className="text-xs font-medium text-gray-600">
+            {label}
+        </Label>
+        <div className="mt-1">{children}</div>
+        {error ? (
+            <p className="mt-0.5 text-xs text-red-500">
+                {Array.isArray(error) ? error[0] : error}
+            </p>
+        ) : assessment && assessment.level !== 'normal' ? (
+            <p
+                className={`mt-0.5 text-xs font-medium ${LEVEL_STYLES[assessment.level].text}`}
+            >
+                {assessment.label}
+            </p>
+        ) : null}
+    </div>
+);
+
+const FormSection = ({ title, children }) => (
+    <div className="rounded-xl border border-gray-200 bg-white p-4">
+        <h3 className="mb-3 text-xs font-semibold tracking-wider text-gray-500 uppercase">
+            {title}
+        </h3>
+        {children}
+    </div>
+);
 
 const AddVitalForm = ({ patientId, onSuccess, onCancel, createdBy }) => {
     const [formData, setFormData] = useState({
@@ -348,7 +591,7 @@ const AddVitalForm = ({ patientId, onSuccess, onCancel, createdBy }) => {
                 submitData,
             );
 
-            if (response.status === 200) {
+            if (response.status === 200 || response.status === 201) {
                 toast.success('Vital signs saved successfully');
                 // Parent will close modal + reload
                 onSuccess();
@@ -370,21 +613,13 @@ const AddVitalForm = ({ patientId, onSuccess, onCancel, createdBy }) => {
         }
     };
 
+    const bpAssessment = assessBP(formData.systolic_bp, formData.diastolic_bp);
+
     return (
-        <form onSubmit={handleSubmit} className="space-y-5">
-            {/* Measurement Information */}
-            <div>
-                <h3 className="mb-2 text-xs font-semibold tracking-wider text-gray-500 uppercase">
-                    Measurement Information
-                </h3>
+        <form onSubmit={handleSubmit} className="space-y-4">
+            <FormSection title="Measurement Information">
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div>
-                        <Label
-                            htmlFor="recorded_at"
-                            className="text-xs text-gray-600"
-                        >
-                            Vitals Date
-                        </Label>
+                    <Field id="recorded_at" label="Vitals Date">
                         <Input
                             id="recorded_at"
                             type="date"
@@ -396,16 +631,10 @@ const AddVitalForm = ({ patientId, onSuccess, onCancel, createdBy }) => {
                             onChange={(e) =>
                                 handleChange('recorded_at', e.target.value)
                             }
-                            className="mt-1 h-8 text-sm"
+                            className="h-9 text-sm"
                         />
-                    </div>
-                    <div>
-                        <Label
-                            htmlFor="vital_time"
-                            className="text-xs text-gray-600"
-                        >
-                            Vital Time
-                        </Label>
+                    </Field>
+                    <Field id="vital_time" label="Vital Time">
                         <Input
                             id="vital_time"
                             type="time"
@@ -425,25 +654,19 @@ const AddVitalForm = ({ patientId, onSuccess, onCancel, createdBy }) => {
                                     `${date}T${e.target.value}`,
                                 );
                             }}
-                            className="mt-1 h-8 text-sm"
+                            className="h-9 text-sm"
                         />
-                    </div>
+                    </Field>
                 </div>
-            </div>
+            </FormSection>
 
-            {/* Anthropometry */}
-            <div>
-                <h3 className="mb-2 text-xs font-semibold tracking-wider text-gray-500 uppercase">
-                    Anthropometry
-                </h3>
+            <FormSection title="Anthropometry">
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                    <div>
-                        <Label
-                            htmlFor="height"
-                            className="text-xs text-gray-600"
-                        >
-                            Height/Length (cm)
-                        </Label>
+                    <Field
+                        id="height"
+                        label="Height/Length (cm)"
+                        error={errors.height}
+                    >
                         <Input
                             id="height"
                             type="number"
@@ -455,22 +678,15 @@ const AddVitalForm = ({ patientId, onSuccess, onCancel, createdBy }) => {
                                     e.target.value,
                                 )
                             }
-                            className={`mt-1 h-8 text-sm ${errors.height ? 'border-red-500' : ''}`}
+                            className={`h-9 text-sm ${errors.height ? 'border-red-500' : ''}`}
                             placeholder="e.g., 168"
                         />
-                        {errors.height && (
-                            <p className="mt-0.5 text-xs text-red-500">
-                                {errors.height}
-                            </p>
-                        )}
-                    </div>
-                    <div>
-                        <Label
-                            htmlFor="weight"
-                            className="text-xs text-gray-600"
-                        >
-                            Weight (kg)
-                        </Label>
+                    </Field>
+                    <Field
+                        id="weight"
+                        label="Weight (kg)"
+                        error={errors.weight}
+                    >
                         <Input
                             id="weight"
                             type="number"
@@ -482,19 +698,15 @@ const AddVitalForm = ({ patientId, onSuccess, onCancel, createdBy }) => {
                                     e.target.value,
                                 )
                             }
-                            className={`mt-1 h-8 text-sm ${errors.weight ? 'border-red-500' : ''}`}
+                            className={`h-9 text-sm ${errors.weight ? 'border-red-500' : ''}`}
                             placeholder="e.g., 75"
                         />
-                        {errors.weight && (
-                            <p className="mt-0.5 text-xs text-red-500">
-                                {errors.weight}
-                            </p>
-                        )}
-                    </div>
-                    <div>
-                        <Label htmlFor="bmi" className="text-xs text-gray-600">
-                            BMI
-                        </Label>
+                    </Field>
+                    <Field
+                        id="bmi"
+                        label="BMI (auto)"
+                        assessment={assessBMI(formData.bmi)}
+                    >
                         <Input
                             id="bmi"
                             type="text"
@@ -503,30 +715,25 @@ const AddVitalForm = ({ patientId, onSuccess, onCancel, createdBy }) => {
                                     ? parseFloat(formData.bmi).toFixed(2)
                                     : ''
                             }
-                            className="mt-1 h-8 bg-gray-50 text-sm text-gray-600"
+                            className="h-9 bg-gray-50 text-sm text-gray-600"
                             readOnly
                             placeholder="Auto-calculated"
                         />
-                        <p className="mt-0.5 text-xs text-gray-400">
-                            Auto-calculated
-                        </p>
-                    </div>
+                    </Field>
                 </div>
-            </div>
+            </FormSection>
 
-            {/* Vital Signs */}
-            <div>
-                <h3 className="mb-2 text-xs font-semibold tracking-wider text-gray-500 uppercase">
-                    Vital Signs
-                </h3>
+            <FormSection title="Vital Signs">
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    <div>
-                        <Label
-                            htmlFor="temperature"
-                            className="text-xs text-gray-600"
-                        >
-                            Temperature (°C)
-                        </Label>
+                    <Field
+                        id="temperature"
+                        label="Temperature (°C)"
+                        error={errors.temperature}
+                        assessment={bandAssess(
+                            formData.temperature,
+                            BANDS.temperature,
+                        )}
+                    >
                         <Input
                             id="temperature"
                             type="number"
@@ -535,27 +742,26 @@ const AddVitalForm = ({ patientId, onSuccess, onCancel, createdBy }) => {
                             onChange={(e) =>
                                 handleChange('temperature', e.target.value)
                             }
-                            className={`mt-1 h-8 text-sm ${errors.temperature ? 'border-red-500' : ''}`}
+                            className={`h-9 text-sm ${errors.temperature ? 'border-red-500' : ''}`}
                             placeholder="e.g., 36.5"
                         />
-                        {errors.temperature && (
-                            <p className="mt-0.5 text-xs text-red-500">
-                                {errors.temperature}
-                            </p>
-                        )}
-                    </div>
-                    <div>
-                        <Label className="text-xs text-gray-600">
-                            Blood Pressure (mmHg)
-                        </Label>
-                        <div className="mt-1 flex items-center gap-2">
+                    </Field>
+
+                    <Field
+                        id="systolic_bp"
+                        label="Blood Pressure (mmHg)"
+                        error={errors.systolic_bp || errors.diastolic_bp}
+                        assessment={bpAssessment}
+                    >
+                        <div className="flex items-center gap-2">
                             <Input
+                                id="systolic_bp"
                                 type="number"
                                 value={formData.systolic_bp}
                                 onChange={(e) =>
                                     handleChange('systolic_bp', e.target.value)
                                 }
-                                className={`h-8 text-sm ${errors.systolic_bp ? 'border-red-500' : ''}`}
+                                className={`h-9 text-sm ${errors.systolic_bp ? 'border-red-500' : ''}`}
                                 placeholder="SYS"
                             />
                             <span className="text-sm text-gray-500">/</span>
@@ -565,23 +771,21 @@ const AddVitalForm = ({ patientId, onSuccess, onCancel, createdBy }) => {
                                 onChange={(e) =>
                                     handleChange('diastolic_bp', e.target.value)
                                 }
-                                className={`h-8 text-sm ${errors.diastolic_bp ? 'border-red-500' : ''}`}
+                                className={`h-9 text-sm ${errors.diastolic_bp ? 'border-red-500' : ''}`}
                                 placeholder="DIA"
                             />
                         </div>
-                        {(errors.systolic_bp || errors.diastolic_bp) && (
-                            <p className="mt-0.5 text-xs text-red-500">
-                                {errors.systolic_bp || errors.diastolic_bp}
-                            </p>
+                    </Field>
+
+                    <Field
+                        id="pulse_rate"
+                        label="Pulse Rate (bpm)"
+                        error={errors.pulse_rate}
+                        assessment={bandAssess(
+                            formData.pulse_rate,
+                            BANDS.pulse_rate,
                         )}
-                    </div>
-                    <div>
-                        <Label
-                            htmlFor="pulse_rate"
-                            className="text-xs text-gray-600"
-                        >
-                            Pulse Rate (bpm)
-                        </Label>
+                    >
                         <Input
                             id="pulse_rate"
                             type="number"
@@ -589,19 +793,17 @@ const AddVitalForm = ({ patientId, onSuccess, onCancel, createdBy }) => {
                             onChange={(e) =>
                                 handleChange('pulse_rate', e.target.value)
                             }
-                            className={`mt-1 h-8 text-sm ${errors.pulse_rate ? 'border-red-500' : ''}`}
+                            className={`h-9 text-sm ${errors.pulse_rate ? 'border-red-500' : ''}`}
                             placeholder="e.g., 72"
                         />
-                        {errors.pulse_rate && (
-                            <p className="mt-0.5 text-xs text-red-500">
-                                {errors.pulse_rate}
-                            </p>
-                        )}
-                    </div>
-                    <div>
-                        <Label htmlFor="spO2" className="text-xs text-gray-600">
-                            SpO₂ (%)
-                        </Label>
+                    </Field>
+
+                    <Field
+                        id="spO2"
+                        label="SpO₂ (%)"
+                        error={errors.spO2}
+                        assessment={bandAssess(formData.spO2, BANDS.spO2)}
+                    >
                         <Input
                             id="spO2"
                             type="number"
@@ -610,22 +812,20 @@ const AddVitalForm = ({ patientId, onSuccess, onCancel, createdBy }) => {
                             onChange={(e) =>
                                 handleChange('spO2', e.target.value)
                             }
-                            className={`mt-1 h-8 text-sm ${errors.spO2 ? 'border-red-500' : ''}`}
+                            className={`h-9 text-sm ${errors.spO2 ? 'border-red-500' : ''}`}
                             placeholder="e.g., 98"
                         />
-                        {errors.spO2 && (
-                            <p className="mt-0.5 text-xs text-red-500">
-                                {errors.spO2}
-                            </p>
+                    </Field>
+
+                    <Field
+                        id="respiratory_rate"
+                        label="Respiratory Rate (breaths/min)"
+                        error={errors.respiratory_rate}
+                        assessment={bandAssess(
+                            formData.respiratory_rate,
+                            BANDS.respiratory_rate,
                         )}
-                    </div>
-                    <div>
-                        <Label
-                            htmlFor="respiratory_rate"
-                            className="text-xs text-gray-600"
-                        >
-                            Respiratory Rate (breaths/min)
-                        </Label>
+                    >
                         <Input
                             id="respiratory_rate"
                             type="number"
@@ -633,22 +833,20 @@ const AddVitalForm = ({ patientId, onSuccess, onCancel, createdBy }) => {
                             onChange={(e) =>
                                 handleChange('respiratory_rate', e.target.value)
                             }
-                            className={`mt-1 h-8 text-sm ${errors.respiratory_rate ? 'border-red-500' : ''}`}
+                            className={`h-9 text-sm ${errors.respiratory_rate ? 'border-red-500' : ''}`}
                             placeholder="e.g., 16"
                         />
-                        {errors.respiratory_rate && (
-                            <p className="mt-0.5 text-xs text-red-500">
-                                {errors.respiratory_rate}
-                            </p>
+                    </Field>
+
+                    <Field
+                        id="blood_glucose"
+                        label="Blood Glucose (mg/dL)"
+                        error={errors.blood_glucose}
+                        assessment={bandAssess(
+                            formData.blood_glucose,
+                            BANDS.blood_glucose,
                         )}
-                    </div>
-                    <div>
-                        <Label
-                            htmlFor="blood_glucose"
-                            className="text-xs text-gray-600"
-                        >
-                            Blood Glucose (mg/dL)
-                        </Label>
+                    >
                         <Input
                             id="blood_glucose"
                             type="number"
@@ -656,28 +854,23 @@ const AddVitalForm = ({ patientId, onSuccess, onCancel, createdBy }) => {
                             onChange={(e) =>
                                 handleChange('blood_glucose', e.target.value)
                             }
-                            className="mt-1 h-8 text-sm"
+                            className="h-9 text-sm"
                             placeholder="e.g., 110"
                         />
-                    </div>
+                    </Field>
                 </div>
-            </div>
+            </FormSection>
 
-            {/* Notes */}
-            <div>
-                <Label htmlFor="notes" className="text-xs text-gray-600">
-                    Notes
-                </Label>
+            <FormSection title="Notes">
                 <Textarea
                     id="notes"
                     value={formData.notes}
                     onChange={(e) => handleChange('notes', e.target.value)}
-                    className="mt-1 min-h-[60px] text-sm"
+                    className="min-h-[70px] text-sm"
                     placeholder="Additional observations or comments..."
                 />
-            </div>
+            </FormSection>
 
-            {/* Footer Actions */}
             <div className="flex justify-end gap-3 border-t pt-4">
                 <Button
                     type="button"
@@ -716,17 +909,35 @@ const AddVitalForm = ({ patientId, onSuccess, onCancel, createdBy }) => {
 // HISTORY TABLE
 // ============================================================
 
+const Cell = ({ value, assessment, unit }) => {
+    const s = LEVEL_STYLES[assessment?.level || 'none'];
+    const display = formatVitalValue(value);
+    return (
+        <span
+            className={`${display === '—' ? 'text-gray-300' : `${s.text} font-medium`}`}
+            title={assessment?.label}
+        >
+            {display}
+            {display !== '—' && unit ? (
+                <span className="ml-0.5 text-[10px] font-normal text-gray-400">
+                    {unit}
+                </span>
+            ) : null}
+        </span>
+    );
+};
+
 const HistoryTable = ({ vitals, onViewDetails }) => {
     if (!vitals || vitals.length === 0) {
         return (
-            <div className="py-8 text-center text-sm text-gray-400">
-                No historical observations available
+            <div className="py-10 text-center text-sm text-gray-400">
+                No matching observations
             </div>
         );
     }
 
     return (
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto rounded-lg border border-gray-200">
             <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                     <tr>
@@ -740,61 +951,91 @@ const HistoryTable = ({ vitals, onViewDetails }) => {
                             'SpO₂',
                             'Weight',
                             'BMI',
-                            'Action',
-                        ].map((h) => (
+                            'Recorded by',
+                            '',
+                        ].map((h, i) => (
                             <th
-                                key={h}
-                                className="px-4 py-2 text-left text-xs font-medium tracking-wider text-gray-500 uppercase"
+                                key={`${h}-${i}`}
+                                className="px-4 py-2.5 text-left text-xs font-medium tracking-wider whitespace-nowrap text-gray-500 uppercase"
                             >
                                 {h}
                             </th>
                         ))}
                     </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200 bg-white">
+                <tbody className="divide-y divide-gray-100 bg-white">
                     {vitals.map((vital) => {
-                        const bpDisplay =
-                            vital.systolic_bp && vital.diastolic_bp
-                                ? `${formatVitalValue(vital.systolic_bp)}/${formatVitalValue(vital.diastolic_bp)}`
-                                : '—';
+                        const r = Object.fromEntries(
+                            getReadings(vital).map((x) => [x.key, x]),
+                        );
+                        const abnormal = getAlerts(vital).length > 0;
 
                         return (
                             <tr
                                 key={vital.id}
-                                className="transition-colors hover:bg-gray-50"
+                                className="transition-colors hover:bg-blue-50/40"
                             >
-                                <td className="px-4 py-2 text-sm whitespace-nowrap text-gray-900">
-                                    {formatDate(
-                                        vital.recorded_at || vital.created_at,
-                                    )}
+                                <td className="px-4 py-2.5 text-sm whitespace-nowrap text-gray-900">
+                                    <span className="inline-flex items-center gap-2">
+                                        <span
+                                            className={`h-2 w-2 rounded-full ${abnormal ? 'bg-amber-500' : 'bg-emerald-400'}`}
+                                            title={
+                                                abnormal
+                                                    ? 'Has abnormal values'
+                                                    : 'All within range'
+                                            }
+                                        />
+                                        {formatDate(getVitalDate(vital))}
+                                    </span>
                                 </td>
-                                <td className="px-4 py-2 text-sm whitespace-nowrap text-gray-700">
-                                    {formatTime(
-                                        vital.recorded_at || vital.created_at,
-                                    )}
+                                <td className="px-4 py-2.5 text-sm whitespace-nowrap text-gray-600">
+                                    {formatTime(getVitalDate(vital))}
                                 </td>
-                                <td className="px-4 py-2 text-sm font-medium whitespace-nowrap">
-                                    {bpDisplay}
+                                <td className="px-4 py-2.5 text-sm whitespace-nowrap">
+                                    <Cell
+                                        value={r.bp.value}
+                                        assessment={r.bp.assessment}
+                                    />
                                 </td>
-                                <td className="px-4 py-2 text-sm whitespace-nowrap">
-                                    {formatVitalValue(vital.pulse_rate)}
+                                <td className="px-4 py-2.5 text-sm whitespace-nowrap">
+                                    <Cell
+                                        value={r.pulse_rate.value}
+                                        assessment={r.pulse_rate.assessment}
+                                    />
                                 </td>
-                                <td className="px-4 py-2 text-sm whitespace-nowrap">
-                                    {formatVitalValue(vital.temperature)}
+                                <td className="px-4 py-2.5 text-sm whitespace-nowrap">
+                                    <Cell
+                                        value={r.temperature.value}
+                                        assessment={r.temperature.assessment}
+                                    />
                                 </td>
-                                <td className="px-4 py-2 text-sm whitespace-nowrap">
-                                    {formatVitalValue(vital.respiratory_rate)}
+                                <td className="px-4 py-2.5 text-sm whitespace-nowrap">
+                                    <Cell
+                                        value={r.respiratory_rate.value}
+                                        assessment={
+                                            r.respiratory_rate.assessment
+                                        }
+                                    />
                                 </td>
-                                <td className="px-4 py-2 text-sm whitespace-nowrap">
-                                    {formatVitalValue(vital.spO2)}
+                                <td className="px-4 py-2.5 text-sm whitespace-nowrap">
+                                    <Cell
+                                        value={r.spO2.value}
+                                        assessment={r.spO2.assessment}
+                                    />
                                 </td>
-                                <td className="px-4 py-2 text-sm whitespace-nowrap">
-                                    {formatVitalValue(vital.weight)}
+                                <td className="px-4 py-2.5 text-sm whitespace-nowrap">
+                                    <Cell value={vital.weight} />
                                 </td>
-                                <td className="px-4 py-2 text-sm whitespace-nowrap">
-                                    {formatVitalValue(vital.bmi)}
+                                <td className="px-4 py-2.5 text-sm whitespace-nowrap">
+                                    <Cell
+                                        value={r.bmi.value}
+                                        assessment={r.bmi.assessment}
+                                    />
                                 </td>
-                                <td className="px-4 py-2 text-sm whitespace-nowrap">
+                                <td className="px-4 py-2.5 text-sm whitespace-nowrap text-gray-500">
+                                    {vital.recorder?.name || '—'}
+                                </td>
+                                <td className="px-4 py-2.5 text-sm whitespace-nowrap">
                                     <Button
                                         variant="ghost"
                                         size="sm"
@@ -814,6 +1055,35 @@ const HistoryTable = ({ vitals, onViewDetails }) => {
 };
 
 // ============================================================
+// DETAILS MODAL TILE
+// ============================================================
+
+const DetailTile = ({ label, value, unit, assessment }) => {
+    const s = LEVEL_STYLES[assessment?.level || 'none'];
+    const display = formatVitalValue(value);
+    return (
+        <div className={`rounded-lg border p-3 ${s.border} ${s.soft}`}>
+            <div className="text-[11px] font-semibold tracking-wider text-gray-500 uppercase">
+                {label}
+            </div>
+            <div className={`mt-0.5 text-base font-semibold ${s.text}`}>
+                {display}
+                {display !== '—' && unit && (
+                    <span className="ml-1 text-xs font-normal text-gray-500">
+                        {unit}
+                    </span>
+                )}
+            </div>
+            {assessment && assessment.level !== 'normal' && (
+                <div className={`text-[11px] font-medium ${s.text}`}>
+                    {assessment.label}
+                </div>
+            )}
+        </div>
+    );
+};
+
+// ============================================================
 // 3. MAIN COMPONENT
 // ============================================================
 
@@ -827,23 +1097,33 @@ export default function Vitals() {
     const [selectedVital, setSelectedVital] = useState(null);
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
+    const [abnormalOnly, setAbnormalOnly] = useState(false);
 
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage] = useState(10);
 
-    const latestVital = useMemo(() => getLatestVital(vitals), [vitals]);
+    // Newest first / oldest first (computed once)
+    const vitalsDesc = useMemo(() => sortVitalsDesc(vitals), [vitals]);
+    const vitalsAsc = useMemo(() => [...vitalsDesc].reverse(), [vitalsDesc]);
 
-    const latestBMI = useMemo(() => {
-        if (latestVital?.bmi) return latestVital.bmi;
-        if (latestVital?.height && latestVital?.weight) {
-            return calculateBMI(latestVital.height, latestVital.weight);
-        }
-        return null;
-    }, [latestVital]);
+    const latestVital = vitalsDesc[0] || null;
+    const latestBMI = getBMI(latestVital);
+    const latestAlerts = useMemo(() => getAlerts(latestVital), [latestVital]);
+
+    const trends = useMemo(
+        () => ({
+            temperature: buildSeries(vitalsAsc, (v) => v.temperature),
+            bp: buildSeries(vitalsAsc, (v) => v.systolic_bp),
+            pulse_rate: buildSeries(vitalsAsc, (v) => v.pulse_rate),
+            respiratory_rate: buildSeries(vitalsAsc, (v) => v.respiratory_rate),
+            spO2: buildSeries(vitalsAsc, (v) => v.spO2),
+            blood_glucose: buildSeries(vitalsAsc, (v) => v.blood_glucose),
+        }),
+        [vitalsAsc],
+    );
 
     const filteredVitals = useMemo(() => {
-        if (!vitals) return [];
-        let filtered = [...vitals];
+        let filtered = [...vitalsDesc];
 
         if (searchTerm) {
             const term = searchTerm.toLowerCase();
@@ -854,14 +1134,12 @@ export default function Vitals() {
             );
         }
 
-        filtered.sort((a, b) => {
-            const dateA = new Date(a.recorded_at || a.created_at);
-            const dateB = new Date(b.recorded_at || b.created_at);
-            return dateB - dateA;
-        });
+        if (abnormalOnly) {
+            filtered = filtered.filter((v) => getAlerts(v).length > 0);
+        }
 
         return filtered;
-    }, [vitals, searchTerm]);
+    }, [vitalsDesc, searchTerm, abnormalOnly]);
 
     const totalPages = Math.ceil(filteredVitals.length / itemsPerPage);
     const indexOfLastItem = currentPage * itemsPerPage;
@@ -871,14 +1149,21 @@ export default function Vitals() {
         indexOfLastItem,
     );
 
+    const handleSearch = (value) => {
+        setSearchTerm(value);
+        setCurrentPage(1);
+    };
+
+    const handleToggleAbnormal = () => {
+        setAbnormalOnly((prev) => !prev);
+        setCurrentPage(1);
+    };
+
     const handleAddVital = () => setIsAddModalOpen(true);
 
     /**
-     * FIX: Close modal first, THEN reload data.
-     * Using setTimeout ensures the Dialog close animation
-     * completes and React unmounts the modal before Inertia
-     * triggers a page reload (which could otherwise cause the
-     * Dialog to briefly re-open due to state timing).
+     * Close modal first, THEN reload data.
+     * The short delay lets the Dialog finish closing before Inertia reloads.
      */
     const handleAddVitalSuccess = () => {
         setIsAddModalOpen(false);
@@ -899,6 +1184,14 @@ export default function Vitals() {
     const hasVitals = vitals && vitals.length > 0;
     const showEmpty = !hasVitals;
 
+    const selectedReadings = useMemo(
+        () =>
+            Object.fromEntries(
+                getReadings(selectedVital).map((x) => [x.key, x]),
+            ),
+        [selectedVital],
+    );
+
     return (
         <PatientLayout
             breadcrumbs={[
@@ -906,214 +1199,338 @@ export default function Vitals() {
                 { title: 'Vital Signs', href: '' },
             ]}
         >
-            <div className="min-h-screen bg-blue-50 p-6">
-                <div className="space-y-4">
-                    <PageHeader
-                        icon={<Activity />}
-                        title="Vitals & Anthropometry"
-                        subtitle="Latest recorded observations"
-                        actions={[
-                            {
-                                label: 'Add Vital Signs',
-                                onClick: handleAddVital,
-                            },
-                        ]}
-                    />
+            {/*
+              Only the patient-header (rendered by PatientLayout) stays fixed.
+              This wrapper fills the space under it and scrolls on its own,
+              so the header never moves and never overflows.
+            */}
+            <div className="flex h-full min-h-0 flex-col bg-blue-50">
+                <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+                    <div className="mx-auto w-full max-w-7xl space-y-4">
+                        <PageHeader
+                            icon={<Activity />}
+                            title="Vitals & Anthropometry"
+                            subtitle={
+                                latestVital
+                                    ? `Last recorded ${formatDate(getVitalDate(latestVital))} at ${formatTime(getVitalDate(latestVital))}`
+                                    : 'Latest recorded observations'
+                            }
+                            actions={[
+                                {
+                                    label: 'Add Vital Signs',
+                                    icon: <Plus className="h-4 w-4" />,
+                                    onClick: handleAddVital,
+                                },
+                            ]}
+                        />
 
-                    {showEmpty && <EmptyState onAddVital={handleAddVital} />}
+                        {showEmpty && (
+                            <EmptyState onAddVital={handleAddVital} />
+                        )}
 
-                    {hasVitals && (
-                        <div className="space-y-4">
-                            {/* Latest Vitals */}
-                            <Card>
-                                <CardContent className="sm:p-5">
-                                    <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-600">
-                                        {latestVital?.encounter_date && (
-                                            <span>
-                                                <span className="font-medium text-gray-500">
-                                                    Encounter:
-                                                </span>{' '}
-                                                {formatDate(
-                                                    latestVital.encounter_date,
-                                                )}
-                                            </span>
-                                        )}
-                                        {latestVital?.recorded_at && (
-                                            <span>
-                                                <span className="font-medium text-gray-500">
-                                                    Vitals:
-                                                </span>{' '}
-                                                {formatDate(
-                                                    latestVital.recorded_at,
-                                                )}{' '}
-                                                <span className="text-gray-400">
-                                                    {formatTime(
-                                                        latestVital.recorded_at,
-                                                    )}
-                                                </span>
-                                            </span>
-                                        )}
-                                        {latestVital?.created_at &&
-                                            !latestVital?.recorded_at && (
-                                                <span>
-                                                    <span className="font-medium text-gray-500">
-                                                        Recorded:
-                                                    </span>{' '}
-                                                    {formatDate(
-                                                        latestVital.created_at,
-                                                    )}{' '}
-                                                    <span className="text-gray-400">
-                                                        {formatTime(
-                                                            latestVital.created_at,
+                        {hasVitals && (
+                            <>
+                                {/* ---------------- Latest reading ---------------- */}
+                                <Card>
+                                    <CardContent className="p-4 sm:p-5">
+                                        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                                            <h2 className="text-sm font-semibold text-gray-800">
+                                                Latest reading
+                                            </h2>
+                                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
+                                                {latestVital?.encounter_date && (
+                                                    <span>
+                                                        <span className="font-medium">
+                                                            Encounter:
+                                                        </span>{' '}
+                                                        {formatDate(
+                                                            latestVital.encounter_date,
                                                         )}
                                                     </span>
+                                                )}
+                                                <span className="inline-flex items-center gap-1">
+                                                    <Clock className="h-3 w-3" />
+                                                    {formatDate(
+                                                        getVitalDate(
+                                                            latestVital,
+                                                        ),
+                                                    )}{' '}
+                                                    {formatTime(
+                                                        getVitalDate(
+                                                            latestVital,
+                                                        ),
+                                                    )}
                                                 </span>
-                                            )}
-                                    </div>
+                                                {latestVital?.recorder
+                                                    ?.name && (
+                                                    <span className="inline-flex items-center gap-1">
+                                                        <User className="h-3 w-3" />
+                                                        {
+                                                            latestVital.recorder
+                                                                .name
+                                                        }
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
 
-                                    <div className="mb-4">
-                                        <AnthropometrySummary
-                                            height={latestVital?.height}
-                                            weight={latestVital?.weight}
-                                            bmi={latestBMI}
+                                        <AttentionBanner
+                                            alerts={latestAlerts}
                                         />
-                                    </div>
 
-                                    <VitalSignsSummary
-                                        temperature={latestVital?.temperature}
-                                        systolic_bp={latestVital?.systolic_bp}
-                                        diastolic_bp={latestVital?.diastolic_bp}
-                                        pulse_rate={latestVital?.pulse_rate}
-                                        respiratory_rate={
-                                            latestVital?.respiratory_rate
-                                        }
-                                        spO2={latestVital?.spO2}
-                                    />
+                                        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                                            <MetricCard
+                                                icon={Thermometer}
+                                                label="Temperature"
+                                                value={latestVital?.temperature}
+                                                unit="°C"
+                                                assessment={bandAssess(
+                                                    latestVital?.temperature,
+                                                    BANDS.temperature,
+                                                )}
+                                                trend={trends.temperature}
+                                            />
+                                            <MetricCard
+                                                icon={Gauge}
+                                                label="Blood Pressure"
+                                                value={getBPDisplay(
+                                                    latestVital,
+                                                )}
+                                                unit="mmHg"
+                                                assessment={assessBP(
+                                                    latestVital?.systolic_bp,
+                                                    latestVital?.diastolic_bp,
+                                                )}
+                                                trend={trends.bp}
+                                                trendLabel="systolic trend"
+                                            />
+                                            <MetricCard
+                                                icon={HeartPulse}
+                                                label="Pulse Rate"
+                                                value={latestVital?.pulse_rate}
+                                                unit="bpm"
+                                                assessment={bandAssess(
+                                                    latestVital?.pulse_rate,
+                                                    BANDS.pulse_rate,
+                                                )}
+                                                trend={trends.pulse_rate}
+                                            />
+                                            <MetricCard
+                                                icon={Wind}
+                                                label="Respiratory Rate"
+                                                value={
+                                                    latestVital?.respiratory_rate
+                                                }
+                                                unit="breaths/min"
+                                                assessment={bandAssess(
+                                                    latestVital?.respiratory_rate,
+                                                    BANDS.respiratory_rate,
+                                                )}
+                                                trend={trends.respiratory_rate}
+                                            />
+                                            <MetricCard
+                                                icon={Droplets}
+                                                label="SpO₂"
+                                                value={latestVital?.spO2}
+                                                unit="%"
+                                                assessment={bandAssess(
+                                                    latestVital?.spO2,
+                                                    BANDS.spO2,
+                                                )}
+                                                trend={trends.spO2}
+                                            />
+                                            <MetricCard
+                                                icon={Droplet}
+                                                label="Blood Glucose"
+                                                value={
+                                                    latestVital?.blood_glucose
+                                                }
+                                                unit="mg/dL"
+                                                assessment={bandAssess(
+                                                    latestVital?.blood_glucose,
+                                                    BANDS.blood_glucose,
+                                                )}
+                                                trend={trends.blood_glucose}
+                                            />
+                                        </div>
 
-                                    {latestVital?.notes && (
-                                        <div className="mt-3 border-t border-gray-100 pt-3">
-                                            <p className="text-xs text-gray-400">
+                                        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                                            <AnthropometryTile
+                                                icon={Ruler}
+                                                label="Height"
+                                                value={latestVital?.height}
+                                                unit="cm"
+                                            />
+                                            <AnthropometryTile
+                                                icon={Scale}
+                                                label="Weight"
+                                                value={latestVital?.weight}
+                                                unit="kg"
+                                            />
+                                            <AnthropometryTile
+                                                icon={Activity}
+                                                label="BMI"
+                                                value={latestBMI}
+                                                unit="kg/m²"
+                                                assessment={assessBMI(
+                                                    latestBMI,
+                                                )}
+                                            />
+                                        </div>
+
+                                        {latestVital?.notes && (
+                                            <div className="mt-4 rounded-lg bg-gray-50 px-3 py-2 text-sm text-gray-600">
                                                 <span className="font-medium text-gray-500">
                                                     Notes:
                                                 </span>{' '}
                                                 {latestVital.notes}
-                                            </p>
-                                        </div>
-                                    )}
-                                </CardContent>
-                            </Card>
-
-                            {/* History */}
-                            <Card>
-                                <CardContent className="p-4 sm:p-5">
-                                    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                                        <h2 className="text-sm font-semibold text-gray-700">
-                                            History
-                                            <span className="ml-2 text-xs font-normal text-gray-400">
-                                                ({filteredVitals.length}{' '}
-                                                records)
-                                            </span>
-                                        </h2>
-                                        <div className="relative flex-1 sm:max-w-xs">
-                                            <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                                            <Input
-                                                type="text"
-                                                placeholder="Search history..."
-                                                value={searchTerm}
-                                                onChange={(e) =>
-                                                    setSearchTerm(
-                                                        e.target.value,
-                                                    )
-                                                }
-                                                className="h-9 w-full pl-9 text-sm"
-                                            />
-                                        </div>
-                                    </div>
-
-                                    <HistoryTable
-                                        vitals={currentVitals}
-                                        onViewDetails={handleViewDetails}
-                                    />
-
-                                    {totalPages > 1 && (
-                                        <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-3">
-                                            <div className="text-xs text-gray-500">
-                                                Page {currentPage} of{' '}
-                                                {totalPages}
                                             </div>
-                                            <div className="flex items-center gap-1">
-                                                <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                    onClick={() =>
-                                                        setCurrentPage(1)
-                                                    }
-                                                    disabled={currentPage === 1}
-                                                    className="h-8 w-8 p-0"
-                                                >
-                                                    <ChevronsLeft className="h-3 w-3" />
-                                                </Button>
-                                                <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                    onClick={() =>
-                                                        setCurrentPage((prev) =>
-                                                            Math.max(
-                                                                prev - 1,
-                                                                1,
-                                                            ),
-                                                        )
-                                                    }
-                                                    disabled={currentPage === 1}
-                                                    className="h-8 w-8 p-0"
-                                                >
-                                                    <ChevronLeft className="h-3 w-3" />
-                                                </Button>
-                                                <span className="px-2 text-xs">
-                                                    {currentPage} / {totalPages}
+                                        )}
+
+                                        <p className="mt-3 text-[11px] text-gray-400">
+                                            Status flags use adult reference
+                                            ranges and are a visual aid only.
+                                        </p>
+                                    </CardContent>
+                                </Card>
+
+                                {/* ---------------- History ---------------- */}
+                                <Card>
+                                    <CardContent className="p-4 sm:p-5">
+                                        <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                                            <h2 className="text-sm font-semibold text-gray-800">
+                                                History
+                                                <span className="ml-2 text-xs font-normal text-gray-400">
+                                                    ({filteredVitals.length}{' '}
+                                                    records)
                                                 </span>
-                                                <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                    onClick={() =>
-                                                        setCurrentPage((prev) =>
-                                                            Math.min(
-                                                                prev + 1,
-                                                                totalPages,
-                                                            ),
-                                                        )
+                                            </h2>
+                                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                                <button
+                                                    type="button"
+                                                    onClick={
+                                                        handleToggleAbnormal
                                                     }
-                                                    disabled={
-                                                        currentPage ===
-                                                        totalPages
-                                                    }
-                                                    className="h-8 w-8 p-0"
+                                                    className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-medium transition-colors ${
+                                                        abnormalOnly
+                                                            ? 'border-amber-300 bg-amber-50 text-amber-800'
+                                                            : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                                                    }`}
                                                 >
-                                                    <ChevronRight className="h-3 w-3" />
-                                                </Button>
-                                                <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                    onClick={() =>
-                                                        setCurrentPage(
-                                                            totalPages,
-                                                        )
-                                                    }
-                                                    disabled={
-                                                        currentPage ===
-                                                        totalPages
-                                                    }
-                                                    className="h-8 w-8 p-0"
-                                                >
-                                                    <ChevronsRight className="h-3 w-3" />
-                                                </Button>
+                                                    <AlertTriangle className="h-3.5 w-3.5" />
+                                                    Abnormal only
+                                                </button>
+                                                <div className="relative sm:w-64">
+                                                    <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                                                    <Input
+                                                        type="text"
+                                                        placeholder="Search notes or recorder..."
+                                                        value={searchTerm}
+                                                        onChange={(e) =>
+                                                            handleSearch(
+                                                                e.target.value,
+                                                            )
+                                                        }
+                                                        className="h-9 w-full pl-9 text-sm"
+                                                    />
+                                                </div>
                                             </div>
                                         </div>
-                                    )}
-                                </CardContent>
-                            </Card>
-                        </div>
-                    )}
+
+                                        <HistoryTable
+                                            vitals={currentVitals}
+                                            onViewDetails={handleViewDetails}
+                                        />
+
+                                        {totalPages > 1 && (
+                                            <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-3">
+                                                <div className="text-xs text-gray-500">
+                                                    Page {currentPage} of{' '}
+                                                    {totalPages}
+                                                </div>
+                                                <div className="flex items-center gap-1">
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        onClick={() =>
+                                                            setCurrentPage(1)
+                                                        }
+                                                        disabled={
+                                                            currentPage === 1
+                                                        }
+                                                        className="h-8 w-8 p-0"
+                                                    >
+                                                        <ChevronsLeft className="h-3 w-3" />
+                                                    </Button>
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        onClick={() =>
+                                                            setCurrentPage(
+                                                                (prev) =>
+                                                                    Math.max(
+                                                                        prev -
+                                                                            1,
+                                                                        1,
+                                                                    ),
+                                                            )
+                                                        }
+                                                        disabled={
+                                                            currentPage === 1
+                                                        }
+                                                        className="h-8 w-8 p-0"
+                                                    >
+                                                        <ChevronLeft className="h-3 w-3" />
+                                                    </Button>
+                                                    <span className="px-2 text-xs">
+                                                        {currentPage} /{' '}
+                                                        {totalPages}
+                                                    </span>
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        onClick={() =>
+                                                            setCurrentPage(
+                                                                (prev) =>
+                                                                    Math.min(
+                                                                        prev +
+                                                                            1,
+                                                                        totalPages,
+                                                                    ),
+                                                            )
+                                                        }
+                                                        disabled={
+                                                            currentPage ===
+                                                            totalPages
+                                                        }
+                                                        className="h-8 w-8 p-0"
+                                                    >
+                                                        <ChevronRight className="h-3 w-3" />
+                                                    </Button>
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        onClick={() =>
+                                                            setCurrentPage(
+                                                                totalPages,
+                                                            )
+                                                        }
+                                                        disabled={
+                                                            currentPage ===
+                                                            totalPages
+                                                        }
+                                                        className="h-8 w-8 p-0"
+                                                    >
+                                                        <ChevronsRight className="h-3 w-3" />
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </CardContent>
+                                </Card>
+                            </>
+                        )}
+                    </div>
                 </div>
             </div>
 
@@ -1121,11 +1538,9 @@ export default function Vitals() {
                 ADD VITAL MODAL
                 - Fixed header
                 - Scrollable body only
-                - Flex column layout for proper height control
                 ============================================================ */}
             <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
                 <DialogContent className="flex max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
-                    {/* Fixed Header */}
                     <DialogHeader className="flex-shrink-0 border-b bg-slate-50 px-6 py-4">
                         <div className="flex items-center gap-3">
                             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-500">
@@ -1143,8 +1558,7 @@ export default function Vitals() {
                         </div>
                     </DialogHeader>
 
-                    {/* Scrollable Body */}
-                    <div className="flex-1 overflow-y-auto px-6 py-4">
+                    <div className="flex-1 overflow-y-auto bg-slate-50/50 px-6 py-4">
                         <AddVitalForm
                             patientId={patientId}
                             onSuccess={handleAddVitalSuccess}
@@ -1159,7 +1573,7 @@ export default function Vitals() {
                 DETAILS MODAL
                 ============================================================ */}
             <Dialog open={showHistory} onOpenChange={setShowHistory}>
-                <DialogContent className="sm:max-w-md">
+                <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
                     <DialogHeader>
                         <DialogTitle>Vital Details</DialogTitle>
                         <DialogDescription>
@@ -1175,8 +1589,7 @@ export default function Vitals() {
                                     </span>
                                     <p className="text-gray-900">
                                         {formatDate(
-                                            selectedVital.recorded_at ||
-                                                selectedVital.created_at,
+                                            getVitalDate(selectedVital),
                                         )}
                                     </p>
                                 </div>
@@ -1186,8 +1599,7 @@ export default function Vitals() {
                                     </span>
                                     <p className="text-gray-900">
                                         {formatTime(
-                                            selectedVital.recorded_at ||
-                                                selectedVital.created_at,
+                                            getVitalDate(selectedVital),
                                         )}
                                     </p>
                                 </div>
@@ -1209,40 +1621,25 @@ export default function Vitals() {
                                 <h4 className="mb-2 text-xs font-semibold tracking-wider text-gray-500 uppercase">
                                     Anthropometry
                                 </h4>
-                                <div className="grid grid-cols-3 gap-2 text-sm">
-                                    <div>
-                                        <span className="text-gray-500">
-                                            Height
-                                        </span>
-                                        <p className="font-medium text-gray-900">
-                                            {formatVitalValue(
-                                                selectedVital.height,
-                                            )}
-                                            {selectedVital.height && ' cm'}
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <span className="text-gray-500">
-                                            Weight
-                                        </span>
-                                        <p className="font-medium text-gray-900">
-                                            {formatVitalValue(
-                                                selectedVital.weight,
-                                            )}
-                                            {selectedVital.weight && ' kg'}
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <span className="text-gray-500">
-                                            BMI
-                                        </span>
-                                        <p className="font-medium text-gray-900">
-                                            {formatVitalValue(
-                                                selectedVital.bmi,
-                                            )}
-                                            {selectedVital.bmi && ' kg/m²'}
-                                        </p>
-                                    </div>
+                                <div className="grid grid-cols-3 gap-2">
+                                    <DetailTile
+                                        label="Height"
+                                        value={selectedVital.height}
+                                        unit="cm"
+                                    />
+                                    <DetailTile
+                                        label="Weight"
+                                        value={selectedVital.weight}
+                                        unit="kg"
+                                    />
+                                    <DetailTile
+                                        label="BMI"
+                                        value={selectedReadings.bmi?.value}
+                                        unit="kg/m²"
+                                        assessment={
+                                            selectedReadings.bmi?.assessment
+                                        }
+                                    />
                                 </div>
                             </div>
 
@@ -1250,73 +1647,70 @@ export default function Vitals() {
                                 <h4 className="mb-2 text-xs font-semibold tracking-wider text-gray-500 uppercase">
                                     Vital Signs
                                 </h4>
-                                <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-3">
-                                    <div>
-                                        <span className="text-gray-500">
-                                            Temperature
-                                        </span>
-                                        <p className="font-medium text-gray-900">
-                                            {formatVitalValue(
-                                                selectedVital.temperature,
-                                            )}
-                                            {selectedVital.temperature && ' °C'}
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <span className="text-gray-500">
-                                            Blood Pressure
-                                        </span>
-                                        <p className="font-medium text-gray-900">
-                                            {selectedVital.systolic_bp &&
-                                            selectedVital.diastolic_bp
-                                                ? `${selectedVital.systolic_bp}/${selectedVital.diastolic_bp} mmHg`
-                                                : '—'}
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <span className="text-gray-500">
-                                            Pulse Rate
-                                        </span>
-                                        <p className="font-medium text-gray-900">
-                                            {formatVitalValue(
-                                                selectedVital.pulse_rate,
-                                            )}
-                                            {selectedVital.pulse_rate && ' bpm'}
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <span className="text-gray-500">
-                                            Respiratory Rate
-                                        </span>
-                                        <p className="font-medium text-gray-900">
-                                            {formatVitalValue(
-                                                selectedVital.respiratory_rate,
-                                            )}
-                                            {selectedVital.respiratory_rate &&
-                                                ' breaths/min'}
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <span className="text-gray-500">
-                                            SpO₂
-                                        </span>
-                                        <p className="font-medium text-gray-900">
-                                            {formatVitalValue(
-                                                selectedVital.spO2,
-                                            )}
-                                            {selectedVital.spO2 && ' %'}
-                                        </p>
-                                    </div>
+                                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                                    <DetailTile
+                                        label="Temperature"
+                                        value={
+                                            selectedReadings.temperature?.value
+                                        }
+                                        unit="°C"
+                                        assessment={
+                                            selectedReadings.temperature
+                                                ?.assessment
+                                        }
+                                    />
+                                    <DetailTile
+                                        label="Blood Pressure"
+                                        value={selectedReadings.bp?.value}
+                                        unit="mmHg"
+                                        assessment={
+                                            selectedReadings.bp?.assessment
+                                        }
+                                    />
+                                    <DetailTile
+                                        label="Pulse Rate"
+                                        value={
+                                            selectedReadings.pulse_rate?.value
+                                        }
+                                        unit="bpm"
+                                        assessment={
+                                            selectedReadings.pulse_rate
+                                                ?.assessment
+                                        }
+                                    />
+                                    <DetailTile
+                                        label="Resp. Rate"
+                                        value={
+                                            selectedReadings.respiratory_rate
+                                                ?.value
+                                        }
+                                        unit="breaths/min"
+                                        assessment={
+                                            selectedReadings.respiratory_rate
+                                                ?.assessment
+                                        }
+                                    />
+                                    <DetailTile
+                                        label="SpO₂"
+                                        value={selectedReadings.spO2?.value}
+                                        unit="%"
+                                        assessment={
+                                            selectedReadings.spO2?.assessment
+                                        }
+                                    />
                                     {selectedVital.blood_glucose && (
-                                        <div>
-                                            <span className="text-gray-500">
-                                                Glucose
-                                            </span>
-                                            <p className="font-medium text-gray-900">
-                                                {selectedVital.blood_glucose}{' '}
-                                                mg/dL
-                                            </p>
-                                        </div>
+                                        <DetailTile
+                                            label="Glucose"
+                                            value={
+                                                selectedReadings.blood_glucose
+                                                    ?.value
+                                            }
+                                            unit="mg/dL"
+                                            assessment={
+                                                selectedReadings.blood_glucose
+                                                    ?.assessment
+                                            }
+                                        />
                                     )}
                                 </div>
                             </div>
