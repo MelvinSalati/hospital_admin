@@ -692,7 +692,7 @@ export default function OphthalmologyDashboard({
                 { href: '', title: 'Ophthalmology' },
             ]}
         >
-            <div className="bg-blue-50 p-2">
+            <div className="bg-blue-50">
                 <PageHeader
                     icon={<Eye className="h-5 w-5" />}
                     title="Ophthalmology Department"

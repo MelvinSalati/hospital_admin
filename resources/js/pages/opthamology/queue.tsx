@@ -37,11 +37,14 @@ import type { Column, Action } from '@/components/ReusableTable';
 // Types
 // ============================================================================
 
+type QueueTab = 'in_progress' | 'completed';
+
 interface QueuePatient {
     id: number;
     token: string;
     patient_id: number;
     patient_name: string;
+    patient_number?: string;
     contact: string;
     gender: string;
     payment_method: string;
@@ -65,6 +68,37 @@ interface Props {
     queue: QueuePatient[];
     stats: Stats;
 }
+
+// ============================================================================
+// Tabs config (rendered as PageHeader action buttons)
+// ============================================================================
+
+/** PageHeader button variant for the selected tab vs. the others. */
+const TAB_ACTIVE_VARIANT = 'cyan';
+const TAB_INACTIVE_VARIANT = 'outline';
+
+const TABS: {
+    key: QueueTab;
+    label: string;
+    subtitle: string;
+    tableTitle: string;
+    emptyMessage: string;
+}[] = [
+    {
+        key: 'in_progress',
+        label: 'In Progress',
+        subtitle: 'Patients currently being attended to',
+        tableTitle: 'In Progress Patients',
+        emptyMessage: 'No patients in progress',
+    },
+    {
+        key: 'completed',
+        label: 'Completed',
+        subtitle: 'Patients whose visit has been completed',
+        tableTitle: 'Completed Patients',
+        emptyMessage: 'No completed patients',
+    },
+];
 
 // ============================================================================
 // Badge Components
@@ -257,6 +291,7 @@ export default function Nurses() {
     const queues: QueuePatient[] = props.queue || [];
     console.log(queues);
 
+    const [activeTab, setActiveTab] = useState<QueueTab>('in_progress');
     const [selectedPatient, setSelectedPatient] = useState<QueuePatient | null>(
         null,
     );
@@ -296,6 +331,30 @@ export default function Nurses() {
             priority: patient.priority || 'routine',
         }));
     }, [queues]);
+
+    // Split the queue by tab once, so counts and rows stay in sync
+    const grouped = useMemo<Record<QueueTab, QueuePatient[]>>(
+        () => ({
+            in_progress: processedQueue.filter(
+                (p) => p.visit_status === 'in_progress',
+            ),
+            completed: processedQueue.filter(
+                (p) => p.visit_status === 'completed',
+            ),
+        }),
+        [processedQueue],
+    );
+
+    const activeTabConfig = TABS.find((t) => t.key === activeTab) ?? TABS[0];
+    const tabData = grouped[activeTab];
+
+    // Tabs as PageHeader action buttons (label carries the live count)
+    const headerActions = TABS.map((tab) => ({
+        label: `${tab.label} (${grouped[tab.key].length})`,
+        variant:
+            tab.key === activeTab ? TAB_ACTIVE_VARIANT : TAB_INACTIVE_VARIANT,
+        onClick: () => setActiveTab(tab.key),
+    }));
 
     const formatTime = (dateString: string) => {
         if (!dateString) return 'N/A';
@@ -449,50 +508,39 @@ export default function Nurses() {
     ];
 
     // ============================================
-    // STATUS OPTIONS FOR FILTER
-    // ============================================
-
-    const statusOptions = [
-        { value: 'pending', label: 'Pending' },
-        { value: 'active', label: 'Active' },
-        { value: 'in_progress', label: 'In Progress' },
-        { value: 'completed', label: 'Completed' },
-        { value: 'cancelled', label: 'Cancelled' },
-    ];
-
-    // ============================================
     // RENDER
     // ============================================
 
     return (
         <AppLayout
             breadcrumbs={[
-                { href: '', title: 'Department' },
-                { href: '', title: 'Nurses' },
+                { href: '', title: 'Altaf Memorial Hospital' },
+                { href: '', title: 'Queue' },
+                { href: '', title: 'Opthamology' },
             ]}
         >
-            <div className="flex h-full min-h-screen flex-1 flex-col gap-4 bg-blue-100 p-2 dark:bg-slate-900">
-                {/* Header */}
-                <PageHeader
-                    icon={<Stethoscope />}
-                    title="Patients Queued"
-                    subtitle="View and manage patients currently in the queue"
-                />
+            {/* Header */}
+            <PageHeader
+                icon={<Stethoscope />}
+                title="Patients Queued"
+                subtitle={activeTabConfig.subtitle}
+                actions={headerActions}
+            />
 
+            <div className="flex h-full min-h-screen flex-1 flex-col gap-4 bg-blue-100 p-2 dark:bg-slate-900">
                 {/* Reusable Table */}
                 <ReusableTable
-                    title="Queue Patients"
+                    key={activeTab}
+                    title={activeTabConfig.tableTitle}
                     columns={columns}
-                    data={processedQueue}
+                    data={tabData}
                     actions={actions}
                     loading={loading}
                     filterPlaceholder="Search by patient name, token, or contact..."
-                    statusFilterKey="visit_status"
-                    statusOptions={statusOptions}
                     rowsPerPageOptions={[5, 10, 25, 50]}
                     defaultRowsPerPage={10}
                     defaultOrderBy="registered_at"
-                    emptyMessage="No patients in the queue"
+                    emptyMessage={activeTabConfig.emptyMessage}
                     className="shadow-sm"
                 />
 

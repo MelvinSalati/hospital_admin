@@ -211,6 +211,12 @@ const roleNavItems: Record<string, NavEntry[]> = {
         },
 
         {
+            title: 'Manage Billables',
+            href: '/billables/department',
+            icon: TagIcon,
+        },
+
+        {
             title: 'Reports',
             href: '/admin/reports',
             icon: BarChart3,
@@ -426,11 +432,7 @@ const roleNavItems: Record<string, NavEntry[]> = {
             icon: Users,
             badge: 'encounters',
         },
-        {
-            title: 'Manage Billables',
-            href: '/theatre',
-            icon: Barcode,
-        },
+
         {
             title: 'Bulk Store',
             href: '/theatre/bulk-orders',
@@ -460,16 +462,12 @@ const roleNavItems: Record<string, NavEntry[]> = {
             icon: CalendarClock,
         },
         {
-            title: 'Manage Queue',
+            title: 'Encounters',
             href: '/dental/queue',
             icon: Users,
             badge: 'encounters',
         },
-        {
-            title: 'Manage Billables',
-            href: '/dental/billables',
-            icon: ClipboardCheck,
-        },
+
         {
             title: 'Bulk Store',
             href: '/dental/bulk-orders',
@@ -500,7 +498,7 @@ const roleNavItems: Record<string, NavEntry[]> = {
             icon: CalendarClock,
         },
         {
-            title: 'Manage Queue',
+            title: 'Encounters',
             href: '/opthalmology/queue',
             icon: Users,
             badge: 'encounters',
@@ -509,11 +507,6 @@ const roleNavItems: Record<string, NavEntry[]> = {
             title: 'Bulk Store',
             href: '/opthalmology/bulk-orders',
             icon: Barcode,
-        },
-        {
-            title: 'Manage Billables',
-            href: '/billables/department',
-            icon: TagIcon,
         },
         {
             title: 'Reports',
@@ -827,7 +820,7 @@ const DEPARTMENT_HREF_RULES: Record<string, DepartmentHrefRule[]> = {
     opthalmology: [
         departmentRule('Dashboard', '/opthalmology/dashboard'),
         departmentRule('Appointments', '/opthalmology/appointments'),
-        departmentRule('Manage Queue', '/opthalmology/queue'),
+        departmentRule('Encounters', '/opthalmology/queue'),
         departmentRule('Eye Examinations', '/opthalmology/examinations'),
         departmentRule('Procedures', '/opthalmology/procedures'),
         departmentRule('Processed', '/opthalmology/processed'),

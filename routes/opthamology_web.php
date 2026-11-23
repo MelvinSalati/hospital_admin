@@ -5,7 +5,7 @@ use App\Http\Controllers\Opthamology\OpthamologyController;
 use App\Http\Controllers\Reports\OpthamologyReportController;
 use Illuminate\Support\Facades\Route;
 
-Route::prefix('opthalmology')->group(function () {
+Route::prefix('opthamology')->group(function () {
     Route::get('/', [OpthamologyController::class, 'index']);
 
     Route::get('/dashboard/{departmentId}', [OpthamologyDashboardController::class, 'index']);
