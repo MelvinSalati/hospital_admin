@@ -18,7 +18,7 @@ Route::prefix('opthamology')->group(function () {
 
     Route::get('bulk-orders/{departmentId}', [OpthamologyBulkStoreController::class, 'index']);
 
-    Route::get('reports/{departmentId}', [OpthamologyReportController::class, 'index'])->name('opthalmology.reports');
+    Route::get('reports/{departmentId}', [OpthamologyReportController::class, 'index']);
 });
 
 
