@@ -1,16 +1,13 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import {
-    Activity,
     AlertTriangle,
     Bell,
     CalendarCheck,
     CalendarClock,
     ClipboardList,
     Eye,
-    Glasses,
     HeartPulse,
     Search,
-    Stethoscope,
     Users,
     UserCheck,
 } from 'lucide-react';

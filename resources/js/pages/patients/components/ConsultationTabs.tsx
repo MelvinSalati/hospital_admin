@@ -1,4 +1,3 @@
-import { router } from '@inertiajs/react';
 import {
     Save,
     Loader2,
@@ -6,40 +5,33 @@ import {
     AlertCircle,
     ChevronRight,
     ChevronLeft,
-    Activity,
     AlertTriangle,
-    Heart,
     Pill,
     ClipboardList,
-    Microscope,
-    Camera,
-    FileText,
     BookOpen,
     X,
     Plus,
-    Calendar,
-    Clock,
-    User,
-    Stethoscope,
+    Eye,
+    Glasses,
+    Activity,
+    Heart,
 } from 'lucide-react';
 import Notiflix from 'notiflix';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import routes from '@/constants/routes';
 import Http from '@/utils/Http';
-import LabOrdersSection from '../LabOrdersSection';
 
-// Types
-interface ConsultationFormData {
-    chiefComplaints: ChiefComplaint[];
-    clinicalAnalysis: SymptomAnalysis[];
-    physicalExam: PhysicalFinding[];
-    drugHistory: DrugEntry[];
-    medicalConditions: MedicalCondition[];
-    labOrders: LabOrder[];
-    imagingOrders: ImagingOrder[];
-    prescription: PrescriptionItem[];
-    healthEducation: HealthEducation[];
+// ==================== Types ====================
+
+interface VisualAcuityRecord {
+    id: string;
+    testType: 'distance' | 'near';
+    correction: 'unaided' | 'with_glasses' | 'pinhole' | 'contact_lens';
+    rightEye: string; // OD
+    leftEye: string; // OS
+    bothEyes?: string; // OU
+    notes?: string;
 }
 
 interface ChiefComplaint {
@@ -49,6 +41,40 @@ interface ChiefComplaint {
     severity: number;
     onset: string;
     characteristics: string;
+}
+
+interface OcularFinding {
+    id: string;
+    structure: string;
+    eye: 'OD' | 'OS' | 'OU';
+    normal: boolean;
+    description?: string;
+}
+
+interface DrugEntry {
+    id: string;
+    drugName: string;
+    dosage: string;
+    frequency: string;
+    status: 'current' | 'discontinued';
+    notes?: string;
+}
+
+interface OcularHistoryEntry {
+    id: string;
+    category: string;
+    eye: 'OD' | 'OS' | 'OU';
+    date: string;
+    status: 'active' | 'resolved' | 'chronic';
+    notes?: string;
+}
+
+interface HealthEducation {
+    id: string;
+    topic: string;
+    description: string;
+    patientUnderstanding: 'poor' | 'fair' | 'good' | 'excellent';
+    followUpNeeded: boolean;
 }
 
 interface SymptomAnalysis {
@@ -67,15 +93,6 @@ interface PhysicalFinding {
     description?: string;
 }
 
-interface DrugEntry {
-    id: string;
-    drugName: string;
-    dosage: string;
-    frequency: string;
-    status: 'current' | 'discontinued';
-    notes?: string;
-}
-
 interface MedicalCondition {
     id: string;
     condition: string;
@@ -84,39 +101,18 @@ interface MedicalCondition {
     notes?: string;
 }
 
-interface LabOrder {
-    id: string;
-    testName: string;
-    category: string;
-    urgency: 'routine' | 'urgent' | 'stat';
-    notes?: string;
-}
-
-interface ImagingOrder {
-    id: string;
-    modality: string;
-    bodyPart: string;
-    reason: string;
-    urgency: 'routine' | 'urgent' | 'stat';
-}
-
-interface PrescriptionItem {
-    id: string;
-    drugName: string;
-    dosage: string;
-    frequency: string;
-    duration: string;
-    quantity: number;
-    refills: number;
-    instructions: string;
-}
-
-interface HealthEducation {
-    id: string;
-    topic: string;
-    description: string;
-    patientUnderstanding: 'poor' | 'fair' | 'good' | 'excellent';
-    followUpNeeded: boolean;
+interface ConsultationFormData {
+    // General consultation
+    clinicalAnalysis: SymptomAnalysis[];
+    physicalExam: PhysicalFinding[];
+    medicalConditions: MedicalCondition[];
+    // Ophthalmology consultation
+    visualAcuity: VisualAcuityRecord[];
+    chiefComplaints: ChiefComplaint[];
+    ocularExamination: OcularFinding[];
+    drugHistory: DrugEntry[];
+    ocularHistory: OcularHistoryEntry[];
+    healthEducation: HealthEducation[];
 }
 
 interface ConsultationTabsProps {
@@ -129,8 +125,54 @@ interface ConsultationTabsProps {
     onSuccess?: () => void;
 }
 
-// Section Configuration
-const sections = [
+// ==================== Section Configuration ====================
+
+const ophthalmologySections = [
+    {
+        id: 'visualAcuity',
+        label: 'Visual Acuity',
+        icon: Eye,
+        color: 'blue',
+        description: 'Distance and near vision',
+    },
+    {
+        id: 'chiefComplaints',
+        label: 'Chief Complaints',
+        icon: AlertTriangle,
+        color: 'blue',
+        description: "Document patient's primary symptoms",
+    },
+    {
+        id: 'ocularExamination',
+        label: 'Ocular Examination',
+        icon: Glasses,
+        color: 'purple',
+        description: 'Eye examination findings',
+    },
+    {
+        id: 'drugHistory',
+        label: 'Drug Hx',
+        icon: Pill,
+        color: 'green',
+        description: 'Current and past medications',
+    },
+    {
+        id: 'ocularHistory',
+        label: 'Patient Ocular Hx',
+        icon: ClipboardList,
+        color: 'orange',
+        description: 'Past eye history',
+    },
+    {
+        id: 'healthEducation',
+        label: 'Health Education',
+        icon: BookOpen,
+        color: 'yellow',
+        description: 'Patient education',
+    },
+];
+
+const generalSections = [
     {
         id: 'chiefComplaints',
         label: 'Chief Complaints',
@@ -175,7 +217,22 @@ const sections = [
     },
 ];
 
-export default function ConsultationTabs({
+// Reads the logged-in user's role from localStorage
+const checkIsOphthalmology = () => {
+    try {
+        const role = (localStorage.getItem('userRole') ?? '')
+            .trim()
+            .toLowerCase();
+        // accepts both spellings: "ophthalmology" and "opthalmology"
+        return role === 'ophthalmology' || role === 'opthalmology';
+    } catch {
+        return false;
+    }
+};
+
+// ==================== Main Component ====================
+
+export default function OphthalmologyConsultationTabs({
     admissionNumber,
     patientId,
     doctorId,
@@ -183,16 +240,18 @@ export default function ConsultationTabs({
     initialData,
     onSuccess,
 }: ConsultationTabsProps) {
-    const [activeTab, setActiveTab] = useState('chiefComplaints');
+    const [isOphthalmology] = useState(checkIsOphthalmology);
+    const sections = isOphthalmology ? ophthalmologySections : generalSections;
+    const [activeTab, setActiveTab] = useState(sections[0].id);
     const [formData, setFormData] = useState<ConsultationFormData>({
-        chiefComplaints: [],
         clinicalAnalysis: [],
         physicalExam: [],
-        drugHistory: [],
         medicalConditions: [],
-        labOrders: [],
-        imagingOrders: [],
-        prescription: [],
+        visualAcuity: [],
+        chiefComplaints: [],
+        ocularExamination: [],
+        drugHistory: [],
+        ocularHistory: [],
         healthEducation: [],
         ...initialData,
     });
@@ -205,34 +264,29 @@ export default function ConsultationTabs({
     // Validate section
     const validateSection = (sectionId: string, data: any[]) => {
         let isValid = true;
-        const sectionErrors: any = {};
+        const sectionErrs: any = {};
 
         switch (sectionId) {
+            case 'visualAcuity':
+                isValid = data.every(
+                    (item) => item.rightEye?.trim() && item.leftEye?.trim(),
+                );
+                if (!isValid)
+                    sectionErrs.general =
+                        'Please record acuity for both eyes (OD and OS)';
+                break;
             case 'chiefComplaints':
                 isValid = data.every(
                     (item) => item.symptom?.trim() && item.duration?.trim(),
                 );
                 if (!isValid)
-                    sectionErrors.general = 'Please fill all required fields';
-                break;
-            case 'prescription':
-                isValid = data.every(
-                    (item) =>
-                        item.drugName?.trim() &&
-                        item.dosage?.trim() &&
-                        item.frequency?.trim() &&
-                        item.duration?.trim() &&
-                        item.quantity > 0,
-                );
-                if (!isValid)
-                    sectionErrors.general =
-                        'Please complete all prescription details';
+                    sectionErrs.general = 'Please fill all required fields';
                 break;
             default:
                 isValid = true;
         }
 
-        setErrors((prev) => ({ ...prev, [sectionId]: sectionErrors }));
+        setErrors((prev) => ({ ...prev, [sectionId]: sectionErrs }));
         setSectionErrors((prev) => ({ ...prev, [sectionId]: !isValid }));
         return isValid;
     };
@@ -243,7 +297,7 @@ export default function ConsultationTabs({
         validateSection(sectionId, data);
     };
 
-    // Get section completion status
+    // Section completion status
     const getSectionStatus = (sectionId: string) => {
         const data = formData[sectionId as keyof ConsultationFormData];
         return Array.isArray(data) && data.length > 0;
@@ -252,10 +306,10 @@ export default function ConsultationTabs({
     const completedSections = sections.filter((s) =>
         getSectionStatus(s.id),
     ).length;
-    const progress = (completedSections / sections.length) * 100;
     const hasErrors = Object.values(sectionErrors).some(
         (error) => error === true,
     );
+    const currentIndex = sections.findIndex((s) => s.id === activeTab);
 
     // Submit form
     const handleSubmit = async () => {
@@ -284,7 +338,15 @@ export default function ConsultationTabs({
                     doctor_id: doctorId,
                     created_by: createdBy,
                     admission_number: admissionNumber,
-                    ...formData,
+                    consultation_type: isOphthalmology
+                        ? 'ophthalmology'
+                        : 'general',
+                    ...Object.fromEntries(
+                        sections.map((s) => [
+                            s.id,
+                            formData[s.id as keyof ConsultationFormData],
+                        ]),
+                    ),
                     status: 'completed',
                     submitted_at: new Date().toISOString(),
                 }),
@@ -296,8 +358,10 @@ export default function ConsultationTabs({
             } else {
                 Notiflix.Notify.failure('Failed to save');
             }
-        } catch (error) {
-            Notiflix.Notify.failure(error.response.data.message);
+        } catch (error: any) {
+            Notiflix.Notify.failure(
+                error?.response?.data?.message ?? 'Failed to save',
+            );
         } finally {
             setIsSubmitting(false);
         }
@@ -306,21 +370,40 @@ export default function ConsultationTabs({
     // Render active section content
     const renderSection = () => {
         switch (activeTab) {
+            case 'visualAcuity':
+                return (
+                    <VisualAcuitySection
+                        data={formData.visualAcuity}
+                        onChange={(data: any[]) =>
+                            updateSection('visualAcuity', data)
+                        }
+                        errors={errors.visualAcuity}
+                    />
+                );
             case 'chiefComplaints':
                 return (
                     <ChiefComplaintsSection
                         data={formData.chiefComplaints}
-                        onChange={(data) =>
+                        onChange={(data: any[]) =>
                             updateSection('chiefComplaints', data)
                         }
                         errors={errors.chiefComplaints}
+                    />
+                );
+            case 'ocularExamination':
+                return (
+                    <OcularExaminationSection
+                        data={formData.ocularExamination}
+                        onChange={(data: any[]) =>
+                            updateSection('ocularExamination', data)
+                        }
                     />
                 );
             case 'clinicalAnalysis':
                 return (
                     <ClinicalAnalysisSection
                         data={formData.clinicalAnalysis}
-                        onChange={(data) =>
+                        onChange={(data: any[]) =>
                             updateSection('clinicalAnalysis', data)
                         }
                     />
@@ -329,22 +412,35 @@ export default function ConsultationTabs({
                 return (
                     <PhysicalExamSection
                         data={formData.physicalExam}
-                        onChange={(data) => updateSection('physicalExam', data)}
-                    />
-                );
-            case 'drugHistory':
-                return (
-                    <DrugHistorySection
-                        data={formData.drugHistory}
-                        onChange={(data) => updateSection('drugHistory', data)}
+                        onChange={(data: any[]) =>
+                            updateSection('physicalExam', data)
+                        }
                     />
                 );
             case 'medicalConditions':
                 return (
                     <MedicalConditionsSection
                         data={formData.medicalConditions}
-                        onChange={(data) =>
+                        onChange={(data: any[]) =>
                             updateSection('medicalConditions', data)
+                        }
+                    />
+                );
+            case 'drugHistory':
+                return (
+                    <DrugHistorySection
+                        data={formData.drugHistory}
+                        onChange={(data: any[]) =>
+                            updateSection('drugHistory', data)
+                        }
+                    />
+                );
+            case 'ocularHistory':
+                return (
+                    <OcularHistorySection
+                        data={formData.ocularHistory}
+                        onChange={(data: any[]) =>
+                            updateSection('ocularHistory', data)
                         }
                     />
                 );
@@ -352,7 +448,7 @@ export default function ConsultationTabs({
                 return (
                     <HealthEducationSection
                         data={formData.healthEducation}
-                        onChange={(data) =>
+                        onChange={(data: any[]) =>
                             updateSection('healthEducation', data)
                         }
                     />
@@ -409,48 +505,34 @@ export default function ConsultationTabs({
                     <Button
                         variant="outline"
                         onClick={() => {
-                            const currentIndex = sections.findIndex(
-                                (s) => s.id === activeTab,
-                            );
                             if (currentIndex > 0) {
                                 setActiveTab(sections[currentIndex - 1].id);
                             }
                         }}
-                        disabled={
-                            sections.findIndex((s) => s.id === activeTab) === 0
-                        }
+                        disabled={currentIndex === 0}
                     >
                         <ChevronLeft className="mr-1 h-4 w-4" />
                         Previous
                     </Button>
 
                     <div className="text-sm text-gray-500">
-                        Section{' '}
-                        {sections.findIndex((s) => s.id === activeTab) + 1} of{' '}
-                        {sections.length}
+                        Section {currentIndex + 1} of {sections.length}
                     </div>
 
                     <Button
                         variant="outline"
                         onClick={() => {
-                            const currentIndex = sections.findIndex(
-                                (s) => s.id === activeTab,
-                            );
                             if (currentIndex < sections.length - 1) {
                                 setActiveTab(sections[currentIndex + 1].id);
                             }
                         }}
-                        disabled={
-                            sections.findIndex((s) => s.id === activeTab) ===
-                            sections.length - 1
-                        }
+                        disabled={currentIndex === sections.length - 1}
                     >
                         Next
                         <ChevronRight className="ml-1 h-4 w-4" />
                     </Button>
                 </div>
 
-                {/* Submit Button - Positioned at the bottom */}
                 <div className="border-t border-gray-500 pt-4">
                     <Button
                         onClick={handleSubmit}
@@ -488,10 +570,255 @@ export default function ConsultationTabs({
     );
 }
 
+// ==================== Shared helpers ====================
+
+const useListActions = (data: any[], onChange: (d: any[]) => void) => {
+    const update = (id: string, field: string, value: any) =>
+        onChange(
+            data.map((item: any) =>
+                item.id === id ? { ...item, [field]: value } : item,
+            ),
+        );
+    const remove = (id: string) =>
+        onChange(data.filter((item: any) => item.id !== id));
+    return { update, remove };
+};
+
+const RemoveButton = ({ onClick }: { onClick: () => void }) => (
+    <button
+        onClick={onClick}
+        className="absolute top-3 right-3 text-gray-400 hover:text-red-500"
+    >
+        <X className="h-4 w-4" />
+    </button>
+);
+
+const AddButton = ({
+    onClick,
+    label,
+}: {
+    onClick: () => void;
+    label: string;
+}) => (
+    <Button
+        variant="outline"
+        onClick={onClick}
+        className="w-full border-dashed"
+    >
+        <Plus className="mr-2 h-4 w-4" />
+        {label}
+    </Button>
+);
+
 // ==================== Section Components ====================
 
-// 1. Chief Complaints Section
+// 1. Visual Acuity Section
+const VisualAcuitySection = ({ data, onChange, errors }: any) => {
+    const { update: baseUpdate, remove } = useListActions(data, onChange);
+
+    const distanceScale = [
+        '6/4',
+        '6/5',
+        '6/6',
+        '6/9',
+        '6/12',
+        '6/18',
+        '6/24',
+        '6/36',
+        '6/60',
+        '3/60',
+        '1/60',
+        'CF (Counting Fingers)',
+        'HM (Hand Motion)',
+        'PL (Perception of Light)',
+        'NPL (No Light Perception)',
+    ];
+    const nearScale = [
+        'N5',
+        'N6',
+        'N8',
+        'N10',
+        'N12',
+        'N14',
+        'N18',
+        'N24',
+        'N36',
+        'N48',
+        'Unable to read',
+    ];
+
+    const add = () => {
+        onChange([
+            ...data,
+            {
+                id: Date.now().toString(),
+                testType: 'distance',
+                correction: 'unaided',
+                rightEye: '',
+                leftEye: '',
+                bothEyes: '',
+                notes: '',
+            },
+        ]);
+    };
+
+    const update = (id: string, field: string, value: any) => {
+        // reset readings when switching scale type
+        if (field === 'testType') {
+            onChange(
+                data.map((item: any) =>
+                    item.id === id
+                        ? {
+                              ...item,
+                              testType: value,
+                              rightEye: '',
+                              leftEye: '',
+                              bothEyes: '',
+                          }
+                        : item,
+                ),
+            );
+            return;
+        }
+        baseUpdate(id, field, value);
+    };
+
+    const renderEyeSelect = (
+        item: any,
+        field: string,
+        label: string,
+        required = false,
+    ) => {
+        const scale = item.testType === 'distance' ? distanceScale : nearScale;
+        return (
+            <div>
+                <label className="mb-1 block text-sm font-medium">
+                    {label} {required && '*'}
+                </label>
+                <select
+                    value={item[field] || ''}
+                    onChange={(e) => update(item.id, field, e.target.value)}
+                    className="w-full rounded-md border px-3 py-2"
+                >
+                    <option value="">Select</option>
+                    {scale.map((v) => (
+                        <option key={v} value={v}>
+                            {v}
+                        </option>
+                    ))}
+                </select>
+            </div>
+        );
+    };
+
+    return (
+        <div className="space-y-4">
+            <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4">
+                <h3 className="font-semibold text-blue-900">Visual Acuity</h3>
+                <p className="text-sm text-blue-700">
+                    Record distance (Snellen) and near vision for each eye
+                </p>
+            </div>
+
+            {errors?.general && (
+                <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                    {errors.general}
+                </div>
+            )}
+
+            {data.map((item: any) => (
+                <div
+                    key={item.id}
+                    className="relative mb-4 rounded-lg border p-4"
+                >
+                    <RemoveButton onClick={() => remove(item.id)} />
+
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <div>
+                            <label className="mb-1 block text-sm font-medium">
+                                Test Type
+                            </label>
+                            <select
+                                value={item.testType}
+                                onChange={(e) =>
+                                    update(item.id, 'testType', e.target.value)
+                                }
+                                className="w-full rounded-md border px-3 py-2"
+                            >
+                                <option value="distance">
+                                    Distance (Snellen)
+                                </option>
+                                <option value="near">Near</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="mb-1 block text-sm font-medium">
+                                Correction
+                            </label>
+                            <select
+                                value={item.correction}
+                                onChange={(e) =>
+                                    update(
+                                        item.id,
+                                        'correction',
+                                        e.target.value,
+                                    )
+                                }
+                                className="w-full rounded-md border px-3 py-2"
+                            >
+                                <option value="unaided">Unaided</option>
+                                <option value="with_glasses">
+                                    With Glasses
+                                </option>
+                                <option value="contact_lens">
+                                    With Contact Lens
+                                </option>
+                                <option value="pinhole">Pinhole</option>
+                            </select>
+                        </div>
+
+                        {renderEyeSelect(
+                            item,
+                            'rightEye',
+                            'Right Eye (OD)',
+                            true,
+                        )}
+                        {renderEyeSelect(
+                            item,
+                            'leftEye',
+                            'Left Eye (OS)',
+                            true,
+                        )}
+                        {renderEyeSelect(item, 'bothEyes', 'Both Eyes (OU)')}
+
+                        <div className="md:col-span-2">
+                            <label className="mb-1 block text-sm font-medium">
+                                Notes
+                            </label>
+                            <input
+                                type="text"
+                                value={item.notes || ''}
+                                onChange={(e) =>
+                                    update(item.id, 'notes', e.target.value)
+                                }
+                                className="w-full rounded-md border px-3 py-2"
+                                placeholder="e.g., Improves with pinhole, eccentric fixation..."
+                            />
+                        </div>
+                    </div>
+                </div>
+            ))}
+
+            <AddButton onClick={add} label="Add Visual Acuity Test" />
+        </div>
+    );
+};
+
+// 2. Chief Complaints Section
 const ChiefComplaintsSection = ({ data, onChange, errors }: any) => {
+    const { update, remove } = useListActions(data, onChange);
+
     const add = () => {
         onChange([
             ...data,
@@ -504,18 +831,6 @@ const ChiefComplaintsSection = ({ data, onChange, errors }: any) => {
                 characteristics: '',
             },
         ]);
-    };
-
-    const update = (id: string, field: string, value: any) => {
-        onChange(
-            data.map((item: any) =>
-                item.id === id ? { ...item, [field]: value } : item,
-            ),
-        );
-    };
-
-    const remove = (id: string) => {
-        onChange(data.filter((item: any) => item.id !== id));
     };
 
     const onsetOptions = [
@@ -551,12 +866,7 @@ const ChiefComplaintsSection = ({ data, onChange, errors }: any) => {
                     key={item.id}
                     className="relative mb-4 rounded-lg border p-4"
                 >
-                    <button
-                        onClick={() => remove(item.id)}
-                        className="absolute top-3 right-3 text-gray-400 hover:text-red-500"
-                    >
-                        <X className="h-4 w-4" />
-                    </button>
+                    <RemoveButton onClick={() => remove(item.id)} />
 
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                         <div className="md:col-span-2">
@@ -570,7 +880,7 @@ const ChiefComplaintsSection = ({ data, onChange, errors }: any) => {
                                     update(item.id, 'symptom', e.target.value)
                                 }
                                 className="w-full rounded-md border px-3 py-2"
-                                placeholder="e.g., Headache, Chest pain"
+                                placeholder="e.g., Blurred vision, Eye pain, Redness"
                             />
                         </div>
 
@@ -647,27 +957,566 @@ const ChiefComplaintsSection = ({ data, onChange, errors }: any) => {
                                 }
                                 rows={2}
                                 className="w-full rounded-md border px-3 py-2"
-                                placeholder="Quality, location, aggravating/alleviating factors..."
+                                placeholder="Which eye, quality, aggravating/alleviating factors..."
                             />
                         </div>
                     </div>
                 </div>
             ))}
 
-            <Button
-                variant="outline"
-                onClick={add}
-                className="w-full border-dashed"
-            >
-                <Plus className="mr-2 h-4 w-4" />
-                Add Chief Complaint
-            </Button>
+            <AddButton onClick={add} label="Add Chief Complaint" />
         </div>
     );
 };
 
-// 2. Clinical Analysis Section
+// 3. Ocular Examination Section
+const OcularExaminationSection = ({ data, onChange }: any) => {
+    const { update, remove } = useListActions(data, onChange);
+
+    const structures = [
+        'Lids & Adnexa',
+        'Lacrimal System',
+        'Conjunctiva',
+        'Sclera',
+        'Cornea',
+        'Anterior Chamber',
+        'Iris',
+        'Pupil',
+        'Lens',
+        'Intraocular Pressure (IOP)',
+        'Extraocular Movements',
+        'Visual Fields',
+        'Vitreous',
+        'Optic Disc',
+        'Macula',
+        'Retinal Vessels',
+        'Peripheral Retina',
+    ];
+
+    const add = () => {
+        onChange([
+            ...data,
+            {
+                id: Date.now().toString(),
+                structure: structures[0],
+                eye: 'OU',
+                normal: true,
+                description: '',
+            },
+        ]);
+    };
+
+    return (
+        <div className="space-y-4">
+            <div className="mb-4 rounded-lg border border-purple-200 bg-purple-50 p-4">
+                <h3 className="font-semibold text-purple-900">
+                    Ocular Examination
+                </h3>
+                <p className="text-sm text-purple-700">
+                    Document external, anterior segment and posterior segment
+                    findings
+                </p>
+            </div>
+
+            {data.map((item: any) => (
+                <div
+                    key={item.id}
+                    className="relative mb-4 rounded-lg border p-4"
+                >
+                    <RemoveButton onClick={() => remove(item.id)} />
+
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <div>
+                            <label className="mb-1 block text-sm font-medium">
+                                Structure
+                            </label>
+                            <select
+                                value={item.structure}
+                                onChange={(e) =>
+                                    update(item.id, 'structure', e.target.value)
+                                }
+                                className="w-full rounded-md border px-3 py-2"
+                            >
+                                {structures.map((s) => (
+                                    <option key={s} value={s}>
+                                        {s}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="mb-1 block text-sm font-medium">
+                                Eye
+                            </label>
+                            <select
+                                value={item.eye}
+                                onChange={(e) =>
+                                    update(item.id, 'eye', e.target.value)
+                                }
+                                className="w-full rounded-md border px-3 py-2"
+                            >
+                                <option value="OD">Right (OD)</option>
+                                <option value="OS">Left (OS)</option>
+                                <option value="OU">Both (OU)</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="flex items-center gap-2">
+                                <input
+                                    type="checkbox"
+                                    checked={item.normal}
+                                    onChange={(e) =>
+                                        update(
+                                            item.id,
+                                            'normal',
+                                            e.target.checked,
+                                        )
+                                    }
+                                    className="rounded"
+                                />
+                                <span className="text-sm">Normal</span>
+                            </label>
+                        </div>
+
+                        {!item.normal && (
+                            <div className="md:col-span-2">
+                                <label className="mb-1 block text-sm font-medium">
+                                    Description
+                                </label>
+                                <textarea
+                                    value={item.description || ''}
+                                    onChange={(e) =>
+                                        update(
+                                            item.id,
+                                            'description',
+                                            e.target.value,
+                                        )
+                                    }
+                                    rows={2}
+                                    className="w-full rounded-md border px-3 py-2"
+                                    placeholder="Describe abnormal findings..."
+                                />
+                            </div>
+                        )}
+                    </div>
+                </div>
+            ))}
+
+            <AddButton onClick={add} label="Add Ocular Finding" />
+        </div>
+    );
+};
+
+// 4. Drug History Section
+const DrugHistorySection = ({ data, onChange }: any) => {
+    const { update, remove } = useListActions(data, onChange);
+
+    const add = () => {
+        onChange([
+            ...data,
+            {
+                id: Date.now().toString(),
+                drugName: '',
+                dosage: '',
+                frequency: '',
+                status: 'current',
+                notes: '',
+            },
+        ]);
+    };
+
+    const frequencyOptions = [
+        'OD (Once daily)',
+        'BD (Twice daily)',
+        'TDS (Three times daily)',
+        'QID (Four times daily)',
+        'Q6H (Every 6 hours)',
+        'Q8H (Every 8 hours)',
+        'Q12H (Every 12 hours)',
+        'PRN (As needed)',
+        'STAT (Immediately)',
+        'Weekly',
+        'Monthly',
+    ];
+
+    return (
+        <div className="space-y-4">
+            <div className="mb-4 rounded-lg border border-green-200 bg-green-50 p-4">
+                <h3 className="font-semibold text-green-900">Drug History</h3>
+                <p className="text-sm text-green-700">
+                    Current and past medications (include eye drops)
+                </p>
+            </div>
+
+            {data.map((item: any) => (
+                <div
+                    key={item.id}
+                    className="relative mb-4 rounded-lg border p-4"
+                >
+                    <RemoveButton onClick={() => remove(item.id)} />
+
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <div>
+                            <label className="mb-1 block text-sm font-medium">
+                                Drug Name
+                            </label>
+                            <input
+                                type="text"
+                                value={item.drugName}
+                                onChange={(e) =>
+                                    update(item.id, 'drugName', e.target.value)
+                                }
+                                className="w-full rounded-md border px-3 py-2"
+                                placeholder="e.g., Timolol eye drops"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="mb-1 block text-sm font-medium">
+                                Dosage
+                            </label>
+                            <input
+                                type="text"
+                                value={item.dosage}
+                                onChange={(e) =>
+                                    update(item.id, 'dosage', e.target.value)
+                                }
+                                className="w-full rounded-md border px-3 py-2"
+                                placeholder="e.g., 0.5%, 1 drop"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="mb-1 block text-sm font-medium">
+                                Frequency
+                            </label>
+                            <select
+                                value={item.frequency}
+                                onChange={(e) =>
+                                    update(item.id, 'frequency', e.target.value)
+                                }
+                                className="w-full rounded-md border px-3 py-2"
+                            >
+                                <option value="">Select frequency</option>
+                                {frequencyOptions.map((freq) => (
+                                    <option key={freq} value={freq}>
+                                        {freq}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="mb-1 block text-sm font-medium">
+                                Status
+                            </label>
+                            <select
+                                value={item.status}
+                                onChange={(e) =>
+                                    update(item.id, 'status', e.target.value)
+                                }
+                                className="w-full rounded-md border px-3 py-2"
+                            >
+                                <option value="current">Current</option>
+                                <option value="discontinued">
+                                    Discontinued
+                                </option>
+                            </select>
+                        </div>
+
+                        <div className="md:col-span-2">
+                            <label className="mb-1 block text-sm font-medium">
+                                Notes
+                            </label>
+                            <input
+                                type="text"
+                                value={item.notes || ''}
+                                onChange={(e) =>
+                                    update(item.id, 'notes', e.target.value)
+                                }
+                                className="w-full rounded-md border px-3 py-2"
+                                placeholder="Reason for discontinuation, allergies, etc."
+                            />
+                        </div>
+                    </div>
+                </div>
+            ))}
+
+            <AddButton onClick={add} label="Add Medication" />
+        </div>
+    );
+};
+
+// 5. Patient Ocular History Section
+const OcularHistorySection = ({ data, onChange }: any) => {
+    const { update, remove } = useListActions(data, onChange);
+
+    const categories = [
+        'Refractive error / Glasses use',
+        'Contact lens use',
+        'Previous eye surgery',
+        'Eye trauma / Injury',
+        'Glaucoma',
+        'Cataract',
+        'Diabetic / Hypertensive retinopathy',
+        'Allergic / Infective conjunctivitis',
+        'Uveitis',
+        'Amblyopia / Strabismus',
+        'Family history of eye disease',
+        'Other',
+    ];
+
+    const add = () => {
+        onChange([
+            ...data,
+            {
+                id: Date.now().toString(),
+                category: categories[0],
+                eye: 'OU',
+                date: '',
+                status: 'active',
+                notes: '',
+            },
+        ]);
+    };
+
+    return (
+        <div className="space-y-4">
+            <div className="mb-4 rounded-lg border border-orange-100 bg-orange-50 p-4">
+                <h3 className="font-semibold text-orange-900">
+                    Patient Ocular History
+                </h3>
+                <p className="text-sm text-orange-700">
+                    Past eye conditions, surgeries, trauma and family history
+                </p>
+            </div>
+
+            {data.map((item: any) => (
+                <div
+                    key={item.id}
+                    className="relative mb-4 rounded-lg border p-4"
+                >
+                    <RemoveButton onClick={() => remove(item.id)} />
+
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <div className="md:col-span-2">
+                            <label className="mb-1 block text-sm font-medium">
+                                Category
+                            </label>
+                            <select
+                                value={item.category}
+                                onChange={(e) =>
+                                    update(item.id, 'category', e.target.value)
+                                }
+                                className="w-full rounded-md border px-3 py-2"
+                            >
+                                {categories.map((c) => (
+                                    <option key={c} value={c}>
+                                        {c}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="mb-1 block text-sm font-medium">
+                                Eye
+                            </label>
+                            <select
+                                value={item.eye}
+                                onChange={(e) =>
+                                    update(item.id, 'eye', e.target.value)
+                                }
+                                className="w-full rounded-md border px-3 py-2"
+                            >
+                                <option value="OD">Right (OD)</option>
+                                <option value="OS">Left (OS)</option>
+                                <option value="OU">Both (OU)</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="mb-1 block text-sm font-medium">
+                                Date
+                            </label>
+                            <input
+                                type="date"
+                                value={item.date}
+                                onChange={(e) =>
+                                    update(item.id, 'date', e.target.value)
+                                }
+                                className="w-full rounded-md border px-3 py-2"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="mb-1 block text-sm font-medium">
+                                Status
+                            </label>
+                            <select
+                                value={item.status}
+                                onChange={(e) =>
+                                    update(item.id, 'status', e.target.value)
+                                }
+                                className="w-full rounded-md border px-3 py-2"
+                            >
+                                <option value="active">Active</option>
+                                <option value="resolved">Resolved</option>
+                                <option value="chronic">Chronic</option>
+                            </select>
+                        </div>
+
+                        <div className="md:col-span-2">
+                            <label className="mb-1 block text-sm font-medium">
+                                Notes
+                            </label>
+                            <textarea
+                                value={item.notes || ''}
+                                onChange={(e) =>
+                                    update(item.id, 'notes', e.target.value)
+                                }
+                                rows={2}
+                                className="w-full rounded-md border px-3 py-2"
+                                placeholder="Additional details..."
+                            />
+                        </div>
+                    </div>
+                </div>
+            ))}
+
+            <AddButton onClick={add} label="Add Ocular History" />
+        </div>
+    );
+};
+
+// 6. Health Education Section
+const HealthEducationSection = ({ data, onChange }: any) => {
+    const { update, remove } = useListActions(data, onChange);
+
+    const add = () => {
+        onChange([
+            ...data,
+            {
+                id: Date.now().toString(),
+                topic: '',
+                description: '',
+                patientUnderstanding: 'good',
+                followUpNeeded: false,
+            },
+        ]);
+    };
+
+    return (
+        <div className="space-y-4">
+            <div className="mb-4 rounded-lg border border-yellow-200 bg-yellow-50 p-4">
+                <h3 className="font-semibold text-yellow-900">
+                    Health Education
+                </h3>
+                <p className="text-sm text-yellow-700">
+                    Patient education and counseling provided
+                </p>
+            </div>
+
+            {data.map((item: any) => (
+                <div
+                    key={item.id}
+                    className="relative mb-4 rounded-lg border p-4"
+                >
+                    <RemoveButton onClick={() => remove(item.id)} />
+
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <div className="md:col-span-2">
+                            <label className="mb-1 block text-sm font-medium">
+                                Topic
+                            </label>
+                            <input
+                                type="text"
+                                value={item.topic}
+                                onChange={(e) =>
+                                    update(item.id, 'topic', e.target.value)
+                                }
+                                className="w-full rounded-md border px-3 py-2"
+                                placeholder="e.g., Eye drop technique, Glaucoma adherence"
+                            />
+                        </div>
+
+                        <div className="md:col-span-2">
+                            <label className="mb-1 block text-sm font-medium">
+                                Description
+                            </label>
+                            <textarea
+                                value={item.description}
+                                onChange={(e) =>
+                                    update(
+                                        item.id,
+                                        'description',
+                                        e.target.value,
+                                    )
+                                }
+                                rows={3}
+                                className="w-full rounded-md border px-3 py-2"
+                                placeholder="What education was provided?"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="mb-1 block text-sm font-medium">
+                                Patient Understanding
+                            </label>
+                            <select
+                                value={item.patientUnderstanding}
+                                onChange={(e) =>
+                                    update(
+                                        item.id,
+                                        'patientUnderstanding',
+                                        e.target.value,
+                                    )
+                                }
+                                className="w-full rounded-md border px-3 py-2"
+                            >
+                                <option value="poor">Poor</option>
+                                <option value="fair">Fair</option>
+                                <option value="good">Good</option>
+                                <option value="excellent">Excellent</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="mt-6 flex items-center gap-2">
+                                <input
+                                    type="checkbox"
+                                    checked={item.followUpNeeded}
+                                    onChange={(e) =>
+                                        update(
+                                            item.id,
+                                            'followUpNeeded',
+                                            e.target.checked,
+                                        )
+                                    }
+                                    className="rounded"
+                                />
+                                <span className="text-sm">
+                                    Follow-up needed
+                                </span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            ))}
+
+            <AddButton onClick={add} label="Add Health Education" />
+        </div>
+    );
+};
+
+// ==================== General consultation sections ====================
+
+// Clinical Analysis Section
 const ClinicalAnalysisSection = ({ data, onChange }: any) => {
+    const { update, remove } = useListActions(data, onChange);
+
     const systems = [
         'Cardiovascular',
         'Respiratory',
@@ -701,18 +1550,6 @@ const ClinicalAnalysisSection = ({ data, onChange }: any) => {
         ]);
     };
 
-    const update = (id: string, field: string, value: any) => {
-        onChange(
-            data.map((item: any) =>
-                item.id === id ? { ...item, [field]: value } : item,
-            ),
-        );
-    };
-
-    const remove = (id: string) => {
-        onChange(data.filter((item: any) => item.id !== id));
-    };
-
     return (
         <div className="space-y-4">
             <div className="mb-4 rounded-lg border border-purple-200 bg-purple-50 p-4">
@@ -729,12 +1566,7 @@ const ClinicalAnalysisSection = ({ data, onChange }: any) => {
                     key={item.id}
                     className="relative mb-4 rounded-lg border p-4"
                 >
-                    <button
-                        onClick={() => remove(item.id)}
-                        className="absolute top-3 right-3 text-gray-400 hover:text-red-500"
-                    >
-                        <X className="h-4 w-4" />
-                    </button>
+                    <RemoveButton onClick={() => remove(item.id)} />
 
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                         <div>
@@ -809,20 +1641,15 @@ const ClinicalAnalysisSection = ({ data, onChange }: any) => {
                 </div>
             ))}
 
-            <Button
-                variant="outline"
-                onClick={add}
-                className="w-full border-dashed"
-            >
-                <Plus className="mr-2 h-4 w-4" />
-                Add System Review
-            </Button>
+            <AddButton onClick={add} label="Add System Review" />
         </div>
     );
 };
 
-// 3. Physical Exam Section
+// Physical Exam Section
 const PhysicalExamSection = ({ data, onChange }: any) => {
+    const { update, remove } = useListActions(data, onChange);
+
     const systems = [
         'General',
         'HEENT',
@@ -853,18 +1680,6 @@ const PhysicalExamSection = ({ data, onChange }: any) => {
         ]);
     };
 
-    const update = (id: string, field: string, value: any) => {
-        onChange(
-            data.map((item: any) =>
-                item.id === id ? { ...item, [field]: value } : item,
-            ),
-        );
-    };
-
-    const remove = (id: string) => {
-        onChange(data.filter((item: any) => item.id !== id));
-    };
-
     return (
         <div className="space-y-4">
             <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4">
@@ -881,12 +1696,7 @@ const PhysicalExamSection = ({ data, onChange }: any) => {
                     key={item.id}
                     className="relative mb-4 rounded-lg border p-4"
                 >
-                    <button
-                        onClick={() => remove(item.id)}
-                        className="absolute top-3 right-3 text-gray-400 hover:text-red-500"
-                    >
-                        <X className="h-4 w-4" />
-                    </button>
+                    <RemoveButton onClick={() => remove(item.id)} />
 
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                         <div>
@@ -965,182 +1775,15 @@ const PhysicalExamSection = ({ data, onChange }: any) => {
                 </div>
             ))}
 
-            <Button
-                variant="outline"
-                onClick={add}
-                className="w-full border-dashed"
-            >
-                <Plus className="mr-2 h-4 w-4" />
-                Add Examination Finding
-            </Button>
+            <AddButton onClick={add} label="Add Examination Finding" />
         </div>
     );
 };
 
-// 4. Drug History Section
-const DrugHistorySection = ({ data, onChange }: any) => {
-    const add = () => {
-        onChange([
-            ...data,
-            {
-                id: Date.now().toString(),
-                drugName: '',
-                dosage: '',
-                frequency: '',
-                status: 'current',
-                notes: '',
-            },
-        ]);
-    };
-
-    const update = (id: string, field: string, value: any) => {
-        onChange(
-            data.map((item: any) =>
-                item.id === id ? { ...item, [field]: value } : item,
-            ),
-        );
-    };
-
-    const remove = (id: string) => {
-        onChange(data.filter((item: any) => item.id !== id));
-    };
-
-    const frequencyOptions = [
-        'OD (Once daily)',
-        'BD (Twice daily)',
-        'TDS (Three times daily)',
-        'QID (Four times daily)',
-        'Q6H (Every 6 hours)',
-        'Q8H (Every 8 hours)',
-        'Q12H (Every 12 hours)',
-        'PRN (As needed)',
-        'STAT (Immediately)',
-        'Weekly',
-        'Monthly',
-    ];
-
-    return (
-        <div className="space-y-4">
-            <div className="mb-4 rounded-lg border border-green-200 bg-green-50 p-4">
-                <h3 className="font-semibold text-green-900">Drug History</h3>
-                <p className="text-sm text-green-700">
-                    Current and past medications
-                </p>
-            </div>
-
-            {data.map((item: any) => (
-                <div
-                    key={item.id}
-                    className="relative mb-4 rounded-lg border p-4"
-                >
-                    <button
-                        onClick={() => remove(item.id)}
-                        className="absolute top-3 right-3 text-gray-400 hover:text-red-500"
-                    >
-                        <X className="h-4 w-4" />
-                    </button>
-
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                        <div>
-                            <label className="mb-1 block text-sm font-medium">
-                                Drug Name
-                            </label>
-                            <input
-                                type="text"
-                                value={item.drugName}
-                                onChange={(e) =>
-                                    update(item.id, 'drugName', e.target.value)
-                                }
-                                className="w-full rounded-md border px-3 py-2"
-                                placeholder="e.g., Lisinopril"
-                            />
-                        </div>
-
-                        <div>
-                            <label className="mb-1 block text-sm font-medium">
-                                Dosage
-                            </label>
-                            <input
-                                type="text"
-                                value={item.dosage}
-                                onChange={(e) =>
-                                    update(item.id, 'dosage', e.target.value)
-                                }
-                                className="w-full rounded-md border px-3 py-2"
-                                placeholder="e.g., 10mg"
-                            />
-                        </div>
-
-                        <div>
-                            <label className="mb-1 block text-sm font-medium">
-                                Frequency
-                            </label>
-                            <select
-                                value={item.frequency}
-                                onChange={(e) =>
-                                    update(item.id, 'frequency', e.target.value)
-                                }
-                                className="w-full rounded-md border px-3 py-2"
-                            >
-                                <option value="">Select frequency</option>
-                                {frequencyOptions.map((freq) => (
-                                    <option key={freq} value={freq}>
-                                        {freq}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-
-                        <div>
-                            <label className="mb-1 block text-sm font-medium">
-                                Status
-                            </label>
-                            <select
-                                value={item.status}
-                                onChange={(e) =>
-                                    update(item.id, 'status', e.target.value)
-                                }
-                                className="w-full rounded-md border px-3 py-2"
-                            >
-                                <option value="current">Current</option>
-                                <option value="discontinued">
-                                    Discontinued
-                                </option>
-                            </select>
-                        </div>
-
-                        <div className="md:col-span-2">
-                            <label className="mb-1 block text-sm font-medium">
-                                Notes
-                            </label>
-                            <input
-                                type="text"
-                                value={item.notes || ''}
-                                onChange={(e) =>
-                                    update(item.id, 'notes', e.target.value)
-                                }
-                                className="w-full rounded-md border px-3 py-2"
-                                placeholder="Reason for discontinuation, allergies, etc."
-                            />
-                        </div>
-                    </div>
-                </div>
-            ))}
-
-            <Button
-                variant="outline"
-                onClick={add}
-                className="w-full border-dashed"
-            >
-                <Plus className="mr-2 h-4 w-4" />
-                Add Medication
-            </Button>
-        </div>
-    );
-};
-
-// 5. Medical Conditions Section
+// Medical Conditions Section
 const MedicalConditionsSection = ({ data, onChange }: any) => {
+    const { update, remove } = useListActions(data, onChange);
+
     const add = () => {
         onChange([
             ...data,
@@ -1152,18 +1795,6 @@ const MedicalConditionsSection = ({ data, onChange }: any) => {
                 notes: '',
             },
         ]);
-    };
-
-    const update = (id: string, field: string, value: any) => {
-        onChange(
-            data.map((item: any) =>
-                item.id === id ? { ...item, [field]: value } : item,
-            ),
-        );
-    };
-
-    const remove = (id: string) => {
-        onChange(data.filter((item: any) => item.id !== id));
     };
 
     return (
@@ -1182,12 +1813,7 @@ const MedicalConditionsSection = ({ data, onChange }: any) => {
                     key={item.id}
                     className="relative mb-4 rounded-lg border p-4"
                 >
-                    <button
-                        onClick={() => remove(item.id)}
-                        className="absolute top-3 right-3 text-gray-400 hover:text-red-500"
-                    >
-                        <X className="h-4 w-4" />
-                    </button>
+                    <RemoveButton onClick={() => remove(item.id)} />
 
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                         <div className="md:col-span-2">
@@ -1258,500 +1884,7 @@ const MedicalConditionsSection = ({ data, onChange }: any) => {
                 </div>
             ))}
 
-            <Button
-                variant="outline"
-                onClick={add}
-                className="w-full border-dashed"
-            >
-                <Plus className="mr-2 h-4 w-4" />
-                Add Condition
-            </Button>
-        </div>
-    );
-};
-
-// 6. Imaging Orders Section
-const ImagingOrdersSection = ({ data, onChange }: any) => {
-    const modalities = [
-        'X-Ray',
-        'CT Scan',
-        'MRI',
-        'Ultrasound',
-        'Mammogram',
-        'PET Scan',
-        'Fluoroscopy',
-        'Nuclear Medicine',
-    ];
-
-    const add = () => {
-        onChange([
-            ...data,
-            {
-                id: Date.now().toString(),
-                modality: modalities[0],
-                bodyPart: '',
-                reason: '',
-                urgency: 'routine',
-            },
-        ]);
-    };
-
-    const update = (id: string, field: string, value: any) => {
-        onChange(
-            data.map((item: any) =>
-                item.id === id ? { ...item, [field]: value } : item,
-            ),
-        );
-    };
-
-    const remove = (id: string) => {
-        onChange(data.filter((item: any) => item.id !== id));
-    };
-
-    return (
-        <div className="space-y-4">
-            <div className="mb-4 rounded-lg border border-pink-200 bg-pink-50 p-4">
-                <h3 className="font-semibold text-pink-900">Imaging Orders</h3>
-                <p className="text-sm text-pink-700">
-                    Order radiology and imaging studies
-                </p>
-            </div>
-
-            {data.map((item: any) => (
-                <div
-                    key={item.id}
-                    className="relative mb-4 rounded-lg border p-4"
-                >
-                    <button
-                        onClick={() => remove(item.id)}
-                        className="absolute top-3 right-3 text-gray-400 hover:text-red-500"
-                    >
-                        <X className="h-4 w-4" />
-                    </button>
-
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                        <div>
-                            <label className="mb-1 block text-sm font-medium">
-                                Modality
-                            </label>
-                            <select
-                                value={item.modality}
-                                onChange={(e) =>
-                                    update(item.id, 'modality', e.target.value)
-                                }
-                                className="w-full rounded-md border px-3 py-2"
-                            >
-                                {modalities.map((m) => (
-                                    <option key={m} value={m}>
-                                        {m}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-
-                        <div>
-                            <label className="mb-1 block text-sm font-medium">
-                                Body Part
-                            </label>
-                            <input
-                                type="text"
-                                value={item.bodyPart}
-                                onChange={(e) =>
-                                    update(item.id, 'bodyPart', e.target.value)
-                                }
-                                className="w-full rounded-md border px-3 py-2"
-                                placeholder="e.g., Chest, Lumbar Spine"
-                            />
-                        </div>
-
-                        <div className="md:col-span-2">
-                            <label className="mb-1 block text-sm font-medium">
-                                Reason
-                            </label>
-                            <input
-                                type="text"
-                                value={item.reason}
-                                onChange={(e) =>
-                                    update(item.id, 'reason', e.target.value)
-                                }
-                                className="w-full rounded-md border px-3 py-2"
-                                placeholder="e.g., Evaluate for fracture, Rule out pneumonia"
-                            />
-                        </div>
-
-                        <div>
-                            <label className="mb-1 block text-sm font-medium">
-                                Urgency
-                            </label>
-                            <select
-                                value={item.urgency}
-                                onChange={(e) =>
-                                    update(item.id, 'urgency', e.target.value)
-                                }
-                                className="w-full rounded-md border px-3 py-2"
-                            >
-                                <option value="routine">Routine</option>
-                                <option value="urgent">Urgent</option>
-                                <option value="stat">STAT</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-            ))}
-
-            <Button
-                variant="outline"
-                onClick={add}
-                className="w-full border-dashed"
-            >
-                <Plus className="mr-2 h-4 w-4" />
-                Add Imaging Order
-            </Button>
-        </div>
-    );
-};
-
-// 7. Prescription Section
-const PrescriptionSection = ({ data, onChange, errors }: any) => {
-    const add = () => {
-        onChange([
-            ...data,
-            {
-                id: Date.now().toString(),
-                drugName: '',
-                dosage: '',
-                frequency: '',
-                duration: '',
-                quantity: 30,
-                refills: 0,
-                instructions: '',
-            },
-        ]);
-    };
-
-    const update = (id: string, field: string, value: any) => {
-        onChange(
-            data.map((item: any) =>
-                item.id === id ? { ...item, [field]: value } : item,
-            ),
-        );
-    };
-
-    const remove = (id: string) => {
-        onChange(data.filter((item: any) => item.id !== id));
-    };
-
-    const frequencies = [
-        'Once daily',
-        'Twice daily',
-        'Three times daily',
-        'Four times daily',
-        'Every 6 hours',
-        'Every 8 hours',
-        'As needed',
-    ];
-
-    return (
-        <div className="space-y-4">
-            <div className="mb-4 rounded-lg border border-teal-200 bg-teal-50 p-4">
-                <h3 className="font-semibold text-teal-900">Prescription</h3>
-                <p className="text-sm text-teal-700">
-                    Prescribe medications with proper dosage and instructions
-                </p>
-            </div>
-
-            {errors?.general && (
-                <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                    {errors.general}
-                </div>
-            )}
-
-            {data.map((item: any) => (
-                <div
-                    key={item.id}
-                    className="relative mb-4 rounded-lg border p-4"
-                >
-                    <button
-                        onClick={() => remove(item.id)}
-                        className="absolute top-3 right-3 text-gray-400 hover:text-red-500"
-                    >
-                        <X className="h-4 w-4" />
-                    </button>
-
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                        <div className="md:col-span-2">
-                            <label className="mb-1 block text-sm font-medium">
-                                Drug Name *
-                            </label>
-                            <input
-                                type="text"
-                                value={item.drugName}
-                                onChange={(e) =>
-                                    update(item.id, 'drugName', e.target.value)
-                                }
-                                className="w-full rounded-md border px-3 py-2"
-                                placeholder="e.g., Amoxicillin"
-                            />
-                        </div>
-
-                        <div>
-                            <label className="mb-1 block text-sm font-medium">
-                                Dosage *
-                            </label>
-                            <input
-                                type="text"
-                                value={item.dosage}
-                                onChange={(e) =>
-                                    update(item.id, 'dosage', e.target.value)
-                                }
-                                className="w-full rounded-md border px-3 py-2"
-                                placeholder="e.g., 500mg"
-                            />
-                        </div>
-
-                        <div>
-                            <label className="mb-1 block text-sm font-medium">
-                                Frequency *
-                            </label>
-                            <select
-                                value={item.frequency}
-                                onChange={(e) =>
-                                    update(item.id, 'frequency', e.target.value)
-                                }
-                                className="w-full rounded-md border px-3 py-2"
-                            >
-                                <option value="">Select frequency</option>
-                                {frequencies.map((f) => (
-                                    <option key={f} value={f}>
-                                        {f}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-
-                        <div>
-                            <label className="mb-1 block text-sm font-medium">
-                                Duration *
-                            </label>
-                            <input
-                                type="text"
-                                value={item.duration}
-                                onChange={(e) =>
-                                    update(item.id, 'duration', e.target.value)
-                                }
-                                className="w-full rounded-md border px-3 py-2"
-                                placeholder="e.g., 7 days"
-                            />
-                        </div>
-
-                        <div>
-                            <label className="mb-1 block text-sm font-medium">
-                                Quantity *
-                            </label>
-                            <input
-                                type="number"
-                                value={item.quantity}
-                                onChange={(e) =>
-                                    update(
-                                        item.id,
-                                        'quantity',
-                                        parseInt(e.target.value),
-                                    )
-                                }
-                                className="w-full rounded-md border px-3 py-2"
-                            />
-                        </div>
-
-                        <div>
-                            <label className="mb-1 block text-sm font-medium">
-                                Refills
-                            </label>
-                            <input
-                                type="number"
-                                value={item.refills}
-                                onChange={(e) =>
-                                    update(
-                                        item.id,
-                                        'refills',
-                                        parseInt(e.target.value),
-                                    )
-                                }
-                                className="w-full rounded-md border px-3 py-2"
-                            />
-                        </div>
-
-                        <div className="md:col-span-2">
-                            <label className="mb-1 block text-sm font-medium">
-                                Instructions
-                            </label>
-                            <textarea
-                                value={item.instructions}
-                                onChange={(e) =>
-                                    update(
-                                        item.id,
-                                        'instructions',
-                                        e.target.value,
-                                    )
-                                }
-                                rows={2}
-                                className="w-full rounded-md border px-3 py-2"
-                                placeholder="Take with food, avoid alcohol, etc."
-                            />
-                        </div>
-                    </div>
-                </div>
-            ))}
-
-            <Button
-                variant="outline"
-                onClick={add}
-                className="w-full border-dashed"
-            >
-                <Plus className="mr-2 h-4 w-4" />
-                Add Prescription
-            </Button>
-        </div>
-    );
-};
-
-// 8. Health Education Section
-const HealthEducationSection = ({ data, onChange }: any) => {
-    const add = () => {
-        onChange([
-            ...data,
-            {
-                id: Date.now().toString(),
-                topic: '',
-                description: '',
-                patientUnderstanding: 'good',
-                followUpNeeded: false,
-            },
-        ]);
-    };
-
-    const update = (id: string, field: string, value: any) => {
-        onChange(
-            data.map((item: any) =>
-                item.id === id ? { ...item, [field]: value } : item,
-            ),
-        );
-    };
-
-    const remove = (id: string) => {
-        onChange(data.filter((item: any) => item.id !== id));
-    };
-
-    return (
-        <div className="space-y-4">
-            <div className="mb-4 rounded-lg border border-yellow-200 bg-yellow-50 p-4">
-                <h3 className="font-semibold text-yellow-900">
-                    Health Education
-                </h3>
-                <p className="text-sm text-yellow-700">
-                    Patient education and counseling provided
-                </p>
-            </div>
-
-            {data.map((item: any) => (
-                <div
-                    key={item.id}
-                    className="relative mb-4 rounded-lg border p-4"
-                >
-                    <button
-                        onClick={() => remove(item.id)}
-                        className="absolute top-3 right-3 text-gray-400 hover:text-red-500"
-                    >
-                        <X className="h-4 w-4" />
-                    </button>
-
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                        <div className="md:col-span-2">
-                            <label className="mb-1 block text-sm font-medium">
-                                Topic
-                            </label>
-                            <input
-                                type="text"
-                                value={item.topic}
-                                onChange={(e) =>
-                                    update(item.id, 'topic', e.target.value)
-                                }
-                                className="w-full rounded-md border px-3 py-2"
-                                placeholder="e.g., Diabetes Management, Hypertension"
-                            />
-                        </div>
-
-                        <div className="md:col-span-2">
-                            <label className="mb-1 block text-sm font-medium">
-                                Description
-                            </label>
-                            <textarea
-                                value={item.description}
-                                onChange={(e) =>
-                                    update(
-                                        item.id,
-                                        'description',
-                                        e.target.value,
-                                    )
-                                }
-                                rows={3}
-                                className="w-full rounded-md border px-3 py-2"
-                                placeholder="What education was provided?"
-                            />
-                        </div>
-
-                        <div>
-                            <label className="mb-1 block text-sm font-medium">
-                                Patient Understanding
-                            </label>
-                            <select
-                                value={item.patientUnderstanding}
-                                onChange={(e) =>
-                                    update(
-                                        item.id,
-                                        'patientUnderstanding',
-                                        e.target.value,
-                                    )
-                                }
-                                className="w-full rounded-md border px-3 py-2"
-                            >
-                                <option value="poor">Poor</option>
-                                <option value="fair">Fair</option>
-                                <option value="good">Good</option>
-                                <option value="excellent">Excellent</option>
-                            </select>
-                        </div>
-
-                        <div>
-                            <label className="mt-6 flex items-center gap-2">
-                                <input
-                                    type="checkbox"
-                                    checked={item.followUpNeeded}
-                                    onChange={(e) =>
-                                        update(
-                                            item.id,
-                                            'followUpNeeded',
-                                            e.target.checked,
-                                        )
-                                    }
-                                    className="rounded"
-                                />
-                                <span className="text-sm">
-                                    Follow-up needed
-                                </span>
-                            </label>
-                        </div>
-                    </div>
-                </div>
-            ))}
-
-            <Button
-                variant="outline"
-                onClick={add}
-                className="w-full border-dashed"
-            >
-                <Plus className="mr-2 h-4 w-4" />
-                Add Health Education
-            </Button>
+            <AddButton onClick={add} label="Add Condition" />
         </div>
     );
 };

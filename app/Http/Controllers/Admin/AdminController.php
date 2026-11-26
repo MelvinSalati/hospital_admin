@@ -11,6 +11,7 @@ use App\Models\UserActivityLog;
 use App\Policies\ApprovePurchaseRequestPolicy;
 use App\Services\Budgets\BudgetService;
 use App\Services\UserService;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -18,6 +19,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -85,7 +87,7 @@ class AdminController extends Controller
             ->get()
             ->keyBy('id');
 
-        $iso = fn($value) => $value ? \Illuminate\Support\Carbon::parse($value)->toIso8601String() : null;
+        $iso = fn($value) => $value ? Carbon::parse($value)->toIso8601String() : null;
 
         return collect($users)->map(function ($user) use ($live, $cutoff, $iso) {
             $row = json_decode(json_encode($user), true) ?? [];
@@ -96,7 +98,7 @@ class AdminController extends Controller
                 return $row;
             }
 
-            $seen = $status->last_seen_at ? \Illuminate\Support\Carbon::parse($status->last_seen_at) : null;
+            $seen = $status->last_seen_at ? Carbon::parse($status->last_seen_at) : null;
 
             $row['is_online']        = $seen !== null && $seen->gte($cutoff) && $status->revoked_at === null;
             $row['last_seen_at']     = $iso($status->last_seen_at);
@@ -232,7 +234,7 @@ class AdminController extends Controller
 
         $date = $validated['date'] ?? now()->toDateString();
 
-        $iso = fn($value) => \Illuminate\Support\Carbon::parse($value)->toIso8601String();
+        $iso = fn($value) => Carbon::parse($value)->toIso8601String();
 
         // What the user did in the system (page visits, every create / update / delete)
         $activity = UserActivityLog::where('user_id', $userId)
@@ -273,7 +275,7 @@ class AdminController extends Controller
         }
 
         $logs = $activity->concat($business)
-            ->sortByDesc(fn($l) => \Illuminate\Support\Carbon::parse($l['created_at'])->timestamp)
+            ->sortByDesc(fn($l) => Carbon::parse($l['created_at'])->timestamp)
             ->values()
             ->take(500);
 
@@ -413,18 +415,326 @@ class AdminController extends Controller
                     'department' => '',
                 ],
                 'stats' => [
-                    'total' => 0,
-                    'pending' => 0,
-                    'approved' => 0,
-                    'rejected' => 0,
-                    'total_value' => 0,
-                    'urgent_count' => 0,
+                    'total'               => 0,
+                    'pending'             => 0,
+                    'approved'            => 0,
+                    'rejected'            => 0,
+                    'total_value'         => 0,
+                    'urgent_count'        => 0,
                     'high_priority_count' => 0,
-                    'funds_released' => 0,
+                    'funds_released'      => 0,
                 ],
                 'error' => 'Failed to load purchase requisitions.',
             ]);
         }
+    }
+
+    // ==================================================================
+    // DEPARTMENT COLLECTIONS
+    // ==================================================================
+
+    /**
+     * Collections (money actually received) for ONE department.
+     *
+     * GET /departments/collections/{departmentId}?from=YYYY-MM-DD&to=YYYY-MM-DD
+     *
+     * A collection = one paid service line (payment_items) of a completed payment,
+     * where the service (services.id = payment_items.item_source_id) belongs to the department.
+     *
+     * Props match resources/js/pages/.../Collections.tsx:
+     *   department  { id, name }
+     *   collections [{ id, collected_at, patient_name, token, invoice_number, service,
+     *                  scheme_type (1 cash | 2 insurance), payment_method, amount, received_by }]
+     *   services    [{ id, service_name, times_paid, total_collected }]
+     *   filters     { from, to }
+     */
+
+    private function resolvedServiceLinesCte(): string
+    {
+        return <<<'SQL'
+    WITH inv_service_lines AS (
+        SELECT
+            i.id AS invoice_id,
+            jt.ord,
+            jt.service_id,
+            jt.price,
+            jt.quantity,
+            COALESCE(
+                jt.line_total,
+                jt.price * COALESCE(jt.quantity, 1),
+                jt.price
+            ) AS line_total
+        FROM invoices i
+        CROSS JOIN JSON_TABLE(
+            i.items,
+            '$[*]'
+            COLUMNS (
+                ord FOR ORDINALITY,
+                service_id BIGINT PATH '$.service_id'
+                    NULL ON EMPTY NULL ON ERROR,
+                price DECIMAL(12,2) PATH '$.price'
+                    NULL ON EMPTY NULL ON ERROR,
+                quantity DECIMAL(12,2) PATH '$.quantity'
+                    NULL ON EMPTY NULL ON ERROR,
+                line_total DECIMAL(12,2) PATH '$.total'
+                    NULL ON EMPTY NULL ON ERROR
+            )
+        ) AS jt
+        WHERE i.items IS NOT NULL
+          AND jt.service_id IS NOT NULL
+    ),
+
+    inv_services AS (
+        SELECT
+            invoice_id,
+            ord,
+            service_id,
+            price,
+            quantity,
+            line_total,
+            SUM(line_total) OVER (
+                PARTITION BY invoice_id
+            ) AS invoice_items_total
+        FROM inv_service_lines
+    ),
+
+    resolved AS (
+        SELECT
+            p.id,
+            p.id AS payment_id,
+            i.id AS invoice_id,
+
+            COALESCE(p.patient_id, i.patient_id) AS patient_id,
+
+            i.visit_token,
+            pv.id AS patient_visit_id,
+
+            i.invoice_number,
+            i.payment_scheme,
+
+            pt.first_name,
+            pt.last_name,
+
+            jt.service_id,
+            s.service_name,
+            s.department_id,
+
+            p.payment_method,
+            p.paid_amount,
+            p.payment_date AS paid_at,
+            p.created_at,
+
+            jt.line_total,
+
+            CASE
+                WHEN jt.invoice_items_total > 0
+                THEN (
+                    p.paid_amount * jt.line_total
+                    / jt.invoice_items_total
+                )
+                ELSE 0
+            END AS allocated_amount
+
+        FROM invoices i
+
+        INNER JOIN inv_services jt
+            ON jt.invoice_id = i.id
+
+        INNER JOIN services s
+            ON s.id = jt.service_id
+
+        INNER JOIN payments p
+            ON p.invoice_id = i.id
+           AND p.status = 'completed'
+
+        LEFT JOIN patients pt
+            ON pt.id = COALESCE(p.patient_id, i.patient_id)
+
+        LEFT JOIN patient_visits pv
+            ON pv.token = i.visit_token
+    )
+    SQL;
+    }
+
+private function departmentServices(
+    int $departmentId,
+    ?string $from,
+    ?string $to
+): array {
+    $dateSql = '';
+    $bindings = ['dept' => $departmentId];
+
+    if ($from) {
+        $dateSql .= " AND DATE(COALESCE(r.paid_at, r.created_at)) >= :from_date";
+        $bindings['from_date'] = $from;
+    }
+
+    if ($to) {
+        $dateSql .= " AND DATE(COALESCE(r.paid_at, r.created_at)) <= :to_date";
+        $bindings['to_date'] = $to;
+    }
+
+    $sql = $this->resolvedServiceLinesCte() . "
+        SELECT
+            s.id,
+            s.service_name,
+
+            COUNT(r.id) AS times_paid,
+
+            COALESCE(SUM(r.allocated_amount), 0) AS total_collected
+
+        FROM services s
+
+        LEFT JOIN resolved r
+            ON r.service_id = s.id
+            {$dateSql}
+
+        WHERE s.department_id = :dept
+
+        GROUP BY
+            s.id,
+            s.service_name
+
+        ORDER BY s.service_name
+    ";
+
+    return collect(DB::select($sql, $bindings))
+        ->map(fn ($row) => [
+            'id' => (int) $row->id,
+            'service_name' => $row->service_name,
+            'times_paid' => (int) $row->times_paid,
+            'total_collected' => (float) $row->total_collected,
+        ])
+        ->values()
+        ->all();
+}
+
+    private function departmentCollections(
+        int $departmentId,
+        ?string $from,
+        ?string $to
+    ): array {
+        $hasReceivedBy = Schema::hasColumn('payments', 'received_by');
+
+        $collectedAt = 'COALESCE(r.paid_at, r.created_at)';
+
+        $userJoin = $hasReceivedBy
+            ? 'LEFT JOIN users u ON u.id = p.received_by'
+            : '';
+
+        $receivedBySql = $hasReceivedBy
+            ? "COALESCE(u.name, 'N/A')"
+            : "'N/A'";
+
+        $dateSql = '';
+        $bindings = ['dept' => $departmentId];
+
+        if ($from) {
+            $dateSql .= " AND DATE({$collectedAt}) >= :from_date";
+            $bindings['from_date'] = $from;
+        }
+
+        if ($to) {
+            $dateSql .= " AND DATE({$collectedAt}) <= :to_date";
+            $bindings['to_date'] = $to;
+        }
+
+        $sql = $this->resolvedServiceLinesCte() . "
+        SELECT
+            r.id,
+
+            {$collectedAt} AS collected_at,
+
+            COALESCE(
+                NULLIF(
+                    TRIM(CONCAT_WS(' ', r.first_name, r.last_name)),
+                    ''
+                ),
+                'Unknown patient'
+            ) AS patient_name,
+
+            r.visit_token AS token,
+
+            COALESCE(
+                r.invoice_number,
+                CONCAT('INV-', r.invoice_id)
+            ) AS invoice_number,
+
+            r.service_name AS service,
+
+            COALESCE(
+                r.payment_method,
+                r.payment_scheme
+            ) AS payment_method,
+
+            r.allocated_amount AS amount,
+
+            {$receivedBySql} AS received_by
+
+        FROM resolved r
+
+        LEFT JOIN payments p
+            ON p.id = r.payment_id
+
+        {$userJoin}
+
+        WHERE r.department_id = :dept
+
+        {$dateSql}
+
+        ORDER BY {$collectedAt} DESC
+    ";
+
+        $data = collect(DB::select($sql, $bindings))
+            ->map(fn($row) => [
+                'id' => (int) $row->id,
+                'collected_at' => Carbon::parse($row->collected_at)
+                    ->toIso8601String(),
+
+                'patient_name' => $row->patient_name,
+                'token' => $row->token,
+                'invoice_number' => $row->invoice_number,
+                'service' => $row->service,
+
+                'scheme_type' => $row->payment_method === 'insurance' ? 2 : 1,
+
+                'payment_method' => Str::headline(
+                    (string) $row->payment_method
+                ),
+
+                'amount' => (float) $row->amount,
+                'received_by' => $row->received_by,
+            ])
+            ->values()
+            ->all();
+
+        Log::info('collections', $data);
+
+        return $data;
+    }
+    public function getDepartmentCollections(Request $request, int $departmentId)
+    {
+        $validated = $request->validate([
+            'from' => ['nullable', 'date_format:Y-m-d'],
+            'to'   => ['nullable', 'date_format:Y-m-d', 'after_or_equal:from'],
+        ]);
+
+        $department = DB::table('departments')
+            ->select('id', 'name')
+            ->where('id', $departmentId)
+            ->first();
+
+        abort_if(!$department, 404, 'Department not found.');
+
+        $from = $validated['from'] ?? Carbon::now()->subMonths(6)->format('Y-m-d');
+        $to   = $validated['to'] ?? Carbon::now()->format('Y-m-d');
+
+        return Inertia::render('admin/collection', [
+            'department'  => $department,
+            'collections' => $this->departmentCollections($departmentId, $from, $to),
+            'services'    => $this->departmentServices($departmentId, $from, $to),
+            'filters'     => ['from' => $from, 'to' => $to],
+        ]);
     }
 
     /**
@@ -728,14 +1038,14 @@ class AdminController extends Controller
             return response()->json([
                 'success' => true,
                 'data' => [
-                    'can_approve' => $this->policy->approve($user, $requisition),
+                    'can_approve'       => $this->policy->approve($user, $requisition),
                     'can_release_funds' => $this->policy->releaseFunds($user, $requisition),
-                    'can_authorize' => $this->policy->authorize($user, $requisition),
-                    'can_cancel' => $this->policy->cancel($user, $requisition),
-                    'can_delete' => $this->policy->delete($user, $requisition),
-                    'can_view' => $this->policy->viewRequisition($user, $requisition),
+                    'can_authorize'     => $this->policy->authorize($user, $requisition),
+                    'can_cancel'        => $this->policy->cancel($user, $requisition),
+                    'can_delete'        => $this->policy->delete($user, $requisition),
+                    'can_view'          => $this->policy->viewRequisition($user, $requisition),
                     'has_approval_code' => $user->approval_code !== null,
-                    'user_role' => $user->is_admin ? 'admin' : ($user->is_supervisor ? 'supervisor' : 'staff')
+                    'user_role'         => $user->is_admin ? 'admin' : ($user->is_supervisor ? 'supervisor' : 'staff'),
                 ]
             ]);
         } catch (\Exception $e) {
@@ -755,7 +1065,7 @@ class AdminController extends Controller
         try {
             $request->validate([
                 'approval_code' => 'required|string',
-                'user_id' => 'required|integer|exists:users,id'
+                'user_id'       => 'required|integer|exists:users,id'
             ]);
 
             $user = User::findOrFail($request->user_id);
@@ -766,7 +1076,7 @@ class AdminController extends Controller
             return response()->json([
                 'success' => true,
                 'data' => [
-                    'valid' => $isValid,
+                    'valid'   => $isValid,
                     'message' => $isValid ? 'Approval code is valid' : 'Invalid approval code'
                 ]
             ]);

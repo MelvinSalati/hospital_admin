@@ -9,6 +9,10 @@ const breadcrumbs = [
         title: 'Appointments',
         href: '/',
     },
+    {
+        title: 'Appointments',
+        href: '/',
+    },
 ];
 export default function Appointments() {
     const { appointments } = usePage().props;

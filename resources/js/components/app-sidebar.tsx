@@ -25,6 +25,7 @@ import {
     Shield,
     ShoppingBag,
     Stethoscope,
+    TagIcon,
     TrendingUp,
     Truck,
     UserCircle,
@@ -32,13 +33,11 @@ import {
     UserSquare,
     Users,
     Wallet,
-    TagIcon,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import AppLogo from '@/components/app-logo';
 import { Badge } from '@/components/ui/badge';
-
 import {
     Sidebar,
     SidebarContent,
@@ -49,9 +48,10 @@ import {
 } from '@/components/ui/sidebar';
 
 import routes from '@/constants/routes';
-import { useEncounterCount } from '@/hooks/use-encounter-count';
-import http from '@/utils/Http';
+// [ENCOUNTER-BADGE-DISABLED] uncomment once the encounter count bug is fixed
+// import { useEncounterCount } from '@/hooks/use-encounter-count';
 import type { NavItem } from '@/types';
+import http from '@/utils/Http';
 
 /* -------------------------------------------------------------------------- */
 /* TYPES                                                                      */
@@ -88,6 +88,11 @@ interface AuthUser {
     };
 }
 
+interface Department {
+    id: string | number;
+    name: string;
+}
+
 /** NavItem plus optional sub-links (used by the admin menu). */
 type NavEntry = NavItem & {
     children?: { title: string; href: string }[];
@@ -95,8 +100,16 @@ type NavEntry = NavItem & {
      * Shows the live encounter-count badge on this link.
      * The badge follows this flag, not the title, so the link can be renamed freely.
      * The count comes from /api/departments/{departmentId}/encounters/count.
+     *
+     * [ENCOUNTER-BADGE-DISABLED] The flag is kept on the links below so that
+     * re-enabling the badge only needs the commented code to be restored.
      */
     badge?: 'encounters';
+    /**
+     * Fills `children` at render time from shared page props
+     * (page props are not available in this module-level config).
+     */
+    childrenFrom?: 'departments';
 };
 
 /* -------------------------------------------------------------------------- */
@@ -161,33 +174,17 @@ const roleNavItems: Record<string, NavEntry[]> = {
             href: '/admin/manage-users',
             icon: Users,
         },
+        // {
+        //     title: 'Budget',
+        //     href: '/admin/budgets',
+        //     icon: DollarSign,
+        // },
         {
-            title: 'Budget',
-            href: '/admin/budgets',
-            icon: DollarSign,
-            // children: [
-            //     {
-            //         title: 'Overview',
-            //         href: '/admin/budgets/overview',
-            //         icon: DollarSign,
-            //     },
-            //     {
-            //         title: 'All Budgets',
-            //         href: '/admin/budgets',
-            //     },
-            //     {
-            //         title: 'Create Budget',
-            //         href: '/admin/budgets/create',
-            //     },
-            //     {
-            //         title: 'Planned Budgets',
-            //         href: '/admin/budgets/planned',
-            //     },
-            //     {
-            //         title: 'Petty Cash',
-            //         href: '/admin/budgets/petty-cash',
-            //     },
-            // ],
+            // One sub-link per department, filled from page props.
+            title: 'Collections',
+            href: 'admin/departments/collections',
+            icon: Wallet,
+            childrenFrom: 'departments',
         },
         {
             title: 'Finance',
@@ -209,13 +206,11 @@ const roleNavItems: Record<string, NavEntry[]> = {
                 },
             ],
         },
-
         {
             title: 'Manage Billables',
             href: '/billables/department',
             icon: TagIcon,
         },
-
         {
             title: 'Reports',
             href: '/admin/reports',
@@ -273,13 +268,11 @@ const roleNavItems: Record<string, NavEntry[]> = {
             href: '/nurses/in-patient',
             icon: Stethoscope,
         },
-
         {
             title: 'Bulk Store',
             href: '/nurses/bulk-store',
             icon: Boxes,
         },
-
         {
             title: 'Reports',
             href: '/nurses/reports',
@@ -319,7 +312,6 @@ const roleNavItems: Record<string, NavEntry[]> = {
             icon: Stethoscope,
             badge: 'encounters',
         },
-
         {
             title: 'Add User',
             href: '/user/create',
@@ -418,29 +410,28 @@ const roleNavItems: Record<string, NavEntry[]> = {
     theatre: [
         {
             title: 'Dashboard',
-            href: '/theatre/dashboard',
+            href: '/theater/dashboard',
             icon: LayoutGrid,
         },
         {
             title: 'Appointments',
-            href: '/theatre/schedule',
+            href: '/theater/schedule',
             icon: CalendarClock,
         },
         {
-            title: 'Theatre Queue',
-            href: '/theatre/queue',
+            title: 'Encounters',
+            href: '/theater/queue',
             icon: Users,
             badge: 'encounters',
         },
-
         {
             title: 'Bulk Store',
-            href: '/theatre/bulk-orders',
+            href: '/theater/bulk-orders',
             icon: Barcode,
         },
         {
             title: 'Reports',
-            href: '/theatre/reports',
+            href: '/theater/reports',
             icon: BarChart3,
         },
         {
@@ -467,7 +458,6 @@ const roleNavItems: Record<string, NavEntry[]> = {
             icon: Users,
             badge: 'encounters',
         },
-
         {
             title: 'Bulk Store',
             href: '/dental/bulk-orders',
@@ -615,11 +605,6 @@ const roleNavItems: Record<string, NavEntry[]> = {
             icon: Users,
             badge: 'encounters',
         },
-        // {
-        //     title: 'Processed',
-        //     href: '/laboratory/processed',
-        //     icon: ArrowRightCircle,
-        // },
         {
             title: 'Bulk Store Orders',
             href: '/laboratory/bulk-orders',
@@ -650,17 +635,11 @@ const roleNavItems: Record<string, NavEntry[]> = {
             icon: Users,
             badge: 'encounters',
         },
-
         {
             title: 'Bulk Store Orders',
             href: '/radiology/bulk-orders',
             icon: ShoppingBag,
         },
-        // {
-        //     title: 'Manage Billables',
-        //     href: '/billables/department',
-        //     icon: TagIcon,
-        // },
         {
             title: 'Reports',
             href: '/radiology/reports',
@@ -769,7 +748,7 @@ const DEPARTMENT_HREF_RULES: Record<string, DepartmentHrefRule[]> = {
     lab_technician: [
         departmentRule('Dashboard', '/laboratory/dashboard'),
         departmentRule('Encounters', '/laboratory/encounters'),
-        departmentRule('Processed', '/laboratory/processed'), // add if needed
+        departmentRule('Processed', '/laboratory/processed'),
         departmentRule('Bulk Store Orders', '/laboratory/bulk-orders'),
         departmentRule('Reports', '/laboratory/reports'),
     ],
@@ -798,20 +777,20 @@ const DEPARTMENT_HREF_RULES: Record<string, DepartmentHrefRule[]> = {
     ],
 
     theatre: [
-        departmentRule('Dashboard', '/theatre/dashboard'),
-        departmentRule('Appointments', '/theatre/schedule'),
-        departmentRule('Theatre Queue', '/theatre/queue'),
-        departmentRule('Procedures', '/theatre/procedures'),
-        billablesRule('/theatre'),
-        departmentRule('Processed', '/theatre/processed'),
-        departmentRule('Bulk Store', '/theatre/bulk-orders'),
-        departmentRule('Reports', '/theatre/reports'),
+        departmentRule('Dashboard', '/theater/dashboard'),
+        departmentRule('Appointments', '/theater/schedule'),
+        departmentRule('Encounters', '/theater/queue'),
+        departmentRule('Procedures', '/theater/procedures'),
+        billablesRule('/theater'),
+        departmentRule('Processed', '/theater/processed'),
+        departmentRule('Bulk Store', '/theater/bulk-orders'),
+        departmentRule('Reports', '/theater/reports'),
     ],
 
     dental: [
         departmentRule('Dashboard', '/dental/dashboard'),
         departmentRule('Appointments', '/dental/appointments'),
-        departmentRule('Manage Queue', '/dental/queue'),
+        departmentRule('Encounters', '/dental/queue'),
         billablesRule('/dental/billables'),
         departmentRule('Bulk Store', '/dental/bulk-orders'),
         departmentRule('Reports', '/dental/reports'),
@@ -972,6 +951,26 @@ function patchDepartmentHrefs(
     });
 }
 
+/** Fills items flagged with `childrenFrom: 'departments'` from page props. */
+function injectDynamicChildren(
+    items: NavEntry[],
+    departments: Department[],
+): NavEntry[] {
+    return items.map((item) => {
+        if (item.childrenFrom !== 'departments') {
+            return item;
+        }
+
+        return {
+            ...item,
+            children: departments.map((department) => ({
+                title: department.name,
+                href: `/admin/departments/collections/${department.id}`,
+            })),
+        };
+    });
+}
+
 function getRoleDashboard(
     role: string,
     departmentId: string | number | null,
@@ -981,7 +980,8 @@ function getRoleDashboard(
         lab_technician: '/laboratory/dashboard',
         radiologist: '/radiology/dashboard',
         maternal_child_health: '/maternal-child-health/dashboard',
-        theatre: '/theatre/dashboard',
+        theatre: '/theater/dashboard',
+        theater: '/theater/dashboard', // tolerate both spellings
         dental: '/dental/dashboard',
         opthalmology: '/opthalmology/dashboard',
         receptionist: '/reception/dashboard',
@@ -1011,21 +1011,23 @@ function getRoleDashboard(
 /* ENCOUNTER BADGE                                                            */
 /* -------------------------------------------------------------------------- */
 
-/** Vibrant gradient pill with a soft ping ring, used for live encounter counts. */
-function EncounterBadge({ count }: { count: number }) {
-    return (
-        <span
-            className="relative ml-auto flex group-data-[collapsible=icon]:hidden"
-            aria-label={`${count} active encounters`}
-        >
-            <span className="absolute inset-0 animate-ping rounded-full bg-fuchsia-400 opacity-60 motion-reduce:animate-none" />
-
-            <Badge className="relative h-5 min-w-[22px] justify-center rounded-full border-0 bg-red-600 px-1.5 text-xs font-bold text-white shadow-md shadow-rose-500/40 hover:from-fuchsia-600 hover:via-rose-600 hover:to-orange-600">
-                {count > 99 ? '99+' : count}
-            </Badge>
-        </span>
-    );
-}
+// [ENCOUNTER-BADGE-DISABLED] uncomment once the encounter count bug is fixed
+//
+// /** Red pill with a soft ping ring, used for live encounter counts. */
+// function EncounterBadge({ count }: { count: number }) {
+//     return (
+//         <span
+//             className="relative ml-auto flex group-data-[collapsible=icon]:hidden"
+//             aria-label={`${count} active encounters`}
+//         >
+//             <span className="absolute inset-0 animate-ping rounded-full bg-fuchsia-400 opacity-60 motion-reduce:animate-none" />
+//
+//             <Badge className="relative h-5 min-w-[22px] justify-center rounded-full border-0 bg-red-600 px-1.5 text-xs font-bold text-white shadow-md shadow-rose-500/40 hover:bg-red-700">
+//                 {count > 99 ? '99+' : count}
+//             </Badge>
+//         </span>
+//     );
+// }
 
 /* -------------------------------------------------------------------------- */
 /* NAVIGATION LINK                                                            */
@@ -1034,18 +1036,20 @@ function EncounterBadge({ count }: { count: number }) {
 interface NavLinkProps {
     item: NavEntry;
     orderCount?: number | null;
-    encounterCount?: number | null;
+    // [ENCOUNTER-BADGE-DISABLED]
+    // encounterCount?: number | null;
     variant?: 'default' | 'settings';
 }
 
 /**
- * Plain links navigate. Items with `children` (Manage Budgets, Reports, ...)
+ * Plain links navigate. Items with `children` (Collections, Reports, ...)
  * are collapsible groups: click the row to expand or collapse it.
  */
 function NavLink({
     item,
     orderCount = null,
-    encounterCount = null,
+    // [ENCOUNTER-BADGE-DISABLED]
+    // encounterCount = null,
     variant = 'default',
 }: NavLinkProps) {
     const { url } = usePage();
@@ -1074,12 +1078,16 @@ function NavLink({
     const [open, setOpen] = useState(hasActiveChild);
 
     useEffect(() => {
-        if (hasActiveChild) setOpen(true);
+        if (hasActiveChild) {
+            setOpen(true);
+        }
     }, [hasActiveChild]);
 
-    const showEncounterBadge = encounterCount !== null && encounterCount > 0;
-    const showOrderBadge =
-        !showEncounterBadge && orderCount !== null && orderCount > 0;
+    // [ENCOUNTER-BADGE-DISABLED] restore both lines below together
+    // const showEncounterBadge = encounterCount !== null && encounterCount > 0;
+    // const showOrderBadge =
+    //     !showEncounterBadge && orderCount !== null && orderCount > 0;
+    const showOrderBadge = orderCount !== null && orderCount > 0;
 
     // Same look for plain links and group headers
     const rowClass = `group flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm font-medium transition-all hover:bg-blue-50 hover:text-blue-700 dark:hover:bg-blue-900/30 dark:hover:text-blue-400 ${
@@ -1100,7 +1108,9 @@ function NavLink({
                 </span>
             </div>
 
+            {/* [ENCOUNTER-BADGE-DISABLED]
             {showEncounterBadge && <EncounterBadge count={encounterCount} />}
+            */}
 
             {showOrderBadge && (
                 <Badge
@@ -1158,7 +1168,7 @@ function NavLink({
                     <div className="mt-1 ml-9 space-y-1 border-l border-gray-200 pl-3 dark:border-gray-700">
                         {children.map((child) => (
                             <Link
-                                key={child.title}
+                                key={child.href}
                                 href={child.href}
                                 tabIndex={open ? 0 : -1}
                                 className={`block rounded-md px-2 py-1.5 text-xs font-medium hover:text-blue-700 dark:hover:text-blue-400 ${
@@ -1185,6 +1195,10 @@ export default function AppSidebar() {
     const { props } = usePage();
 
     const authUser = (props.auth as { user?: AuthUser } | undefined)?.user;
+    const departments = useMemo(
+        () => (props.departments as Department[] | undefined) ?? [],
+        [props.departments],
+    );
 
     const userRole = resolveUserRole(authUser);
     const roles = resolveUserRoles(authUser);
@@ -1205,29 +1219,34 @@ export default function AppSidebar() {
 
     const navItems = useMemo(() => {
         const items = roleNavItems[userRole] ?? [];
+        const patched = patchDepartmentHrefs(userRole, items, departmentId);
 
-        return patchDepartmentHrefs(userRole, items, departmentId);
-    }, [userRole, departmentId]);
+        return injectDynamicChildren(patched, departments);
+    }, [userRole, departmentId, departments]);
 
-    const { main, settings } = useMemo(() => {
-        return {
+    const { main, settings } = useMemo(
+        () => ({
             main: navItems.filter((item) => !isSettingsItem(item)),
             settings: navItems.filter(isSettingsItem),
-        };
-    }, [navItems]);
+        }),
+        [navItems],
+    );
 
     /* ---------------------------------------------------------------------- */
     /* ENCOUNTER COUNT (per department)                                       */
     /* ---------------------------------------------------------------------- */
 
-    // Only poll the count when this role has a link flagged with `badge`.
-    const encounterBadgeEnabled = navItems.some(
-        (item) => item.badge === 'encounters',
-    );
-    const encounterCount = useEncounterCount(
-        encounterBadgeEnabled,
-        departmentId,
-    );
+    // [ENCOUNTER-BADGE-DISABLED] uncomment once the encounter count bug is fixed.
+    // While disabled, no request is made to the encounter count endpoint.
+    //
+    // // Only poll the count when this role has a link flagged with `badge`.
+    // const encounterBadgeEnabled = navItems.some(
+    //     (item) => item.badge === 'encounters',
+    // );
+    // const encounterCount = useEncounterCount(
+    //     encounterBadgeEnabled,
+    //     departmentId,
+    // );
 
     /* ---------------------------------------------------------------------- */
     /* FETCH ORDER COUNTS                                                     */
@@ -1304,11 +1323,7 @@ export default function AppSidebar() {
         const mappedKey =
             config.titleMapping?.[itemTitle] ?? config.subSections?.[itemTitle];
 
-        if (mappedKey) {
-            return orderCounts[mappedKey];
-        }
-
-        return null;
+        return mappedKey ? orderCounts[mappedKey] : null;
     };
 
     /* ---------------------------------------------------------------------- */
@@ -1342,11 +1357,13 @@ export default function AppSidebar() {
                                     orderCount={getOrderCountForItem(
                                         item.title,
                                     )}
+                                    /* [ENCOUNTER-BADGE-DISABLED]
                                     encounterCount={
                                         item.badge === 'encounters'
                                             ? encounterCount
                                             : null
                                     }
+                                    */
                                 />
                             ))}
                         </div>

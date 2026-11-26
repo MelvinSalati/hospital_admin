@@ -16,8 +16,9 @@ Route::prefix('v1/admin')->group(function () {
     Route::get('/purchase-orders', [AdminController::class, 'getPurchaseRequisitions']);
     Route::get('/purchase-orders/approved', [AdminController::class, 'getPurchaseOrders']);
     Route::post('/users/{userId}/service', [ServiceController::class, 'create']);
-    Route::get('/all-budgets',[AdminController::class,'getBudgets']);
-    // New budget and requisition routes
+    Route::get('/all-budgets', [AdminController::class, 'getBudgets']);
+    // New budget and requisition routes 
+    Route::get('/departments/collections/{departmentId}', [AdminController::class, 'getDepartmentCollections']);
     Route::get('/purchase-requisition/{id}/check-budget', [AdminController::class, 'checkBudget']);
     Route::post('/purchase-requisition/{id}/approve', [AdminController::class, 'approveRequisition']);
     Route::post('/purchase-requisition/{id}/reject', [AdminController::class, 'rejectRequisition']);

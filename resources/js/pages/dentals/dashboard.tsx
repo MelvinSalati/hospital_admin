@@ -1,18 +1,15 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import {
-    Activity,
     AlertTriangle,
     Bell,
     CalendarCheck,
     CalendarClock,
     ClipboardList,
-    Eye,
-    Glasses,
     HeartPulse,
     Search,
-    Stethoscope,
-    Users,
+    Smile,
     UserCheck,
+    Users,
 } from 'lucide-react';
 
 import AppLayout from '@/layouts/app/app-header-layout';
@@ -20,14 +17,14 @@ import PageHeader from '@/components/PageHeader';
 
 type VisitStatus = 'waiting' | 'in-progress' | 'completed';
 
-interface OphthalmologyStats {
+interface DentalStats {
     registeredPatients: number;
     visitsToday: number;
     activeTreatments: number;
     urgentReferrals: number;
 }
 
-interface EyeVisit {
+interface DentalVisit {
     id: number;
     patientCode: string;
     name: string;
@@ -36,7 +33,7 @@ interface EyeVisit {
     status: VisitStatus;
 }
 
-interface EyeAlert {
+interface DentalAlert {
     id: number;
     title: string;
     description: string;
@@ -44,125 +41,36 @@ interface EyeAlert {
     time: string;
 }
 
-interface VisitSummaryDatum {
+interface SummaryDatum {
     label: string;
     value: number;
     color: string;
 }
 
-interface OphthalmologyDashboardProps {
-    stats?: Partial<OphthalmologyStats> | null;
-    visits?: EyeVisit[] | null;
-    alerts?: EyeAlert[] | null;
-    serviceData?: VisitSummaryDatum[] | null;
-    attendanceTrend?: { month: string; visits: number }[] | null;
-    visualAcuityData?: VisitSummaryDatum[] | null;
-    outcomeData?: VisitSummaryDatum[] | null;
+interface TrendDatum {
+    month: string;
+    visits: number;
 }
 
-const DUMMY_STATS: OphthalmologyStats = {
-    registeredPatients: 842,
-    visitsToday: 46,
-    activeTreatments: 128,
-    urgentReferrals: 9,
+interface DentalDashboardProps {
+    departmentId?: number;
+    userName?: string;
+    stats?: Partial<DentalStats> | null;
+    visits?: DentalVisit[] | null;
+    alerts?: DentalAlert[] | null;
+    serviceData?: SummaryDatum[] | null;
+    attendanceTrend?: TrendDatum[] | null;
+    treatmentStatusData?: SummaryDatum[] | null;
+    visitPriorityData?: SummaryDatum[] | null;
+    breakdownDays?: number;
+}
+
+const DUMMY_STATS: DentalStats = {
+    registeredPatients: 0,
+    visitsToday: 0,
+    activeTreatments: 0,
+    urgentReferrals: 0,
 };
-
-const DUMMY_EYE_VISITS: EyeVisit[] = [
-    {
-        id: 1,
-        patientCode: 'OPH-00124',
-        name: 'John Banda',
-        service: 'Visual Acuity Assessment',
-        waitingMinutes: 18,
-        status: 'waiting',
-    },
-    {
-        id: 2,
-        patientCode: 'OPH-00125',
-        name: 'Mary Phiri',
-        service: 'Cataract Assessment',
-        waitingMinutes: 12,
-        status: 'in-progress',
-    },
-    {
-        id: 3,
-        patientCode: 'OPH-00126',
-        name: 'Grace Zulu',
-        service: 'Glaucoma Screening',
-        waitingMinutes: 8,
-        status: 'completed',
-    },
-    {
-        id: 4,
-        patientCode: 'OPH-00127',
-        name: 'Peter Tembo',
-        service: 'Refraction Assessment',
-        waitingMinutes: 5,
-        status: 'waiting',
-    },
-];
-
-const DUMMY_ALERTS: EyeAlert[] = [
-    {
-        id: 1,
-        title: 'Urgent ophthalmology referral',
-        description: 'OPH-00129 · Requires specialist review',
-        category: 'danger',
-        time: '15 minutes ago',
-    },
-    {
-        id: 2,
-        title: 'Cataract surgery follow-up',
-        description: 'OPH-00130 · Post-operative review due',
-        category: 'warning',
-        time: '35 minutes ago',
-    },
-    {
-        id: 3,
-        title: 'Glaucoma review due',
-        description: 'OPH-00131 · Intraocular pressure assessment',
-        category: 'warning',
-        time: '1 hour ago',
-    },
-    {
-        id: 4,
-        title: 'Eye examination completed',
-        description: 'OPH-00126 · Clinical assessment recorded',
-        category: 'success',
-        time: '2 hours ago',
-    },
-];
-
-const SERVICE_DATA: VisitSummaryDatum[] = [
-    { label: 'Visual Acuity', value: 48, color: '#2563eb' },
-    { label: 'Refraction', value: 32, color: '#16a34a' },
-    { label: 'Cataract Screening', value: 26, color: '#d97706' },
-    { label: 'Glaucoma Screening', value: 19, color: '#9333ea' },
-];
-
-const EYE_TREND = [
-    { month: 'Jan', visits: 42 },
-    { month: 'Feb', visits: 49 },
-    { month: 'Mar', visits: 55 },
-    { month: 'Apr', visits: 51 },
-    { month: 'May', visits: 67 },
-    { month: 'Jun', visits: 76 },
-];
-
-const VISUAL_ACUITY_DATA: VisitSummaryDatum[] = [
-    { label: 'Normal vision', value: 48, color: '#2563eb' },
-    { label: 'Mild impairment', value: 26, color: '#0d9488' },
-    { label: 'Moderate impairment', value: 14, color: '#f59e0b' },
-    { label: 'Severe impairment', value: 7, color: '#ea580c' },
-    { label: 'Blindness', value: 3, color: '#dc2626' },
-];
-
-const OUTCOME_DATA: VisitSummaryDatum[] = [
-    { label: 'Routine review', value: 54, color: '#2563eb' },
-    { label: 'Treatment started', value: 28, color: '#0d9488' },
-    { label: 'Specialist referral', value: 12, color: '#f59e0b' },
-    { label: 'Follow-up required', value: 18, color: '#9333ea' },
-];
 
 const STATUS_STYLES: Record<VisitStatus, string> = {
     waiting: 'bg-yellow-100 text-yellow-800',
@@ -192,6 +100,19 @@ const ALERT_STYLES = {
         bg: 'bg-blue-50',
     },
 };
+
+function buildGradient(data: SummaryDatum[], total: number) {
+    let accumulated = 0;
+
+    return data
+        .map((item) => {
+            const start = accumulated;
+            accumulated += total > 0 ? (item.value / total) * 100 : 0;
+
+            return `${item.color} ${start}% ${accumulated}%`;
+        })
+        .join(', ');
+}
 
 function StatCard({
     label,
@@ -226,83 +147,87 @@ function StatCard({
     );
 }
 
-function ServiceBreakdown({ data }: { data: VisitSummaryDatum[] }) {
+function ServiceBreakdown({
+    data,
+    days,
+}: {
+    data: SummaryDatum[];
+    days: number;
+}) {
     const total = data.reduce((sum, item) => sum + item.value, 0);
-
-    let accumulated = 0;
-
-    const gradient = data
-        .map((item) => {
-            const start = accumulated;
-            accumulated += total > 0 ? (item.value / total) * 100 : 0;
-
-            return `${item.color} ${start}% ${accumulated}%`;
-        })
-        .join(', ');
+    const gradient = buildGradient(data, total);
 
     return (
         <section className="rounded-xl bg-white p-4 shadow-sm">
-            <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-800">
-                <ClipboardList className="h-4 w-4 text-slate-500" />
-                Ophthalmology Services
-            </h2>
+            <div className="mb-4 flex items-center justify-between">
+                <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                    <ClipboardList className="h-4 w-4 text-slate-500" />
+                    Dental Services
+                </h2>
 
-            <div className="grid grid-cols-2 items-center gap-4">
-                <div className="flex justify-center">
-                    <div
-                        className="relative flex h-36 w-36 items-center justify-center rounded-full"
-                        style={{
-                            background:
-                                total > 0
-                                    ? `conic-gradient(${gradient})`
-                                    : '#e2e8f0',
-                        }}
-                    >
-                        <div className="flex h-24 w-24 flex-col items-center justify-center rounded-full bg-white">
-                            <span className="text-2xl font-semibold text-slate-900">
-                                {total}
-                            </span>
-                            <span className="text-[10px] text-slate-500">
-                                Total visits
-                            </span>
+                <span className="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-600">
+                    Last {days} days
+                </span>
+            </div>
+
+            {data.length === 0 ? (
+                <p className="py-8 text-center text-xs text-slate-500">
+                    No dental services ordered in this period.
+                </p>
+            ) : (
+                <div className="grid grid-cols-2 items-center gap-4">
+                    <div className="flex justify-center">
+                        <div
+                            className="relative flex h-36 w-36 items-center justify-center rounded-full"
+                            style={{
+                                background:
+                                    total > 0
+                                        ? `conic-gradient(${gradient})`
+                                        : '#e2e8f0',
+                            }}
+                        >
+                            <div className="flex h-24 w-24 flex-col items-center justify-center rounded-full bg-white">
+                                <span className="text-2xl font-semibold text-slate-900">
+                                    {total}
+                                </span>
+                                <span className="text-[10px] text-slate-500">
+                                    Total orders
+                                </span>
+                            </div>
                         </div>
                     </div>
-                </div>
 
-                <div className="space-y-3">
-                    {data.map((item) => (
-                        <div key={item.label}>
-                            <div className="mb-1 flex items-center justify-between gap-2 text-xs">
-                                <span className="truncate text-slate-600">
-                                    {item.label}
-                                </span>
-                                <span className="font-semibold text-slate-800">
-                                    {item.value}
-                                </span>
-                            </div>
+                    <div className="space-y-3">
+                        {data.map((item) => (
+                            <div key={item.label}>
+                                <div className="mb-1 flex items-center justify-between gap-2 text-xs">
+                                    <span className="truncate text-slate-600">
+                                        {item.label}
+                                    </span>
+                                    <span className="font-semibold text-slate-800">
+                                        {item.value}
+                                    </span>
+                                </div>
 
-                            <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
-                                <div
-                                    className="h-full rounded-full"
-                                    style={{
-                                        width: `${total > 0 ? (item.value / total) * 100 : 0}%`,
-                                        backgroundColor: item.color,
-                                    }}
-                                />
+                                <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                                    <div
+                                        className="h-full rounded-full"
+                                        style={{
+                                            width: `${total > 0 ? (item.value / total) * 100 : 0}%`,
+                                            backgroundColor: item.color,
+                                        }}
+                                    />
+                                </div>
                             </div>
-                        </div>
-                    ))}
+                        ))}
+                    </div>
                 </div>
-            </div>
+            )}
         </section>
     );
 }
 
-function EyeAttendanceTrend({
-    data,
-}: {
-    data: { month: string; visits: number }[];
-}) {
+function DentalAttendanceTrend({ data }: { data: TrendDatum[] }) {
     const max = Math.max(...data.map((item) => item.visits), 1);
 
     return (
@@ -310,10 +235,10 @@ function EyeAttendanceTrend({
             <div className="mb-4 flex items-center justify-between">
                 <div>
                     <h2 className="text-sm font-semibold text-slate-800">
-                        Ophthalmology Attendance Trend
+                        Dental Attendance Trend
                     </h2>
                     <p className="text-xs text-slate-500">
-                        Monthly eye care visits
+                        Monthly dental visits
                     </p>
                 </div>
 
@@ -350,16 +275,16 @@ function EyeAttendanceTrend({
     );
 }
 
-function EyePatientQueue({ rows }: { rows: EyeVisit[] }) {
+function DentalPatientQueue({ rows }: { rows: DentalVisit[] }) {
     return (
         <section className="rounded-xl bg-white p-4 shadow-sm">
             <div className="mb-3 flex items-center justify-between">
                 <div>
                     <h2 className="text-sm font-semibold text-slate-800">
-                        Today's Ophthalmology Visits
+                        Today's Dental Visits
                     </h2>
                     <p className="text-xs text-slate-500">
-                        Eye care consultation queue
+                        Dental consultation queue
                     </p>
                 </div>
 
@@ -414,7 +339,7 @@ function EyePatientQueue({ rows }: { rows: EyeVisit[] }) {
                                     colSpan={5}
                                     className="py-8 text-center text-slate-500"
                                 >
-                                    No ophthalmology visits today.
+                                    No dental visits today.
                                 </td>
                             </tr>
                         )}
@@ -425,29 +350,19 @@ function EyePatientQueue({ rows }: { rows: EyeVisit[] }) {
     );
 }
 
-function VisitSummaryCard({
+function SummaryCard({
     title,
     subtitle,
+    period,
     data,
 }: {
     title: string;
     subtitle: string;
-    data: VisitSummaryDatum[];
+    period: string;
+    data: SummaryDatum[];
 }) {
     const total = data.reduce((sum, item) => sum + item.value, 0);
-
-    let currentPercentage = 0;
-
-    const gradient = data
-        .map((item) => {
-            const start = currentPercentage;
-            const percentage = total > 0 ? (item.value / total) * 100 : 0;
-
-            currentPercentage += percentage;
-
-            return `${item.color} ${start}% ${currentPercentage}%`;
-        })
-        .join(', ');
+    const gradient = buildGradient(data, total);
 
     return (
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -460,7 +375,7 @@ function VisitSummaryCard({
                 </div>
 
                 <span className="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-600">
-                    This month
+                    {period}
                 </span>
             </div>
 
@@ -527,7 +442,7 @@ function VisitSummaryCard({
     );
 }
 
-function NotificationsPanel({ alerts }: { alerts: EyeAlert[] }) {
+function NotificationsPanel({ alerts }: { alerts: DentalAlert[] }) {
     const [filter, setFilter] = useState('all');
     const [query, setQuery] = useState('');
 
@@ -552,7 +467,7 @@ function NotificationsPanel({ alerts }: { alerts: EyeAlert[] }) {
                             Notifications
                         </h2>
                         <p className="text-xs text-slate-500">
-                            Ophthalmology clinical alerts
+                            Dental clinical alerts
                         </p>
                     </div>
 
@@ -637,30 +552,33 @@ function NotificationsPanel({ alerts }: { alerts: EyeAlert[] }) {
     );
 }
 
-export default function OphthalmologyDashboard({
+export default function DentalDashboard({
     stats: incomingStats,
     visits: incomingVisits,
     alerts: incomingAlerts,
     serviceData: incomingServiceData,
     attendanceTrend: incomingTrend,
-    visualAcuityData: incomingAcuity,
-    outcomeData: incomingOutcomes,
-}: OphthalmologyDashboardProps) {
-    const stats: OphthalmologyStats = {
+    treatmentStatusData: incomingTreatmentStatus,
+    visitPriorityData: incomingVisitPriority,
+    breakdownDays = 90,
+}: DentalDashboardProps) {
+    const stats: DentalStats = {
         ...DUMMY_STATS,
         ...(incomingStats ?? {}),
     };
 
-    const visits = incomingVisits ?? DUMMY_EYE_VISITS;
-    const alerts = incomingAlerts ?? DUMMY_ALERTS;
-    const serviceData = incomingServiceData ?? SERVICE_DATA;
-    const attendanceTrend = incomingTrend ?? EYE_TREND;
-    const visualAcuityData = incomingAcuity ?? VISUAL_ACUITY_DATA;
-    const outcomeData = incomingOutcomes ?? OUTCOME_DATA;
+    const visits = incomingVisits ?? [];
+    const alerts = incomingAlerts ?? [];
+    const serviceData = incomingServiceData ?? [];
+    const attendanceTrend = incomingTrend ?? [];
+    const treatmentStatusData = incomingTreatmentStatus ?? [];
+    const visitPriorityData = incomingVisitPriority ?? [];
+
+    const periodLabel = `Last ${breakdownDays} days`;
 
     const statCards = [
         {
-            label: 'Registered Patients',
+            label: 'Dental Patients',
             value: stats.registeredPatients,
             icon: <Users className="h-4 w-4" />,
             tone: 'bg-blue-100',
@@ -695,9 +613,9 @@ export default function OphthalmologyDashboard({
         >
             <div className="bg-blue-50 p-2">
                 <PageHeader
-                    icon={<Eye className="h-5 w-5" />}
+                    icon={<Smile className="h-5 w-5" />}
                     title="Dentistry Department"
-                    subtitle="Manage eye examinations, visual acuity assessments, treatment and specialist referrals"
+                    subtitle="Manage dental consultations, procedures, treatments and appointments"
                 />
             </div>
 
@@ -712,29 +630,31 @@ export default function OphthalmologyDashboard({
                     </div>
 
                     {/* SERVICE DISTRIBUTION */}
-                    <ServiceBreakdown data={serviceData} />
+                    <ServiceBreakdown data={serviceData} days={breakdownDays} />
 
                     {/* ATTENDANCE TREND */}
-                    <EyeAttendanceTrend data={attendanceTrend} />
+                    <DentalAttendanceTrend data={attendanceTrend} />
 
                     {/* PATIENT QUEUE */}
-                    <EyePatientQueue rows={visits} />
+                    <DentalPatientQueue rows={visits} />
                 </div>
 
                 {/* RIGHT CONTENT */}
                 <div className="min-h-0">
                     <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
                         <div className="flex min-w-0 flex-col gap-4">
-                            <VisitSummaryCard
-                                title="Visual Acuity Results"
-                                subtitle="Visual assessment distribution"
-                                data={visualAcuityData}
+                            <SummaryCard
+                                title="Treatment Status"
+                                subtitle="Dental orders by status"
+                                period={periodLabel}
+                                data={treatmentStatusData}
                             />
 
-                            <VisitSummaryCard
-                                title="Eye Care Outcomes"
-                                subtitle="Clinical service outcomes"
-                                data={outcomeData}
+                            <SummaryCard
+                                title="Visit Priority"
+                                subtitle="Dental visits by priority"
+                                period={periodLabel}
+                                data={visitPriorityData}
                             />
                         </div>
 

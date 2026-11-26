@@ -19,7 +19,9 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->group(function () {
     Route::inertia('/reports', 'admin/Reports');
     Route::inertia("/administration", 'admin/Administration');
     Route::inertia('/settings', 'admin/Settings');
+    Route::get('/departments/collections/{departmentId}', [AdminController::class, 'getDepartmentCollections']);
 });
+
 
 
 Route::middleware(['auth'])->prefix('v1/admin')->group(function () {

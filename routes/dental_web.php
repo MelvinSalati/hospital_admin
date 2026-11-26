@@ -6,7 +6,7 @@ use App\Http\Controllers\Dentals\DentalBulkStoreController;
 use App\Http\Controllers\Reports\DentalReportController;
 use Illuminate\Support\Facades\Route;
 
-Route::prefix('dental')->group(function () {
+Route::middleware('auth')->prefix('dental')->group(function () {
     // Optional: keep a catch-all if you still need it
     Route::get('/', [DentalController::class, 'index']);
 

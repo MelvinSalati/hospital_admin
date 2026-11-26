@@ -1,22 +1,17 @@
 // components/payments/CheckoutModal.tsx
 
-import { router, usePage } from '@inertiajs/react';
+import { usePage } from '@inertiajs/react';
 import {
     X,
     Banknote,
     CreditCard,
     Smartphone,
-    Building,
     Shield,
     Check,
     Loader2,
     Wallet,
     AlertCircle,
     Landmark,
-    Phone,
-    FileText,
-    User,
-    Calendar,
     Lock,
     Fingerprint,
     Receipt,
@@ -56,6 +51,15 @@ interface CheckoutModalProps {
     };
 }
 
+interface PaymentField {
+    id: string;
+    label: string;
+    type: 'text' | 'number' | 'select' | 'date' | 'tel' | 'email';
+    placeholder?: string;
+    required: boolean;
+    options?: { value: string; label: string }[];
+}
+
 interface PaymentMethod {
     id: string;
     label: string;
@@ -64,13 +68,19 @@ interface PaymentMethod {
     fields?: PaymentField[];
 }
 
-interface PaymentField {
-    id: string;
-    label: string;
-    type: 'text' | 'number' | 'select' | 'date' | 'tel' | 'email';
-    placeholder?: string;
-    required: boolean;
-    options?: { value: string; label: string }[];
+interface InsuranceProvider {
+    id: number;
+    name: string;
+}
+
+interface CheckoutPageProps extends Record<string, unknown> {
+    insuranceProviders?: InsuranceProvider[];
+    auth?: {
+        user?: {
+            name?: string;
+            first_name?: string;
+        };
+    };
 }
 
 // ============================================================================
@@ -173,41 +183,35 @@ const PAYMENT_METHODS: PaymentMethod[] = [
         id: 'insurance',
         label: 'Insurance',
         icon: Shield,
-        description: 'Medical Insurance Claim',
+        description: 'Insurance scheme / medical aid',
         fields: [
             {
+                // options are injected at render time from page props
                 id: 'insurance_provider',
                 label: 'Provider',
                 type: 'select',
                 required: true,
-                options: [
-                    { value: 'nhima', label: 'NHIMA' },
-                    { value: 'zima', label: 'ZIMA' },
-                    { value: 'madison', label: 'Madison' },
-                    { value: 'sanlam', label: 'Sanlam' },
-                    { value: 'pru', label: 'Prudential' },
-                    { value: 'other', label: 'Other' },
-                ],
+                options: [],
             },
             {
                 id: 'policy_number',
-                label: 'Policy Number',
+                label: 'Policy / Member Number',
                 type: 'text',
-                placeholder: 'Enter policy number',
+                placeholder: 'e.g., POL-123456',
                 required: true,
             },
             {
                 id: 'authorization_code',
-                label: 'Auth Code',
+                label: 'Authorization Code',
                 type: 'text',
-                placeholder: 'Authorization code',
+                placeholder: 'Optional',
                 required: false,
             },
             {
                 id: 'claim_notes',
                 label: 'Claim Notes',
                 type: 'text',
-                placeholder: 'Additional details',
+                placeholder: 'Optional notes for the claim',
                 required: false,
             },
         ],
@@ -243,6 +247,14 @@ const PAYMENT_METHODS: PaymentMethod[] = [
     },
 ];
 
+const METHOD_COLORS: Record<string, string> = {
+    cash: 'from-emerald-500 to-teal-500',
+    card: 'from-blue-500 to-indigo-500',
+    mobile_money: 'from-purple-500 to-pink-500',
+    insurance: 'from-cyan-500 to-blue-500',
+    bank_transfer: 'from-orange-500 to-amber-500',
+};
+
 // ============================================================================
 // Helpers
 // ============================================================================
@@ -264,19 +276,23 @@ const computeAppliedAmount = (
 };
 
 /**
- * Change is only meaningful for cash (or any overpayment method).
- * For non-cash methods we always return 0.
+ * Change is only meaningful for cash. For non-cash methods we always return 0.
  */
 const computeChange = (
     method: string,
     formData: Record<string, any>,
-    dueAmount: number,
     appliedAmount: number,
 ): number => {
     if (method !== 'cash') return 0;
     const tendered = Number(formData.amount_tendered) || 0;
     return Math.max(tendered - appliedAmount, 0);
 };
+
+const formatCurrency = (amount: number) =>
+    `ZMW ${amount.toLocaleString('en-ZM', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    })}`;
 
 // ============================================================================
 // Main Component
@@ -289,7 +305,9 @@ export default function CheckoutModal({
     invoice,
     patient,
 }: CheckoutModalProps) {
-    const { auth } = usePage().props;
+    const { insuranceProviders = [], auth } =
+        usePage<CheckoutPageProps>().props;
+
     const [selectedMethod, setSelectedMethod] = useState<string>('cash');
     const [formData, setFormData] = useState<Record<string, any>>({});
     const [errors, setErrors] = useState<Record<string, string>>({});
@@ -297,26 +315,40 @@ export default function CheckoutModal({
 
     const currentUser = auth?.user;
     const staffName = currentUser?.name || currentUser?.first_name || 'Staff';
-    const currentMethod = PAYMENT_METHODS.find((m) => m.id === selectedMethod);
+
+    // Inject the insurance providers into the insurance method's select field
+    const paymentMethods: PaymentMethod[] = PAYMENT_METHODS.map((method) => {
+        if (method.id !== 'insurance') return method;
+
+        return {
+            ...method,
+            fields: method.fields?.map((field) =>
+                field.id === 'insurance_provider'
+                    ? {
+                          ...field,
+                          options: insuranceProviders.map((provider) => ({
+                              value: String(provider.id),
+                              label: provider.name,
+                          })),
+                      }
+                    : field,
+            ),
+        };
+    });
+
+    const currentMethod = paymentMethods.find((m) => m.id === selectedMethod);
     const dueAmount = invoice?.due_amount || invoice?.total || 0;
     const amountTendered = Number(formData.amount_tendered) || 0;
 
     // ------------------------------------------------------------------
-    // Derived values — computed on every render from formData.
-    // Because `amount` in formData is kept in sync below, these always
-    // agree with what will be submitted.
+    // Derived values, computed on every render from formData.
     // ------------------------------------------------------------------
     const appliedAmount = computeAppliedAmount(
         selectedMethod,
         formData,
         dueAmount,
     );
-    const change = computeChange(
-        selectedMethod,
-        formData,
-        dueAmount,
-        appliedAmount,
-    );
+    const change = computeChange(selectedMethod, formData, appliedAmount);
     const isShort =
         selectedMethod === 'cash' &&
         amountTendered > 0 &&
@@ -339,20 +371,13 @@ export default function CheckoutModal({
 
     if (!isOpen) return null;
 
-    const formatCurrency = (amount: number) => {
-        return `ZMW ${amount.toLocaleString('en-ZM', {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-        })}`;
-    };
-
     const handleFieldChange = (fieldId: string, value: any) => {
         setFormData((prev) => ({ ...prev, [fieldId]: value }));
         if (errors[fieldId]) setErrors((prev) => ({ ...prev, [fieldId]: '' }));
     };
 
     // ------------------------------------------------------------------
-    // Validation — branches by method so cash can legitimately overpay.
+    // Validation: branches by method so cash can legitimately overpay.
     // ------------------------------------------------------------------
     const validateForm = () => {
         const newErrors: Record<string, string> = {};
@@ -366,7 +391,7 @@ export default function CheckoutModal({
                     tendered,
                 )} < ${formatCurrency(dueAmount)}`;
             }
-            // Overpay is allowed — it simply produces change.
+            // Overpay is allowed, it simply produces change.
         } else {
             const amount = Number(formData.amount) || 0;
             if (amount <= 0) {
@@ -376,28 +401,24 @@ export default function CheckoutModal({
             }
         }
 
-        if (currentMethod?.fields) {
-            currentMethod.fields.forEach((field) => {
-                if (
-                    field.id === 'cash_received_by' ||
-                    field.id === 'amount_tendered'
-                )
-                    return;
-                const value = formData[field.id];
-                if (field.required && !value) {
-                    newErrors[field.id] = `${field.label} is required`;
-                }
-            });
-        }
+        currentMethod?.fields?.forEach((field) => {
+            if (
+                field.id === 'cash_received_by' ||
+                field.id === 'amount_tendered'
+            )
+                return;
+            if (field.required && !formData[field.id]) {
+                newErrors[field.id] = `${field.label} is required`;
+            }
+        });
 
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
     };
 
     // ------------------------------------------------------------------
-    // Submit — amount and change are computed here from the same
-    // single formula used for display. No `...formData` spread that
-    // could silently clobber the explicit fields.
+    // Submit: amount and change are computed from the same formulas used
+    // for display. No `...formData` spread that could clobber them.
     // ------------------------------------------------------------------
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -406,7 +427,6 @@ export default function CheckoutModal({
 
         setIsSubmitting(true);
 
-        // Recompute from current formData — never trust a stale value.
         const finalApplied = computeAppliedAmount(
             selectedMethod,
             formData,
@@ -415,7 +435,6 @@ export default function CheckoutModal({
         const finalChange = computeChange(
             selectedMethod,
             formData,
-            dueAmount,
             finalApplied,
         );
 
@@ -432,10 +451,8 @@ export default function CheckoutModal({
             change: finalChange,
             received_by: formData.cash_received_by || staffName,
 
-            // Method-specific fields (card_*, phone_number, policy_number,
-            // bank_name, etc.) are forwarded explicitly. Add new keys here
-            // as new fields are introduced — do NOT spread the whole
-            // formData object, or it will overwrite `amount`/`change`.
+            // Method-specific fields are forwarded explicitly. Add new keys
+            // here as new fields are introduced; do NOT spread formData.
             card_number: formData.card_number,
             card_holder: formData.card_holder,
             expiry_date: formData.expiry_date,
@@ -460,10 +477,8 @@ export default function CheckoutModal({
                     response.data.message || 'Payment processed successfully',
                 );
 
-                // Call onSuccess callback
                 onSuccess();
 
-                // Close modal after short delay
                 setTimeout(() => {
                     onClose();
                 }, 500);
@@ -487,21 +502,13 @@ export default function CheckoutModal({
         }
     };
 
-    const getMethodColor = (methodId: string) => {
-        const colors: Record<string, string> = {
-            cash: 'from-emerald-500 to-teal-500',
-            card: 'from-blue-500 to-indigo-500',
-            mobile_money: 'from-purple-500 to-pink-500',
-            insurance: 'from-cyan-500 to-blue-500',
-            bank_transfer: 'from-orange-500 to-amber-500',
-        };
-        return colors[methodId] || 'from-slate-500 to-gray-500';
-    };
+    const getMethodColor = (methodId: string) =>
+        METHOD_COLORS[methodId] || 'from-slate-500 to-gray-500';
 
-    const getMethodIcon = (methodId: string) => {
-        const method = PAYMENT_METHODS.find((m) => m.id === methodId);
-        return method?.icon || Wallet;
-    };
+    const getMethodIcon = (methodId: string) =>
+        PAYMENT_METHODS.find((m) => m.id === methodId)?.icon || Wallet;
+
+    const HeaderIcon = getMethodIcon(selectedMethod);
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm">
@@ -524,6 +531,7 @@ export default function CheckoutModal({
                             </div>
                         </div>
                         <button
+                            type="button"
                             onClick={onClose}
                             className="rounded-lg p-1 hover:bg-slate-100 dark:hover:bg-slate-700"
                         >
@@ -538,24 +546,27 @@ export default function CheckoutModal({
                                 Payment Methods
                             </p>
                             <div className="space-y-1">
-                                {PAYMENT_METHODS.map((method) => {
-                                    const Icon = method.icon;
+                                {paymentMethods.map((method) => {
+                                    const Icon = method.icon || Wallet;
+                                    const isActive =
+                                        selectedMethod === method.id;
                                     return (
                                         <button
+                                            type="button"
                                             key={method.id}
                                             onClick={() => {
                                                 setSelectedMethod(method.id);
                                                 setErrors({});
                                             }}
                                             className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs transition-all ${
-                                                selectedMethod === method.id
+                                                isActive
                                                     ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-400'
                                                     : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-700/50'
                                             }`}
                                         >
                                             <Icon
                                                 className={`h-3.5 w-3.5 ${
-                                                    selectedMethod === method.id
+                                                    isActive
                                                         ? 'text-blue-600 dark:text-blue-400'
                                                         : 'text-slate-400'
                                                 }`}
@@ -563,7 +574,7 @@ export default function CheckoutModal({
                                             <span className="flex-1">
                                                 {method.label}
                                             </span>
-                                            {selectedMethod === method.id && (
+                                            {isActive && (
                                                 <Check className="h-3 w-3 text-blue-600" />
                                             )}
                                         </button>
@@ -631,16 +642,11 @@ export default function CheckoutModal({
                             <form onSubmit={handleSubmit} className="space-y-3">
                                 {/* Method Header */}
                                 <div
-                                    className="flex items-center gap-2 rounded-lg bg-gradient-to-r p-2 text-white"
-                                    style={{
-                                        background: `linear-gradient(135deg, ${getMethodColor(selectedMethod)})`,
-                                    }}
+                                    className={`flex items-center gap-2 rounded-lg bg-gradient-to-r ${getMethodColor(
+                                        selectedMethod,
+                                    )} p-2 text-white`}
                                 >
-                                    {(() => {
-                                        const Icon =
-                                            getMethodIcon(selectedMethod);
-                                        return <Icon className="h-4 w-4" />;
-                                    })()}
+                                    <HeaderIcon className="h-4 w-4" />
                                     <span className="text-xs font-medium capitalize">
                                         {selectedMethod.replace('_', ' ')}{' '}
                                         Payment
@@ -718,15 +724,9 @@ export default function CheckoutModal({
                                                             parseFloat(
                                                                 e.target.value,
                                                             ) || 0;
-                                                        // FIX #1: always derive
-                                                        // `amount` from tendered,
-                                                        // capped at dueAmount.
-                                                        // Previously the update
-                                                        // was conditional, which
-                                                        // froze `amount` at a
-                                                        // stale partial value
-                                                        // once tendered exceeded
-                                                        // dueAmount.
+                                                        // Always derive `amount`
+                                                        // from tendered, capped
+                                                        // at dueAmount.
                                                         setFormData((prev) => ({
                                                             ...prev,
                                                             amount_tendered:
@@ -736,23 +736,11 @@ export default function CheckoutModal({
                                                                 dueAmount,
                                                             ),
                                                         }));
-                                                        if (
-                                                            errors.amount_tendered
-                                                        )
-                                                            setErrors(
-                                                                (prev) => ({
-                                                                    ...prev,
-                                                                    amount_tendered:
-                                                                        '',
-                                                                }),
-                                                            );
-                                                        if (errors.amount)
-                                                            setErrors(
-                                                                (prev) => ({
-                                                                    ...prev,
-                                                                    amount: '',
-                                                                }),
-                                                            );
+                                                        setErrors((prev) => ({
+                                                            ...prev,
+                                                            amount_tendered: '',
+                                                            amount: '',
+                                                        }));
                                                     }}
                                                     className={`h-8 w-full rounded-lg border pr-2 pl-12 text-xs focus:ring-1 focus:outline-none ${
                                                         isShort
@@ -1003,7 +991,10 @@ export default function CheckoutModal({
                             <span className="h-3 w-px bg-slate-300 dark:bg-slate-600" />
                             <span>Staff: {staffName}</span>
                         </div>
-                        <button className="flex gap-1 text-[9px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
+                        <button
+                            type="button"
+                            className="flex gap-1 text-[9px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                        >
                             <Printer className="h-3 w-3" />
                             <span>Receipt</span>
                         </button>

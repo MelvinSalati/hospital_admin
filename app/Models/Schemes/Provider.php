@@ -15,6 +15,7 @@ class Provider extends Model
         'email'
     ];
 
+    protected $table="insurance_providers";
 
     protected static function boot()
     {

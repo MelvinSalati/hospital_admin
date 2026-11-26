@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Patients;
+namespace App\Http\Controllers\Theatre;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
@@ -18,6 +18,9 @@ use App\Models\Patients\PatientVisitScheme;
 
 class TheaterController extends Controller
 {
+    /** Theatre department id used by the queue. */
+    private const THEATER_DEPARTMENT_ID = 4;
+
     // ─────────────────────────────────────────────
     //  Index / dashboard  (now also sends noteContext)
     // ─────────────────────────────────────────────
@@ -137,6 +140,74 @@ class TheaterController extends Controller
                 'error'          => 'Unable to load theater procedures. Please try again.',
             ]);
         }
+    }
+
+    public function appointments()
+    {
+        return Inertia::render(
+            'theatre/appointments',
+        );
+    }
+
+    // ─────────────────────────────────────────────
+    //  Queue – patient_visits for the theatre department
+    // ─────────────────────────────────────────────
+
+    /**
+     * Theatre queue.
+     * Returns both statuses (1 = In Progress, 0 = Completed) so the page
+     * can drive its In Progress / Completed tabs from the same list.
+     */
+    public function queue(int $departmentId = self::THEATER_DEPARTMENT_ID)
+    {
+        $rows = DB::table('patient_visits as v')
+            ->leftJoin('patients as p', 'p.id', '=', 'v.patient_id')
+            ->where('v.department_id', $departmentId)
+            ->whereIn('v.status', [0, 1])
+            ->orderBy('v.created_at', 'asc')
+            ->select([
+                'v.id',
+                'v.patient_id',
+                'v.token',
+                'v.visit_type',
+                'v.priority',
+                'v.status',
+                'v.department_id',
+                'v.created_at',
+                'v.updated_at',
+                'p.patient_number',
+                'p.first_name',
+                'p.last_name',
+                'p.gender',
+                'p.phone',
+            ])
+            ->get();
+
+        $queue = $rows->map(function ($visit) {
+            $isActive = (int) $visit->status === 1;
+
+            return [
+                'id'             => $visit->id,
+                'token'          => $visit->token ?: 'T-' . str_pad((string) $visit->id, 4, '0', STR_PAD_LEFT),
+                'patient_id'     => $visit->patient_id,
+                'patient_number' => $visit->patient_number,
+                'patient_name'   => trim(($visit->first_name ?? '') . ' ' . ($visit->last_name ?? '')) ?: 'Unknown',
+                'contact'        => $visit->phone ?? 'N/A',
+                'gender'         => $visit->gender ?? 'N/A',
+                'visit_type'     => $visit->visit_type,
+                'status'         => (int) $visit->status,
+                'visit_status'   => $isActive ? 'in_progress' : 'completed',
+                'priority'       => $visit->priority ?? 'routine',
+                'registered_at'  => $visit->created_at,
+                'completed_at'   => $isActive ? null : $visit->updated_at,
+                'department_id'  => $visit->department_id,
+            ];
+        })->values();
+
+        return Inertia::render('theatre/queue', [
+            'departmentId' => $departmentId,
+            'queue'        => $queue,
+        ]);
     }
 
     // ─────────────────────────────────────────────

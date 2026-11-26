@@ -170,36 +170,51 @@ const patientNavItems: PatientNavItem[] = [
  *  - martenal     → everything except dashboard
  *  - theater      → theater only
  *  - dental       → dental only
- *  - opthamology  → opthamology only
+ *  - opthamology  → opthamology + consultations, lab, radiology, pharmacy,
+ *                   procedures, appointments
+ *
+ * NOTE: the strings below must match the `title` of a nav item EXACTLY
+ * (e.g. 'Consultations', not 'Consultation').
  */
-const ROLE_NAV_MAP: Record<string, string[] | 'all'> = {
-    nurse: ['Vitals', 'Admissions', 'Procedures', 'Appointments', 'Dashboard'],
-    laboratory: ['Laboratory'],
-    lab_technician: ['Dashboard', 'Laboratory', 'Appointments'],
-    pharmacy: ['Pharmacy'],
-    pharmacist: ['Pharmacy'],
-    radiology: ['Radiology'],
-    radiologist: ['Dashboard', 'Radiology', 'Appointments'],
-    reception: ['Payment'], // Billing + Payments live under this group
-    receptionist: ['Payment', 'Dashboard', 'laboratory'],
-    admin: 'all',
-    administrator: 'all',
-    doctor: 'all',
-    martenal: 'all-except-dashboard',
-    theater: ['Theater'],
-    theatre: ['Theater'],
-    dental: ['Dental'],
-    dentist: ['Dental'],
-    opthalmology: [
-        'Opthamology',
-        'Consultation',
-        'Laboratory',
-        'Radiology',
-        'Pharmacy',
-        'Procedures',
-        'Appointments',
-    ],
-};
+const OPTHALMOLOGY_NAV = [
+    'Opthamology',
+    'Consultations',
+    'Laboratory',
+    'Radiology',
+    'Pharmacy',
+    'Procedures',
+    'Appointments',
+];
+
+const ROLE_NAV_MAP: Record<string, string[] | 'all' | 'all-except-dashboard'> =
+    {
+        nurse: [
+            'Vitals',
+            'Admissions',
+            'Procedures',
+            'Appointments',
+            'Dashboard',
+        ],
+        laboratory: ['Laboratory'],
+        lab_technician: ['Dashboard', 'Laboratory', 'Appointments'],
+        pharmacy: ['Pharmacy'],
+        pharmacist: ['Pharmacy'],
+        radiology: ['Radiology'],
+        radiologist: ['Dashboard', 'Radiology', 'Appointments'],
+        reception: ['Payment'], // Billing + Payments live under this group
+        receptionist: ['Payment', 'Dashboard', 'laboratory'],
+        admin: 'all',
+        administrator: 'all',
+        doctor: 'all',
+        martenal: 'all-except-dashboard',
+        theater: ['Theater'],
+        theatre: ['Theater'],
+        dental: ['Dental'],
+        dentist: ['Dental'],
+        // Both spellings, in case the stored role uses the correct one
+        opthalmology: OPTHALMOLOGY_NAV,
+        ophthalmology: OPTHALMOLOGY_NAV,
+    };
 const FALLBACK_ROLE = 'nurse';
 
 function filterNavByRole(role: string | null): PatientNavItem[] {

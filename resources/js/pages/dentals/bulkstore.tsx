@@ -15,9 +15,11 @@ import {
     Boxes,
 } from 'lucide-react';
 import { usePage, router } from '@inertiajs/react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import OrderItemsModal from '@/components/OrderItemsModal';
 import { cn } from '@/lib/utils';
+
+type BulkStoreTab = 'ordered' | 'received' | 'products';
 
 interface RequisitionItem {
     id: number;
@@ -52,9 +54,68 @@ interface OrderedItem {
     items: RequisitionItem[];
 }
 
+/** One row per product, built from the items of all requisitions. */
+interface ProductSummary {
+    id: number; // product_id
+    product_name: string;
+    product_code: string | null;
+    unit: string | null;
+    orders_count: number;
+    total_requested: number;
+    total_received: number;
+    last_ordered_at: string | null;
+}
+
+// ─── Tabs config (rendered as PageHeader action buttons) ────
+/** PageHeader button variant for the selected tab vs. the others. */
+const TAB_ACTIVE_VARIANT = 'cyan';
+const TAB_INACTIVE_VARIANT = 'outline';
+
+/** Requisition statuses that count as "received". */
+const RECEIVED_STATUSES = ['fulfilled', 'completed'];
+
+const TABS: {
+    key: BulkStoreTab;
+    label: string;
+    subtitle: string;
+    tableTitle: string;
+    filterPlaceholder: string;
+    emptyMessage: string;
+}[] = [
+    {
+        key: 'ordered',
+        label: 'Ordered',
+        subtitle: 'Orders placed with the bulk store that are not yet received',
+        tableTitle: 'Ordered Items',
+        filterPlaceholder: 'Search orders...',
+        emptyMessage:
+            'No pending orders. Start by ordering from the bulk store.',
+    },
+    {
+        key: 'received',
+        label: 'Received',
+        subtitle: 'Orders that have been fulfilled by the bulk store',
+        tableTitle: 'Received Items',
+        filterPlaceholder: 'Search received orders...',
+        emptyMessage: 'No received orders yet.',
+    },
+    {
+        key: 'products',
+        label: 'Products',
+        subtitle:
+            'Products ordered from the bulk store and quantities received',
+        tableTitle: 'Products',
+        filterPlaceholder: 'Search products...',
+        emptyMessage: 'No products have been ordered yet.',
+    },
+];
+
 // ─── Shared helpers ─────────────────────────────────────────
 const formatMoney = (value: number | null | undefined) =>
     value != null ? `$${Number(value).toFixed(2)}` : '—';
+
+const isReceived = (status: string | null | undefined) =>
+    RECEIVED_STATUSES.includes((status ?? '').toLowerCase());
 
 const priorityClasses: Record<string, string> = {
     low: 'bg-slate-100 text-slate-600 border-slate-200',
@@ -129,10 +190,99 @@ export default function BulkStore() {
         };
     };
 
+    const [activeTab, setActiveTab] = useState<BulkStoreTab>('ordered');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [drawerOrder, setDrawerOrder] = useState<OrderedItem | null>(null);
 
-    const columns: Column<OrderedItem>[] = [
+    const allOrders = useMemo<OrderedItem[]>(
+        () => orderedItems ?? [],
+        [orderedItems],
+    );
+
+    // Split orders into ordered (not yet received) and received
+    const { orderedOrders, receivedOrders } = useMemo(() => {
+        const ordered: OrderedItem[] = [];
+        const received: OrderedItem[] = [];
+        allOrders.forEach((order) => {
+            if (isReceived(order.status)) received.push(order);
+            else ordered.push(order);
+        });
+        return { orderedOrders: ordered, receivedOrders: received };
+    }, [allOrders]);
+
+    // Aggregate items across all requisitions into one row per product
+    const products = useMemo<ProductSummary[]>(() => {
+        const map = new Map<number, ProductSummary>();
+
+        allOrders.forEach((order) => {
+            const seenInThisOrder = new Set<number>();
+
+            (order.items ?? []).forEach((item) => {
+                let entry = map.get(item.product_id);
+                if (!entry) {
+                    entry = {
+                        id: item.product_id,
+                        product_name: item.product_name,
+                        product_code: item.product_code,
+                        unit: item.unit,
+                        orders_count: 0,
+                        total_requested: 0,
+                        total_received: 0,
+                        last_ordered_at: null,
+                    };
+                    map.set(item.product_id, entry);
+                }
+
+                if (!seenInThisOrder.has(item.product_id)) {
+                    entry.orders_count += 1;
+                    seenInThisOrder.add(item.product_id);
+                }
+
+                entry.total_requested += Number(item.quantity_requested ?? 0);
+                entry.total_received += Number(item.quantity_fulfilled ?? 0);
+
+                if (
+                    order.requested_at &&
+                    (!entry.last_ordered_at ||
+                        new Date(order.requested_at) >
+                            new Date(entry.last_ordered_at))
+                ) {
+                    entry.last_ordered_at = order.requested_at;
+                }
+            });
+        });
+
+        return Array.from(map.values()).sort((a, b) =>
+            a.product_name.localeCompare(b.product_name),
+        );
+    }, [allOrders]);
+
+    const counts: Record<BulkStoreTab, number> = {
+        ordered: orderedOrders.length,
+        received: receivedOrders.length,
+        products: products.length,
+    };
+
+    const activeTabConfig = TABS.find((t) => t.key === activeTab) ?? TABS[0];
+
+    // Tabs as PageHeader action buttons (label carries the live count)
+    const headerActions = [
+        ...TABS.map((tab) => ({
+            label: `${tab.label} (${counts[tab.key]})`,
+            variant:
+                tab.key === activeTab
+                    ? TAB_ACTIVE_VARIANT
+                    : TAB_INACTIVE_VARIANT,
+            onClick: () => setActiveTab(tab.key),
+        })),
+        {
+            label: 'Order from Bulk Store',
+            onClick: () => setIsModalOpen(true),
+        },
+    ];
+
+    // ─── Order columns (Ordered + Received tabs) ────────────
+    const orderColumns: Column<OrderedItem>[] = [
         {
             id: 'requisition_number',
             label: 'Order #',
@@ -247,12 +397,89 @@ export default function BulkStore() {
         },
     ];
 
-    const actions: Action<OrderedItem>[] = [
+    const orderActions: Action<OrderedItem>[] = [
         {
             label: 'View Items',
             icon: <Eye size={16} />,
             color: 'info',
             onClick: (row) => setDrawerOrder(row),
+        },
+    ];
+
+    // ─── Product columns (Products tab) ─────────────────────
+    const productColumns: Column<ProductSummary>[] = [
+        {
+            id: 'product_name',
+            label: 'Product',
+            sortable: true,
+            filterable: true,
+            format: (value, row) => (
+                <div className="flex items-center gap-2">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-slate-600">
+                        <Package size={13} />
+                    </div>
+                    <div className="min-w-0">
+                        <p className="text-sm font-semibold text-slate-800">
+                            {value}
+                        </p>
+                        <p className="font-mono text-[10px] text-slate-400">
+                            {row.product_code ?? `PID ${row.id}`}
+                        </p>
+                    </div>
+                </div>
+            ),
+        },
+        {
+            id: 'unit',
+            label: 'Unit',
+            sortable: true,
+            format: (value) => (
+                <span className="text-sm text-slate-700">{value ?? '—'}</span>
+            ),
+        },
+        {
+            id: 'orders_count',
+            label: 'Orders',
+            sortable: true,
+            format: (value) => (
+                <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 tabular-nums">
+                    <Hash size={12} />
+                    {value ?? 0}
+                </span>
+            ),
+        },
+        {
+            id: 'total_requested',
+            label: 'Qty Ordered',
+            sortable: true,
+            format: (value) => (
+                <span className="text-sm font-medium text-slate-800 tabular-nums">
+                    {value ?? 0}
+                </span>
+            ),
+        },
+        {
+            id: 'total_received',
+            label: 'Qty Received',
+            sortable: true,
+            format: (value) => (
+                <span className="text-sm font-medium text-emerald-700 tabular-nums">
+                    {value ?? 0}
+                </span>
+            ),
+        },
+        {
+            id: 'last_ordered_at',
+            label: 'Last Ordered',
+            sortable: true,
+            format: (value) =>
+                value ? (
+                    <span className="text-xs text-slate-600">
+                        {new Date(value).toLocaleDateString()}
+                    </span>
+                ) : (
+                    <span className="text-slate-400">—</span>
+                ),
         },
     ];
 
@@ -264,37 +491,53 @@ export default function BulkStore() {
     return (
         <AppLayout
             breadcrumbs={[
-                { title: 'Radiology', href: '/bulk-store' },
+                { title: 'Altaf Memorial Hospital', href: '/bulk-store' },
+                { title: 'Opthalmology', href: '/bulk-store' },
                 { title: 'Bulk Store', href: '' },
             ]}
         >
+            <PageHeader
+                icon={<BarcodeIcon className="h-5 w-5" />}
+                title="Bulk Store"
+                subtitle={activeTabConfig.subtitle}
+                tabVariant="underline"
+                actions={headerActions}
+                defaultTabId="overview"
+            />
             <div className="h-full space-y-4 bg-blue-50 p-4">
-                <PageHeader
-                    icon={<BarcodeIcon className="h-5 w-5" />}
-                    title="Dental Bulk Store"
-                    subtitle="Order from bulk store"
-                    tabVariant="underline"
-                    actions={[
-                        {
-                            label: 'Order from Bulk Store',
-                            onClick: () => setIsModalOpen(true),
-                        },
-                    ]}
-                    defaultTabId="overview"
-                />
-
-                <ReusableTable
-                    title="Ordered Items"
-                    columns={columns}
-                    data={orderedItems ?? []}
-                    actions={actions}
-                    loading={false}
-                    filterPlaceholder="Search orders..."
-                    rowsPerPageOptions={[8, 15, 25, 50]}
-                    defaultRowsPerPage={8}
-                    emptyMessage="No orders found. Start by ordering from the bulk store."
-                    className="shadow-sm"
-                />
+                {activeTab === 'products' ? (
+                    <ReusableTable
+                        key="products"
+                        title={activeTabConfig.tableTitle}
+                        columns={productColumns}
+                        data={products}
+                        actions={[]}
+                        loading={false}
+                        filterPlaceholder={activeTabConfig.filterPlaceholder}
+                        rowsPerPageOptions={[8, 15, 25, 50]}
+                        defaultRowsPerPage={8}
+                        emptyMessage={activeTabConfig.emptyMessage}
+                        className="shadow-sm"
+                    />
+                ) : (
+                    <ReusableTable
+                        key={activeTab}
+                        title={activeTabConfig.tableTitle}
+                        columns={orderColumns}
+                        data={
+                            activeTab === 'received'
+                                ? receivedOrders
+                                : orderedOrders
+                        }
+                        actions={orderActions}
+                        loading={false}
+                        filterPlaceholder={activeTabConfig.filterPlaceholder}
+                        rowsPerPageOptions={[8, 15, 25, 50]}
+                        defaultRowsPerPage={8}
+                        emptyMessage={activeTabConfig.emptyMessage}
+                        className="shadow-sm"
+                    />
+                )}
 
                 <OrderItemsModal
                     isOpen={isModalOpen}

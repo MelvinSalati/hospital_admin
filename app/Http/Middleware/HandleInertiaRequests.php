@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Inertia\Middleware;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use App\Models\Departments\Department;
 
 class HandleInertiaRequests extends Middleware
 {
@@ -19,7 +20,8 @@ class HandleInertiaRequests extends Middleware
     public function share(Request $request): array
     {
         $user = $request->user();
-        $userProfile = null;
+        $userProfile = null; 
+
 
         // Get goods received notes with relationships
         $goodsReceivedNotes = \App\Models\BulkStores\GoodsReceivedNote::with([
@@ -101,6 +103,7 @@ class HandleInertiaRequests extends Middleware
         return [
             ...parent::share($request),
             'name' => config('app.name'),
+            'departments'=>Department::where('id','<>',12)->get(),
             'auth' => [
                 'user' => $user ? [
                     'id' => $user->id,

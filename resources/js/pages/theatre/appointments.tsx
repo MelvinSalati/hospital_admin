@@ -1,14 +1,6 @@
-// resources/js/pages/martenal/appointments.tsx
+// resources/js/pages/dentals/appointments.tsx
 import { usePage } from '@inertiajs/react';
-import {
-    CalendarDays,
-    Clock,
-    Eye,
-    EyeIcon,
-    HeartPulse,
-    Stethoscope,
-    X,
-} from 'lucide-react';
+import { CalendarDays, Clock, Eye, Smile, Stethoscope, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import PageHeader from '@/components/PageHeader';
 import type { Action, Column } from '@/components/ReusableTable';
@@ -64,6 +56,14 @@ const formatDate = (value: string) =>
 
 const formatTime = (value: string) => value?.slice(0, 5) || '—';
 
+const initials = (name: string) =>
+    (name || '?')
+        .split(' ')
+        .filter(Boolean)
+        .map((n) => n[0])
+        .slice(0, 2)
+        .join('');
+
 const rangeBadge: Record<
     Exclude<Range, 'all'>,
     { label: string; cls: string }
@@ -78,6 +78,18 @@ const rangeBadge: Record<
         cls: 'bg-slate-100 text-slate-600 border-slate-200',
     },
 };
+
+// ============ TABS (rendered as PageHeader action buttons) ============
+/** PageHeader button variant for the selected tab vs. the others. */
+const TAB_ACTIVE_VARIANT = 'cyan';
+const TAB_INACTIVE_VARIANT = 'outline';
+
+const TABS: { id: Range; label: string }[] = [
+    { id: 'all', label: 'All' },
+    { id: 'today', label: 'Today' },
+    { id: 'upcoming', label: 'Upcoming' },
+    { id: 'past', label: 'Past' },
+];
 
 // ============ DETAILS DRAWER ============
 function AppointmentDrawer({
@@ -139,11 +151,7 @@ function AppointmentDrawer({
 
                 <div className="flex items-center gap-3 border-b border-slate-100 bg-slate-50/60 p-4">
                     <div className="flex h-9 w-9 items-center justify-center rounded-md bg-blue-600 text-xs font-semibold text-white">
-                        {appointment.patient_name
-                            .split(' ')
-                            .map((n) => n[0])
-                            .slice(0, 2)
-                            .join('')}
+                        {initials(appointment.patient_name)}
                     </div>
                     <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-slate-900">
@@ -172,7 +180,7 @@ function AppointmentDrawer({
                             >
                                 <dt className="text-slate-500">{r.label}</dt>
                                 <dd className="font-medium text-slate-900">
-                                    {r.value}
+                                    {r.value || '—'}
                                 </dd>
                             </div>
                         ))}
@@ -228,6 +236,13 @@ export default function Appointments() {
         [appointments, range],
     );
 
+    // Tabs as PageHeader action buttons (label carries the live count)
+    const headerActions = TABS.map((tab) => ({
+        label: `${tab.label} (${counts[tab.id]})`,
+        variant: tab.id === range ? TAB_ACTIVE_VARIANT : TAB_INACTIVE_VARIANT,
+        onClick: () => setRange(tab.id),
+    }));
+
     const openDetails = (row: Appointment) => {
         setSelected(row);
         setDrawerOpen(true);
@@ -247,11 +262,7 @@ export default function Appointments() {
             format: (_, row) => (
                 <div className="flex items-center gap-2">
                     <div className="flex h-7 w-7 items-center justify-center rounded-md bg-blue-600 text-[10px] font-semibold text-white">
-                        {row.patient_name
-                            .split(' ')
-                            .map((n) => n[0])
-                            .slice(0, 2)
-                            .join('')}
+                        {initials(row.patient_name)}
                     </div>
                     <p className="text-sm font-medium">{row.patient_name}</p>
                 </div>
@@ -336,56 +347,24 @@ export default function Appointments() {
         },
     ];
 
-    const tabs: { id: Range; label: string }[] = [
-        { id: 'all', label: 'All' },
-        { id: 'today', label: 'Today' },
-        { id: 'upcoming', label: 'Upcoming' },
-        { id: 'past', label: 'Past' },
-    ];
-
     return (
         <AppLayout
             breadcrumbs={[
                 { href: '/dashboard', title: 'Altaf Memorial Hospital' },
-                { href: '', title: 'Opthalmology' },
+                { href: '', title: 'Theater' },
                 { href: '', title: 'Appointments' },
             ]}
         >
+            <PageHeader
+                icon={<Smile className="h-5 w-5" />}
+                title="Theater"
+                subtitle="Scheduled appointments for theater clinic"
+                actions={headerActions}
+            />
+
             <div className="h-full space-y-4 bg-blue-50 p-4">
-                <PageHeader
-                    icon={<EyeIcon className="h-5 w-5" />}
-                    title="Opthalmology"
-                    subtitle="Scheduled appointments for eye clinic"
-                />
-
-                <div className="flex flex-wrap gap-2">
-                    {tabs.map((t) => (
-                        <button
-                            key={t.id}
-                            onClick={() => setRange(t.id)}
-                            className={cn(
-                                'inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium',
-                                range === t.id
-                                    ? 'border-blue-600 bg-blue-600 text-white'
-                                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
-                            )}
-                        >
-                            {t.label}
-                            <span
-                                className={cn(
-                                    'rounded px-1.5 py-0.5 font-mono text-[10px]',
-                                    range === t.id
-                                        ? 'bg-blue-500'
-                                        : 'bg-slate-100',
-                                )}
-                            >
-                                {counts[t.id]}
-                            </span>
-                        </button>
-                    ))}
-                </div>
-
                 <ReusableTable
+                    key={range}
                     title="Appointments"
                     columns={columns}
                     data={rows}

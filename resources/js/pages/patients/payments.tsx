@@ -1,5 +1,3 @@
-// pages/patients/Payments.tsx
-
 import { usePage } from '@inertiajs/react';
 import axios from 'axios';
 import {
@@ -280,7 +278,7 @@ const InvoiceDetailsModal = ({
                                                 Item
                                             </th>
                                             <th className="px-3 py-2 text-left text-[11px] font-semibold tracking-wider text-slate-500 uppercase">
-                                               Service Category
+                                                Service Category
                                             </th>
                                             <th className="px-3 py-2 text-right text-[11px] font-semibold tracking-wider text-slate-500 uppercase">
                                                 Qty

@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\Patients\TheaterController;
+use App\Http\Controllers\Theater\TheaterController;
 use App\Http\Controllers\Theatre\TheatreBulkStoreController;
 use App\Http\Controllers\Reports\TheatreReportController;
 use Illuminate\Support\Facades\Route;

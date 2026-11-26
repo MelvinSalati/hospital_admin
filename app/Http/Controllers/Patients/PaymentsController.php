@@ -11,6 +11,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use App\Models\Schemes\Provider AS InsuranceProvider;
 use Inertia\Inertia;
 use Carbon\Carbon;
 
@@ -91,9 +92,10 @@ class PaymentsController extends Controller
      */
     private function getInsuranceProviders()
     {
-        // If you have insurance_providers table, query it here
-        // For now, return an empty array
-        return [];
+       return InsuranceProvider::query()
+        ->select('id', 'name')
+        ->orderBy('name')
+        ->get();
     }
 
     /**
@@ -129,7 +131,9 @@ class PaymentsController extends Controller
             'bank_name' => 'nullable|string|max:255',
             'account_name' => 'nullable|string|max:255',
             'notes' => 'nullable|string|max:1000',
-        ]);
+        ]); 
+
+        Log::info('ínsurnace', $request->all());
 
         try {
             DB::beginTransaction();
