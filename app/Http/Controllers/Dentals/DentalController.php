@@ -546,4 +546,15 @@ class DentalController extends Controller
                 }),
         ]);
     }
+
+    private function mapVisitStatus($status)
+    {
+        return match ($status) {
+            1 => 'queued',
+            2 => 'in_progress',
+            3 => 'completed',
+            4 => 'cancelled',
+            default => 'pending'
+        };
+    }
 }

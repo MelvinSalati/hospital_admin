@@ -37,22 +37,29 @@ import type { Column, Action } from '@/components/ReusableTable';
 // Types
 // ============================================================================
 
+type QueueTab = 'in_progress' | 'completed';
+
+/** One row exactly as the backend sends it. */
 interface QueuePatient {
     id: number;
     token: string;
     patient_id: number;
     patient_name: string;
-    contact: string;
-    gender: string;
-    payment_method: string;
-    original_payment_method: string;
-    status: number | string;
-    registered_at: string;
+    patient_number?: string | null;
+    contact: string | null;
+    gender: string | null;
+    payment_method: string | null;
+    original_payment_method: string | null;
+    status: number | string | null;
+    registered_at: string | null;
     assigned_department: string;
     assigned_staff: string;
-    visit_status: string;
-    priority: string;
+    visit_status: string | null;
+    visit_token_id?: number;
+    priority: string | null;
     department_id: number;
+    /** Optional real photo from backend */
+    photo_url?: string | null;
 }
 
 interface Stats {
@@ -62,9 +69,85 @@ interface Stats {
 }
 
 interface Props {
-    queue: QueuePatient[];
-    stats: Stats;
+    [key: string]: unknown;
+    queue?: QueuePatient[];
+    stats?: Stats;
 }
+
+// ============================================================================
+// Tabs config (rendered as PageHeader action buttons)
+// ============================================================================
+
+/** PageHeader button variant for the selected tab vs. the others. */
+const TAB_ACTIVE_VARIANT = 'cyan';
+const TAB_INACTIVE_VARIANT = 'outline';
+
+const TABS: {
+    key: QueueTab;
+    label: string;
+    subtitle: string;
+    tableTitle: string;
+    emptyMessage: string;
+}[] = [
+    {
+        key: 'in_progress',
+        label: 'In Progress',
+        subtitle: 'Patients queued or currently being attended to',
+        tableTitle: 'In Progress Patients',
+        emptyMessage: 'No patients in progress',
+    },
+    {
+        key: 'completed',
+        label: 'Completed',
+        subtitle: 'Patients whose visit has been completed',
+        tableTitle: 'Completed Patients',
+        emptyMessage: 'No completed patients',
+    },
+];
+
+// ============================================================================
+// Illustrated avatars (DiceBear)
+// ============================================================================
+
+const AVATAR_BASE_URL = 'https://api.dicebear.com/9.x/avataaars/svg';
+
+const AVATAR_STYLE = {
+    skinColor: '614335,ae5d29',
+    hairColor: '2c1b18,4a312c',
+    backgroundColor: 'dbeafe,e0e7ff',
+    maleTops:
+        'shortCurly,shortFlat,shortRound,frizzle,theCaesar,dreads01,dreads02,sides',
+    femaleTops: 'bob,bun,curly,curvy,dreads,fro,froBand,bigHair',
+    neutralTops: 'shortCurly,shortFlat,bob,curly,fro,frizzle',
+};
+
+const getAvatarUrl = (
+    patientId: number,
+    gender: string | null | undefined,
+    pixels: number,
+): string => {
+    const g = (gender || '').toLowerCase();
+    const isMale = g === 'male';
+    const isFemale = g === 'female';
+
+    const params = new URLSearchParams({
+        seed: `patient-${patientId}`,
+        size: String(pixels),
+        skinColor: AVATAR_STYLE.skinColor,
+        hairColor: AVATAR_STYLE.hairColor,
+        backgroundColor: AVATAR_STYLE.backgroundColor,
+        top: isMale
+            ? AVATAR_STYLE.maleTops
+            : isFemale
+              ? AVATAR_STYLE.femaleTops
+              : AVATAR_STYLE.neutralTops,
+        facialHairProbability: isMale ? '25' : '0',
+        facialHairColor: '2c1b18',
+        accessoriesProbability: '0',
+    });
+
+    return `${AVATAR_BASE_URL}?${params.toString()}`;
+};
 
 // ============================================================================
 // Badge Components
@@ -72,6 +155,10 @@ interface Props {
 
 const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
     const config: Record<string, { label: string; color: string }> = {
+        queued: {
+            label: 'Queued',
+            color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+        },
         pending: {
             label: 'Pending',
             color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
@@ -186,17 +273,51 @@ const PaymentBadge: React.FC<{ method: string }> = ({ method }) => {
     );
 };
 
-const PatientAvatar: React.FC<{ name: string }> = ({ name }) => {
-    const initials = name
+const PatientAvatar: React.FC<{
+    name: string;
+    patientId?: number;
+    gender?: string | null;
+    photoUrl?: string | null;
+    size?: 'sm' | 'lg';
+}> = ({ name, patientId, gender, photoUrl, size = 'sm' }) => {
+    const [failed, setFailed] = useState(false);
+
+    const dimension = size === 'lg' ? 'h-12 w-12 text-sm' : 'h-9 w-9 text-xs';
+    const pixels = size === 'lg' ? 96 : 72;
+
+    const src =
+        photoUrl ||
+        (patientId !== undefined
+            ? getAvatarUrl(patientId, gender, pixels)
+            : null);
+
+    const initials = (name || '')
         .split(' ')
+        .filter(Boolean)
         .map((n) => n[0])
         .join('')
         .toUpperCase()
         .slice(0, 2);
+
+    if (!src || failed) {
+        return (
+            <div
+                className={`flex ${dimension} shrink-0 items-center justify-center rounded-full bg-blue-100 font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300`}
+            >
+                {initials || '?'}
+            </div>
+        );
+    }
+
     return (
-        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-xs font-medium text-white shadow-sm">
-            {initials || '?'}
-        </div>
+        <img
+            src={src}
+            alt={name}
+            loading="lazy"
+            referrerPolicy="no-referrer"
+            onError={() => setFailed(true)}
+            className={`${dimension} shrink-0 rounded-full bg-blue-100 object-cover dark:bg-blue-900/40`}
+        />
     );
 };
 
@@ -249,39 +370,70 @@ const StethoscopeIcon: React.FC<{ className?: string }> = ({
 );
 
 // ============================================================================
+// Helpers
+// ============================================================================
+
+/** Numeric status codes the backend may send in `status`. */
+const STATUS_CODE_MAP: Record<number, string> = {
+    0: 'cancelled',
+    1: 'active',
+    2: 'pending',
+    3: 'in_progress',
+    4: 'completed',
+};
+
+/**
+ * Backend sends `visit_status` as a string (e.g. "queued") and `status` as a
+ * number (e.g. 1). Prefer the string, fall back to the numeric code.
+ */
+const normalizeStatus = (
+    visitStatus: string | null | undefined,
+    status: number | string | null | undefined,
+): string => {
+    const raw = visitStatus || status;
+    if (raw === null || raw === undefined || raw === '') return 'pending';
+
+    if (typeof raw === 'number') return STATUS_CODE_MAP[raw] || 'pending';
+
+    return raw.toLowerCase().replace(/[\s-]+/g, '_');
+};
+
+/** Which tab a status belongs to. Cancelled visits belong to no tab. */
+const getTabFor = (status: string): QueueTab | null => {
+    if (status === 'completed') return 'completed';
+    if (status === 'cancelled') return null;
+    // queued, pending, active, in_progress
+    return 'in_progress';
+};
+
+/** Safari-safe parse (handles "2026-11-23 18:12:13" and ISO). */
+const formatTime = (dateString?: string | null) => {
+    if (!dateString) return 'N/A';
+    const date = new Date(dateString.replace(' ', 'T'));
+    if (Number.isNaN(date.getTime())) return dateString;
+    return date.toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+};
+
+// ============================================================================
 // Main Component
 // ============================================================================
 
 export default function Nurses() {
-    const { props } = usePage<{ props: Props }>();
-    const queues: QueuePatient[] = props.queue || [];
-    console.log(queues);
+    const { queue = [] } = usePage<Props>().props;
 
+    const [activeTab, setActiveTab] = useState<QueueTab>('in_progress');
     const [selectedPatient, setSelectedPatient] = useState<QueuePatient | null>(
         null,
     );
     const [showDetailsModal, setShowDetailsModal] = useState(false);
     const [loading, setLoading] = useState(false);
 
-    // Normalize status
-    const normalizeStatus = (status: number | string | undefined): string => {
-        if (!status) return 'pending';
-        if (typeof status === 'number') {
-            const statusMap: Record<number, string> = {
-                0: 'cancelled',
-                1: 'active',
-                2: 'pending',
-                3: 'in_progress',
-                4: 'completed',
-            };
-            return statusMap[status] || 'pending';
-        }
-        return status.toLowerCase();
-    };
-
     // Process queue data
     const processedQueue = useMemo(() => {
-        return queues.map((patient) => ({
+        return queue.map((patient) => ({
             ...patient,
             token: patient.token || `T-${String(patient.id).padStart(4, '0')}`,
             payment_method:
@@ -290,21 +442,36 @@ export default function Nurses() {
                 'Not specified',
             contact: patient.contact || 'N/A',
             gender: patient.gender || 'N/A',
-            visit_status: normalizeStatus(
-                patient.visit_status || patient.status,
-            ),
+            visit_status: normalizeStatus(patient.visit_status, patient.status),
             priority: patient.priority || 'routine',
         }));
-    }, [queues]);
+    }, [queue]);
 
-    const formatTime = (dateString: string) => {
-        if (!dateString) return 'N/A';
-        const date = new Date(dateString);
-        return date.toLocaleTimeString([], {
-            hour: '2-digit',
-            minute: '2-digit',
+    // Split the queue by tab once, so counts and rows stay in sync
+    const grouped = useMemo<Record<QueueTab, typeof processedQueue>>(() => {
+        const result: Record<QueueTab, typeof processedQueue> = {
+            in_progress: [],
+            completed: [],
+        };
+
+        processedQueue.forEach((row) => {
+            const tab = getTabFor(row.visit_status);
+            if (tab) result[tab].push(row);
         });
-    };
+
+        return result;
+    }, [processedQueue]);
+
+    const activeTabConfig = TABS.find((t) => t.key === activeTab) ?? TABS[0];
+    const tabData = grouped[activeTab];
+
+    // Tabs as PageHeader action buttons (label carries the live count)
+    const headerActions = TABS.map((tab) => ({
+        label: `${tab.label} (${grouped[tab.key].length})`,
+        variant:
+            tab.key === activeTab ? TAB_ACTIVE_VARIANT : TAB_INACTIVE_VARIANT,
+        onClick: () => setActiveTab(tab.key),
+    }));
 
     const handleViewDetails = (patient: QueuePatient) => {
         setSelectedPatient(patient);
@@ -363,15 +530,20 @@ export default function Nurses() {
             format: (value, row) => (
                 <Link
                     href={`/patients/dashboard/${row.patient_id}`}
-                    className="flex items-center gap-2 hover:text-blue-600 dark:hover:text-blue-400"
+                    className="flex items-center gap-2.5 hover:text-blue-600 dark:hover:text-blue-400"
                 >
-                    <PatientAvatar name={row.patient_name} />
+                    <PatientAvatar
+                        name={row.patient_name}
+                        patientId={row.patient_id}
+                        gender={row.gender}
+                        photoUrl={row.photo_url}
+                    />
                     <div>
                         <span className="font-medium text-slate-800 dark:text-slate-200">
                             {row.patient_name}
                         </span>
                         <div className="flex items-center gap-2 text-xs text-slate-400">
-                            <span>EMR #: {row.patient_number}</span>
+                            <span>EMR #: {row.patient_number || 'N/A'}</span>
                             {row.contact && row.contact !== 'N/A' && (
                                 <>
                                     <span>•</span>
@@ -388,14 +560,18 @@ export default function Nurses() {
             id: 'priority',
             label: 'Priority',
             sortable: true,
-            format: (value, row) => <PriorityBadge priority={row.priority} />,
+            format: (value, row) => (
+                <PriorityBadge priority={row.priority || 'routine'} />
+            ),
         },
         {
             id: 'visit_status',
             label: 'Status',
             sortable: true,
             filterable: true,
-            format: (value, row) => <StatusBadge status={row.visit_status} />,
+            format: (value, row) => (
+                <StatusBadge status={row.visit_status || 'pending'} />
+            ),
         },
         {
             id: 'registered_at',
@@ -415,7 +591,7 @@ export default function Nurses() {
             label: 'Payment',
             sortable: true,
             format: (value, row) => (
-                <PaymentBadge method={row.payment_method} />
+                <PaymentBadge method={row.payment_method || ''} />
             ),
         },
     ];
@@ -443,21 +619,10 @@ export default function Nurses() {
             label: 'Mark Active',
             icon: <Activity size={16} />,
             color: 'success',
-            show: (row) => row.visit_status === 'pending',
+            show: (row) =>
+                row.visit_status === 'pending' || row.visit_status === 'queued',
             onClick: (row) => handleStatusUpdate(row.id, 'active'),
         },
-    ];
-
-    // ============================================
-    // STATUS OPTIONS FOR FILTER
-    // ============================================
-
-    const statusOptions = [
-        { value: 'pending', label: 'Pending' },
-        { value: 'active', label: 'Active' },
-        { value: 'in_progress', label: 'In Progress' },
-        { value: 'completed', label: 'Completed' },
-        { value: 'cancelled', label: 'Cancelled' },
     ];
 
     // ============================================
@@ -467,39 +632,43 @@ export default function Nurses() {
     return (
         <AppLayout
             breadcrumbs={[
-                { href: '', title: 'Department' },
-                { href: '', title: 'Nurses' },
+                { href: '', title: 'Altaf Memorial Hospital' },
+                { href: '', title: 'MCH' },
+                { href: '', title: 'Encounters' },
             ]}
         >
-            <div className="flex h-full min-h-screen flex-1 flex-col gap-4 bg-blue-100 p-2 dark:bg-slate-900">
-                {/* Header */}
-                <PageHeader
-                    icon={<Stethoscope />}
-                    title="Patients Queued"
-                    subtitle="View and manage patients currently in the queue"
-                />
+            {/* Header */}
+            <PageHeader
+                icon={<Stethoscope />}
+                title="MCH Encounters Queue"
+                subtitle={activeTabConfig.subtitle}
+                actions={headerActions}
+            />
 
+            <div className="flex h-full min-h-screen flex-1 flex-col gap-4 bg-blue-50 p-2 dark:bg-slate-900">
                 {/* Reusable Table */}
                 <ReusableTable
-                    title="Queue Patients"
+                    key={activeTab}
+                    title={activeTabConfig.tableTitle}
                     columns={columns}
-                    data={processedQueue}
+                    data={tabData}
                     actions={actions}
                     loading={loading}
                     filterPlaceholder="Search by patient name, token, or contact..."
-                    statusFilterKey="visit_status"
-                    statusOptions={statusOptions}
                     rowsPerPageOptions={[5, 10, 25, 50]}
                     defaultRowsPerPage={10}
                     defaultOrderBy="registered_at"
-                    emptyMessage="No patients in the queue"
+                    emptyMessage={activeTabConfig.emptyMessage}
                     className="shadow-sm"
                 />
 
                 {/* Details Modal */}
                 <Dialog
                     open={showDetailsModal}
-                    onOpenChange={setShowDetailsModal}
+                    onOpenChange={(open) => {
+                        setShowDetailsModal(open);
+                        if (!open) setSelectedPatient(null);
+                    }}
                 >
                     <DialogContent className="max-w-sm">
                         <DialogHeader>
@@ -512,6 +681,10 @@ export default function Nurses() {
                                 <div className="flex items-center gap-3">
                                     <PatientAvatar
                                         name={selectedPatient.patient_name}
+                                        patientId={selectedPatient.patient_id}
+                                        gender={selectedPatient.gender}
+                                        photoUrl={selectedPatient.photo_url}
+                                        size="lg"
                                     />
                                     <div>
                                         <p className="text-sm font-medium">
@@ -533,7 +706,9 @@ export default function Nurses() {
                                         <Label className="text-xs text-slate-500">
                                             Gender
                                         </Label>
-                                        <p>{selectedPatient.gender}</p>
+                                        <p className="capitalize">
+                                            {selectedPatient.gender}
+                                        </p>
                                     </div>
                                     <div>
                                         <Label className="text-xs text-slate-500">
@@ -542,7 +717,8 @@ export default function Nurses() {
                                         <p>
                                             <PriorityBadge
                                                 priority={
-                                                    selectedPatient.priority
+                                                    selectedPatient.priority ||
+                                                    'routine'
                                                 }
                                             />
                                         </p>
@@ -554,7 +730,8 @@ export default function Nurses() {
                                         <p>
                                             <StatusBadge
                                                 status={
-                                                    selectedPatient.visit_status
+                                                    selectedPatient.visit_status ||
+                                                    'pending'
                                                 }
                                             />
                                         </p>
@@ -566,7 +743,8 @@ export default function Nurses() {
                                         <p>
                                             <PaymentBadge
                                                 method={
-                                                    selectedPatient.payment_method
+                                                    selectedPatient.payment_method ||
+                                                    ''
                                                 }
                                             />
                                         </p>

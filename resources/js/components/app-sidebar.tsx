@@ -380,15 +380,10 @@ const roleNavItems: Record<string, NavEntry[]> = {
             icon: CalendarClock,
         },
         {
-            title: 'Queue',
+            title: 'Encounters',
             href: '/maternal-child-health/queue',
             icon: Users,
             badge: 'encounters',
-        },
-        {
-            title: 'Attended',
-            href: '/maternal-child-health/processed',
-            icon: ClipboardCheck,
         },
         {
             title: 'Bulk Store',
@@ -479,7 +474,7 @@ const roleNavItems: Record<string, NavEntry[]> = {
     opthalmology: [
         {
             title: 'Dashboard',
-            href: '/opthalmology/dashboard',
+            href: '/opthamology/dashboard',
             icon: LayoutGrid,
         },
         {
@@ -771,7 +766,7 @@ const DEPARTMENT_HREF_RULES: Record<string, DepartmentHrefRule[]> = {
     maternal_child_health: [
         departmentRule('Dashboard', '/maternal-child-health/dashboard'),
         departmentRule('Appointments', '/maternal-child-health/appointments'),
-        departmentRule('Queue', '/maternal-child-health/queue'),
+        departmentRule('Encounters', '/maternal-child-health/queue'),
         departmentRule('Bulk Store', '/maternal-child-health/bulk-orders'),
         departmentRule('Reports', '/maternal-child-health/reports'),
     ],
@@ -797,7 +792,7 @@ const DEPARTMENT_HREF_RULES: Record<string, DepartmentHrefRule[]> = {
     ],
 
     opthalmology: [
-        departmentRule('Dashboard', '/opthalmology/dashboard'),
+        departmentRule('Dashboard', '/opthamology/dashboard'),
         departmentRule('Appointments', '/opthalmology/appointments'),
         departmentRule('Encounters', '/opthalmology/queue'),
         departmentRule('Eye Examinations', '/opthalmology/examinations'),

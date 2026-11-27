@@ -17,11 +17,11 @@ class MaternalchildhealthController extends Controller
         ]);
     }
 
-    public function queue()
+    public function queue($departmentId)
     {
         // Get all active visit tokens with patient and visit information
         $queuedPatients = PatientVisit::with(['patient', 'assignedStaff', 'visitToken'])
-            ->where('department_id', 6)
+            ->where('department_id', $departmentId)
             ->where('status', 1)
             ->orderBy('created_at', 'asc')
             ->get()

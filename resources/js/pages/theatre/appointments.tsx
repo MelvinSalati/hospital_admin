@@ -357,7 +357,7 @@ export default function Appointments() {
         >
             <PageHeader
                 icon={<Smile className="h-5 w-5" />}
-                title="Theater"
+                title="Appointments"
                 subtitle="Scheduled appointments for theater clinic"
                 actions={headerActions}
             />

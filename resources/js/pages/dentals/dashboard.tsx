@@ -611,7 +611,7 @@ export default function DentalDashboard({
                 { href: '', title: 'Dentistry' },
             ]}
         >
-            <div className="bg-blue-50 p-2">
+            <div className="bg-blue-50">
                 <PageHeader
                     icon={<Smile className="h-5 w-5" />}
                     title="Dentistry Department"

@@ -19,17 +19,25 @@ interface Department {
     name: string;
 }
 
-/** 1 = cash, 2 = insurance (same convention as the services page). */
+/** 1 = cash (any non-insurance payment), 2 = insurance. */
 type SchemeType = 1 | 2;
+
+/** Payment methods that live inside the "Cash" scheme. */
+type CashMethod = 'cash' | 'card' | 'mobile_money' | 'bank_transfer';
+type MethodFilter = 'all' | CashMethod;
 
 interface Collection {
     id: number;
     collected_at: string;
     patient_name: string;
+    token?: string | null;
     invoice_number: string;
     service: string;
     scheme_type: SchemeType;
+    /** Display text, e.g. "Mobile Money". */
     payment_method: string;
+    /** Raw key from payments.payment_method, e.g. "mobile_money". */
+    payment_method_key?: string | null;
     amount: number;
     received_by: string;
 }
@@ -69,6 +77,26 @@ const PRESETS: { key: Preset; label: string }[] = [
     { key: 'week', label: 'This Week' },
     { key: 'month', label: 'This Month' },
 ];
+
+const CASH_METHODS: { key: CashMethod; label: string }[] = [
+    { key: 'cash', label: 'Cash' },
+    { key: 'card', label: 'Card' },
+    { key: 'mobile_money', label: 'Mobile Money' },
+    { key: 'bank_transfer', label: 'Bank Transfer' },
+];
+
+const METHOD_CHIPS: { key: MethodFilter; label: string }[] = [
+    { key: 'all', label: 'All cash payments' },
+    ...CASH_METHODS,
+];
+
+const METHOD_LABEL: Record<CashMethod | 'insurance', string> = {
+    cash: 'Cash',
+    card: 'Card',
+    mobile_money: 'Mobile Money',
+    bank_transfer: 'Bank Transfer',
+    insurance: 'Insurance',
+};
 
 /** Put your logo in public/images/logo.png (or change this path). */
 const LOGO_URL = Logo;
@@ -154,6 +182,43 @@ const escapeCsv = (value: unknown): string =>
 const slug = (value: string): string =>
     value.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
+/**
+ * Turns either a raw key ("mobile_money") or display text ("Mobile Money")
+ * into a method key. Anything unknown or empty counts as plain cash, which
+ * matches how the backend already treats every non-insurance payment.
+ */
+const normalizeMethod = (value: unknown): CashMethod | 'insurance' => {
+    const key = String(value ?? '')
+        .trim()
+        .toLowerCase()
+        .replace(/[\s-]+/g, '_');
+
+    if (key === 'insurance') {
+        return 'insurance';
+    }
+
+    if (key === 'card' || key === 'mobile_money' || key === 'bank_transfer') {
+        return key;
+    }
+
+    return 'cash';
+};
+
+/** Method of a cash-scheme row (never returns insurance). */
+const getCashMethod = (row: Collection): CashMethod => {
+    const method = normalizeMethod(
+        row.payment_method_key ?? row.payment_method,
+    );
+
+    return method === 'insurance' ? 'cash' : method;
+};
+
+/** Method label for any row; insurance rows are left exactly as before. */
+const rowMethodLabel = (row: Collection): string =>
+    row.scheme_type === 2
+        ? METHOD_LABEL.insurance
+        : METHOD_LABEL[getCashMethod(row)];
+
 function exportToCsv(rows: Collection[], filename: string) {
     const header = [
         'Date',
@@ -173,7 +238,7 @@ function exportToCsv(rows: Collection[], filename: string) {
             row.invoice_number,
             row.service,
             row.scheme_type === 2 ? 'Insurance' : 'Cash',
-            row.payment_method,
+            rowMethodLabel(row),
             row.amount,
             row.received_by,
         ]
@@ -335,12 +400,49 @@ async function exportToPdf({
         { align: 'right' },
     );
 
-    /* ---- Table ---- */
-    const total = rows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
-    const cashTotal = rows
-        .filter((row) => row.scheme_type === 1)
-        .reduce((sum, row) => sum + Number(row.amount || 0), 0);
+    /* ---- Totals ---- */
+    const sumOf = (list: Collection[]) =>
+        list.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+
+    const cashRows = rows.filter((row) => row.scheme_type === 1);
+    const total = sumOf(rows);
+    const cashTotal = sumOf(cashRows);
     const insuranceTotal = total - cashTotal;
+
+    // Per-method breakdown of the cash scheme (only methods that have rows)
+    const methodTotals = CASH_METHODS.map((method) => {
+        const methodRows = cashRows.filter(
+            (row) => getCashMethod(row) === method.key,
+        );
+
+        return {
+            label: method.label,
+            count: methodRows.length,
+            amount: sumOf(methodRows),
+        };
+    }).filter((method) => method.count > 0);
+
+    const methodFootRows =
+        methodTotals.length > 1
+            ? methodTotals.map((method) => [
+                  {
+                      content: `${method.label}`,
+                      colSpan: 7,
+                      styles: {
+                          halign: 'right' as const,
+                          fontStyle: 'normal' as const,
+                      },
+                  },
+                  {
+                      content: formatMoney(method.amount),
+                      styles: {
+                          halign: 'right' as const,
+                          fontStyle: 'normal' as const,
+                      },
+                  },
+                  '',
+              ])
+            : [];
 
     autoTable(doc, {
         startY: 56,
@@ -365,14 +467,14 @@ async function exportToPdf({
             row.invoice_number,
             row.service,
             row.scheme_type === 2 ? 'Insurance' : 'Cash',
-            row.payment_method,
+            rowMethodLabel(row),
             formatMoney(row.amount),
             row.received_by,
         ]),
         foot: [
             [
                 {
-                    content: 'Cash',
+                    content: 'Cash payments',
                     colSpan: 7,
                     styles: { halign: 'right' },
                 },
@@ -382,6 +484,7 @@ async function exportToPdf({
                 },
                 '',
             ],
+            ...methodFootRows,
             [
                 {
                     content: 'Insurance',
@@ -464,6 +567,7 @@ export default function Collections({
     const pagePath = url.split('?')[0];
     console.log(collections);
     const [activeTab, setActiveTab] = useState<TabKey>('all');
+    const [methodFilter, setMethodFilter] = useState<MethodFilter>('all');
     const [from, setFrom] = useState<string>(filters.from ?? '');
     const [to, setTo] = useState<string>(filters.to ?? '');
     const [reloading, setReloading] = useState(false);
@@ -533,7 +637,7 @@ export default function Collections({
     };
 
     /* ---------------------------------------------------------------------- */
-    /* TABS + TOTALS                                                          */
+    /* TABS + METHOD CHIPS + TOTALS                                           */
     /* ---------------------------------------------------------------------- */
 
     const counts = useMemo(
@@ -546,15 +650,45 @@ export default function Collections({
         [collections],
     );
 
+    /** Counts per method, for cash-scheme rows only (insurance is excluded). */
+    const methodCounts = useMemo(() => {
+        const result: Record<MethodFilter, number> = {
+            all: 0,
+            cash: 0,
+            card: 0,
+            mobile_money: 0,
+            bank_transfer: 0,
+        };
+
+        collections.forEach((row) => {
+            if (row.scheme_type !== 1) {
+                return;
+            }
+
+            result.all += 1;
+            result[getCashMethod(row)] += 1;
+        });
+
+        return result;
+    }, [collections]);
+
     const visibleRows = useMemo(() => {
         if (activeTab === 'all') {
             return collections;
         }
 
-        return collections.filter(
+        const schemeRows = collections.filter(
             (row) => row.scheme_type === SCHEME_BY_TAB[activeTab],
         );
-    }, [collections, activeTab]);
+
+        if (activeTab === 'cash' && methodFilter !== 'all') {
+            return schemeRows.filter(
+                (row) => getCashMethod(row) === methodFilter,
+            );
+        }
+
+        return schemeRows;
+    }, [collections, activeTab, methodFilter]);
 
     const total = useMemo(
         () =>
@@ -562,13 +696,26 @@ export default function Collections({
         [visibleRows],
     );
 
+    const changeTab = (tab: TabKey) => {
+        setActiveTab(tab);
+        // Method chips only exist on the Cash tab, so start clean elsewhere
+        setMethodFilter('all');
+    };
+
     const tabActions = TABS.map((tab) => ({
         label: `${tab.label} (${counts[tab.key]})`,
         variant: (activeTab === tab.key ? 'cyan' : 'outline') as
             | 'cyan'
             | 'outline',
-        onClick: () => setActiveTab(tab.key),
+        onClick: () => changeTab(tab.key),
     }));
+
+    const activeTabLabel = TABS.find((tab) => tab.key === activeTab)!.label;
+
+    const pdfTabLabel =
+        activeTab === 'cash' && methodFilter !== 'all'
+            ? `${activeTabLabel} - ${METHOD_LABEL[methodFilter]}`
+            : activeTabLabel;
 
     /* ---------------------------------------------------------------------- */
     /* TABLE CONFIG                                                           */
@@ -613,7 +760,13 @@ export default function Collections({
             filterable: false,
             format: (value) => (Number(value) === 2 ? 'Insurance' : 'Cash'),
         },
-
+        {
+            id: 'payment_method',
+            label: 'Method',
+            sortable: true,
+            filterable: true,
+            format: (value) => METHOD_LABEL[normalizeMethod(value)],
+        },
         {
             id: 'amount',
             label: 'Amount',
@@ -638,7 +791,11 @@ export default function Collections({
         // },
     ];
 
-    const baseName = `${slug(department?.name ?? 'collections')}-${activeTab}-collections`;
+    const baseName = `${slug(department?.name ?? 'collections')}-${activeTab}${
+        activeTab === 'cash' && methodFilter !== 'all'
+            ? `-${methodFilter.replace(/_/g, '-')}`
+            : ''
+    }-collections`;
 
     const handleExportCsv = () => exportToCsv(visibleRows, `${baseName}.csv`);
 
@@ -649,7 +806,7 @@ export default function Collections({
             await exportToPdf({
                 rows: visibleRows,
                 departmentName: department?.name ?? 'Department',
-                tabLabel: TABS.find((tab) => tab.key === activeTab)!.label,
+                tabLabel: pdfTabLabel,
                 from,
                 to,
                 filename: `${baseName}.pdf`,
@@ -747,8 +904,37 @@ export default function Collections({
                     </div>
                 </div>
 
+                {/* Payment method chips: Cash tab only, insurance is untouched */}
+                {activeTab === 'cash' && (
+                    <div
+                        role="group"
+                        aria-label="Filter cash payments by method"
+                        className="flex flex-wrap items-center gap-2"
+                    >
+                        {METHOD_CHIPS.map((chip) => {
+                            const isActive = methodFilter === chip.key;
+
+                            return (
+                                <button
+                                    key={chip.key}
+                                    type="button"
+                                    aria-pressed={isActive}
+                                    onClick={() => setMethodFilter(chip.key)}
+                                    className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors focus:ring-2 focus:ring-cyan-400 focus:outline-none ${
+                                        isActive
+                                            ? 'border-cyan-600 bg-cyan-600 text-white'
+                                            : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800'
+                                    }`}
+                                >
+                                    {chip.label} ({methodCounts[chip.key]})
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
+
                 <ReusableTable<Collection>
-                    key={activeTab}
+                    key={`${activeTab}-${methodFilter}`}
                     title="Transactions"
                     columns={columns}
                     data={visibleRows}

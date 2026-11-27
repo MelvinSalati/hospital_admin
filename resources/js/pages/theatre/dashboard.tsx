@@ -9,39 +9,33 @@ import {
     Info,
     Scissors,
     Search,
-    Timer,
+    Users,
 } from 'lucide-react';
 
 import AppLayout from '@/layouts/app/app-header-layout';
 import PageHeader from '@/components/PageHeader';
 
-// ─── Types ────────────────────────────────────────────────────
+// ─── Types (match TheaterDashboardService::build()) ───────────
 
-type CaseStatus =
-    | 'scheduled'
-    | 'pre-op'
-    | 'in-theatre'
-    | 'recovery'
-    | 'completed'
-    | 'cancelled';
-
+type CaseStatus = 'waiting' | 'completed';
+type Priority = 'routine' | 'urgent' | 'emergency';
 type AlertCategory = 'danger' | 'warning' | 'success' | 'info';
 
 export interface TheaterStats {
-    scheduledToday: number;
-    completedToday: number;
-    inTheatre: number;
-    emergencyCases: number;
+    scheduledToday: number; // patients booked into theatre today
+    completedToday: number; // patients cleared from theatre today
+    inTheatre: number; // patients currently in the theatre queue
+    emergencyCases: number; // emergency-priority patients today
 }
 
-export interface SurgicalCase {
+export interface TheaterCase {
     id: number;
-    patientCode: string;
+    patientCode: string; // visit token
     name: string;
-    procedure: string;
-    surgeon: string;
-    theatre: string;
-    scheduledTime: string;
+    visitType: 'new' | 'revisit';
+    priority: Priority;
+    arrivedAt: string; // HH:mm
+    minutes: number; // waiting time (open) or time spent (completed)
     status: CaseStatus;
 }
 
@@ -50,7 +44,7 @@ export interface TheaterAlert {
     title: string;
     description: string;
     category: AlertCategory;
-    time: string;
+    createdAt: string; // ISO 8601
 }
 
 interface SummaryDatum {
@@ -61,163 +55,114 @@ interface SummaryDatum {
 
 interface TrendDatum {
     month: string;
-    procedures: number;
-}
-
-interface UtilizationDatum {
-    theatre: string;
-    percent: number;
+    patients: number;
 }
 
 export interface TheaterDashboardProps {
     stats?: Partial<TheaterStats> | null;
-    cases?: SurgicalCase[] | null;
+    cases?: TheaterCase[] | null;
     alerts?: TheaterAlert[] | null;
     procedureData?: SummaryDatum[] | null;
     procedureTrend?: TrendDatum[] | null;
     urgencyData?: SummaryDatum[] | null;
     anaesthesiaData?: SummaryDatum[] | null;
-    utilization?: UtilizationDatum[] | null;
 }
 
-// ─── Fallback data (used when the controller sends nothing) ───
+// ─── Fallback data (used only when a prop is missing/null) ────
 
 const DUMMY_STATS: TheaterStats = {
     scheduledToday: 14,
     completedToday: 8,
-    inTheatre: 2,
+    inTheatre: 4,
     emergencyCases: 3,
 };
 
-const DUMMY_CASES: SurgicalCase[] = [
+const DUMMY_CASES: TheaterCase[] = [
     {
         id: 1,
-        patientCode: 'THT-00211',
-        name: 'John Banda',
-        procedure: 'Appendectomy',
-        surgeon: 'Dr. Mwansa',
-        theatre: 'Theatre 1',
-        scheduledTime: '08:00',
-        status: 'completed',
+        patientCode: '851504',
+        name: 'Mary Phiri',
+        visitType: 'revisit',
+        priority: 'emergency',
+        arrivedAt: '09:30',
+        minutes: 42,
+        status: 'waiting',
     },
     {
         id: 2,
-        patientCode: 'THT-00212',
-        name: 'Mary Phiri',
-        procedure: 'Caesarean section',
-        surgeon: 'Dr. Chanda',
-        theatre: 'Theatre 2',
-        scheduledTime: '09:30',
-        status: 'in-theatre',
+        patientCode: '776684',
+        name: 'John Banda',
+        visitType: 'new',
+        priority: 'urgent',
+        arrivedAt: '10:05',
+        minutes: 25,
+        status: 'waiting',
     },
     {
         id: 3,
-        patientCode: 'THT-00213',
+        patientCode: '761653',
         name: 'Grace Zulu',
-        procedure: 'Hernia repair',
-        surgeon: 'Dr. Mwansa',
-        theatre: 'Theatre 1',
-        scheduledTime: '10:30',
-        status: 'pre-op',
-    },
-    {
-        id: 4,
-        patientCode: 'THT-00214',
-        name: 'Peter Tembo',
-        procedure: 'Fracture fixation',
-        surgeon: 'Dr. Banda',
-        theatre: 'Theatre 3',
-        scheduledTime: '11:15',
-        status: 'recovery',
-    },
-    {
-        id: 5,
-        patientCode: 'THT-00215',
-        name: 'Ruth Mulenga',
-        procedure: 'Hysterectomy',
-        surgeon: 'Dr. Chanda',
-        theatre: 'Theatre 2',
-        scheduledTime: '13:00',
-        status: 'scheduled',
+        visitType: 'revisit',
+        priority: 'routine',
+        arrivedAt: '08:10',
+        minutes: 95,
+        status: 'completed',
     },
 ];
 
 const DUMMY_ALERTS: TheaterAlert[] = [
     {
         id: 1,
-        title: 'Emergency case booked',
-        description: 'THT-00218 · Obstructed labour, Theatre 2 requested',
+        title: 'Emergency patient waiting',
+        description: '851504 · Mary Phiri, waiting 42 min',
         category: 'danger',
-        time: '10 minutes ago',
+        createdAt: new Date(Date.now() - 42 * 60_000).toISOString(),
     },
     {
         id: 2,
-        title: 'Consent form missing',
-        description: 'THT-00213 · Hernia repair, needs signed consent',
+        title: 'Long wait in queue',
+        description: '776684 · John Banda, waiting 75 min',
         category: 'warning',
-        time: '25 minutes ago',
+        createdAt: new Date(Date.now() - 75 * 60_000).toISOString(),
     },
     {
         id: 3,
-        title: 'Blood cross-match pending',
-        description: 'THT-00215 · Hysterectomy, awaiting lab',
-        category: 'warning',
-        time: '40 minutes ago',
-    },
-    {
-        id: 4,
-        title: 'Instrument sterilisation due',
-        description: 'Theatre 3 · Set B autoclave cycle',
-        category: 'info',
-        time: '1 hour ago',
-    },
-    {
-        id: 5,
-        title: 'Procedure completed',
-        description: 'THT-00211 · Appendectomy, moved to recovery',
+        title: 'Patient cleared from theatre',
+        description: '761653 · Grace Zulu',
         category: 'success',
-        time: '2 hours ago',
+        createdAt: new Date(Date.now() - 100 * 60_000).toISOString(),
     },
 ];
 
 const DUMMY_PROCEDURES: SummaryDatum[] = [
-    { label: 'General surgery', value: 38, color: '#2563eb' },
-    { label: 'Obstetric', value: 29, color: '#16a34a' },
-    { label: 'Orthopaedic', value: 21, color: '#d97706' },
-    { label: 'Gynaecological', value: 14, color: '#9333ea' },
+    { label: 'Caesarean Section', value: 18, color: '#2563eb' },
+    { label: 'Appendectomy', value: 11, color: '#16a34a' },
+    { label: 'Hernia Repair', value: 8, color: '#d97706' },
+    { label: 'Minor Surgery', value: 6, color: '#9333ea' },
 ];
 
 const DUMMY_TREND: TrendDatum[] = [
-    { month: 'Jan', procedures: 62 },
-    { month: 'Feb', procedures: 58 },
-    { month: 'Mar', procedures: 71 },
-    { month: 'Apr', procedures: 66 },
-    { month: 'May', procedures: 80 },
-    { month: 'Jun', procedures: 92 },
+    { month: 'Jun', patients: 62 },
+    { month: 'Jul', patients: 58 },
+    { month: 'Aug', patients: 71 },
+    { month: 'Sep', patients: 66 },
+    { month: 'Oct', patients: 80 },
+    { month: 'Nov', patients: 92 },
 ];
 
 const DUMMY_URGENCY: SummaryDatum[] = [
-    { label: 'Elective', value: 54, color: '#2563eb' },
+    { label: 'Routine', value: 54, color: '#2563eb' },
     { label: 'Urgent', value: 28, color: '#f59e0b' },
     { label: 'Emergency', value: 18, color: '#dc2626' },
 ];
 
 const DUMMY_ANAESTHESIA: SummaryDatum[] = [
-    { label: 'General', value: 46, color: '#2563eb' },
-    { label: 'Spinal', value: 34, color: '#0d9488' },
-    { label: 'Local', value: 15, color: '#f59e0b' },
-    { label: 'Sedation', value: 8, color: '#9333ea' },
-];
-
-const DUMMY_UTILIZATION: UtilizationDatum[] = [
-    { theatre: 'Theatre 1', percent: 85 },
-    { theatre: 'Theatre 2', percent: 92 },
-    { theatre: 'Theatre 3', percent: 48 },
+    { label: 'General', value: 20, color: '#2563eb' },
+    { label: 'Spinal', value: 14, color: '#16a34a' },
+    { label: 'Local', value: 6, color: '#d97706' },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────
-
-const CHART_COLORS = ['#2563eb', '#16a34a', '#d97706', '#9333ea'] as const;
 
 const buildGradient = (
     data: { value: number; color: string }[],
@@ -233,13 +178,34 @@ const buildGradient = (
         .join(', ');
 };
 
+const formatDuration = (minutes: number) => {
+    const m = Math.max(0, Math.round(minutes));
+    if (m < 60) return `${m} min`;
+    const h = Math.floor(m / 60);
+    const rem = m % 60;
+    return rem ? `${h} h ${rem} min` : `${h} h`;
+};
+
+const timeAgo = (iso: string) => {
+    const diff = Date.now() - new Date(iso).getTime();
+    if (!Number.isFinite(diff)) return '';
+    const mins = Math.max(0, Math.floor(diff / 60_000));
+    if (mins < 1) return 'Just now';
+    if (mins < 60) return `${mins} min ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs} h ago`;
+    return `${Math.floor(hrs / 24)} d ago`;
+};
+
 const CASE_STATUS_STYLES: Record<CaseStatus, string> = {
-    scheduled: 'bg-slate-100 text-slate-700',
-    'pre-op': 'bg-yellow-100 text-yellow-800',
-    'in-theatre': 'bg-blue-100 text-blue-800',
-    recovery: 'bg-purple-100 text-purple-800',
+    waiting: 'bg-yellow-100 text-yellow-800',
     completed: 'bg-green-100 text-green-800',
-    cancelled: 'bg-red-100 text-red-800',
+};
+
+const PRIORITY_STYLES: Record<Priority, string> = {
+    routine: 'bg-slate-100 text-slate-700',
+    urgent: 'bg-amber-100 text-amber-800',
+    emergency: 'bg-red-100 text-red-800',
 };
 
 const ALERT_STYLES: Record<
@@ -262,13 +228,6 @@ const ALERT_FILTERS: { key: 'all' | AlertCategory; label: string }[] = [
     { key: 'warning', label: 'Pending' },
     { key: 'success', label: 'Done' },
 ];
-
-const utilizationColor = (percent: number) =>
-    percent >= 90
-        ? 'bg-red-500'
-        : percent >= 70
-          ? 'bg-amber-500'
-          : 'bg-green-500';
 
 // ─── Stat card ────────────────────────────────────────────────
 
@@ -307,26 +266,36 @@ function StatCard({
     );
 }
 
-// ─── Procedures by specialty (donut + bars) ───────────────────
+// ─── Procedures this month (donut + bars) ─────────────────────
 
 function ProcedureBreakdown({ data }: { data: SummaryDatum[] }) {
     const total = data.reduce((sum, item) => sum + item.value, 0);
 
     return (
         <section className="rounded-xl bg-white p-4 shadow-sm">
-            <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-800">
-                <ClipboardList
-                    className="h-4 w-4 text-slate-500"
-                    aria-hidden="true"
-                />
-                Procedures by specialty
-            </h2>
+            <div className="mb-4 flex items-start justify-between">
+                <div>
+                    <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                        <ClipboardList
+                            className="h-4 w-4 text-slate-500"
+                            aria-hidden="true"
+                        />
+                        Procedures performed
+                    </h2>
+                    <p className="text-xs text-slate-500">
+                        Most requested theatre procedures
+                    </p>
+                </div>
+                <span className="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-600">
+                    This month
+                </span>
+            </div>
 
             <div className="grid grid-cols-2 items-center gap-4">
                 <div className="flex justify-center">
                     <div
                         role="img"
-                        aria-label={`${total} procedures across ${data.length} specialties`}
+                        aria-label={`${total} procedures across ${data.length} types`}
                         className="relative flex h-36 w-36 items-center justify-center rounded-full"
                         style={{
                             background:
@@ -370,7 +339,7 @@ function ProcedureBreakdown({ data }: { data: SummaryDatum[] }) {
                     ))}
                     {data.length === 0 && (
                         <p className="text-xs text-slate-500">
-                            No procedures recorded yet.
+                            No procedures recorded this month.
                         </p>
                     )}
                 </div>
@@ -379,20 +348,24 @@ function ProcedureBreakdown({ data }: { data: SummaryDatum[] }) {
     );
 }
 
-// ─── Procedure trend (bars) ───────────────────────────────────
+// ─── Patient volume trend (bars) ──────────────────────────────
 
-function ProcedureTrend({ data }: { data: TrendDatum[] }) {
-    const max = Math.max(...data.map((d) => d.procedures), 1);
+function VolumeTrend({ data }: { data: TrendDatum[] }) {
+    const max = Math.max(...data.map((d) => d.patients), 1);
 
     return (
         <section className="rounded-xl bg-white p-4 shadow-sm">
             <div className="mb-4 flex items-center justify-between">
                 <div>
-                    <h2 className="text-sm font-semibold text-slate-800">
-                        Surgical volume trend
+                    <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                        <Users
+                            className="h-4 w-4 text-slate-500"
+                            aria-hidden="true"
+                        />
+                        Theatre patient volume
                     </h2>
                     <p className="text-xs text-slate-500">
-                        Monthly procedures performed
+                        Patients received per month
                     </p>
                 </div>
                 <span className="rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700">
@@ -407,98 +380,47 @@ function ProcedureTrend({ data }: { data: TrendDatum[] }) {
                         className="flex h-full flex-1 flex-col items-center justify-end gap-2"
                     >
                         <span className="text-[10px] text-slate-500">
-                            {item.procedures}
+                            {item.patients}
                         </span>
                         <div
                             className="w-full max-w-10 rounded-t-md bg-blue-500 transition-colors hover:bg-blue-700"
                             style={{
-                                height: `${(item.procedures / max) * 75}%`,
+                                height: `${(item.patients / max) * 75}%`,
+                                minHeight: item.patients > 0 ? '4px' : '0',
                             }}
-                            title={`${item.procedures} procedures`}
+                            title={`${item.patients} patients`}
                         />
                         <span className="text-[10px] text-slate-500">
                             {item.month}
                         </span>
                     </div>
                 ))}
-            </div>
-        </section>
-    );
-}
-
-// ─── Theatre utilization ──────────────────────────────────────
-
-function TheatreUtilization({ data }: { data: UtilizationDatum[] }) {
-    return (
-        <section className="rounded-xl bg-white p-4 shadow-sm">
-            <div className="mb-4">
-                <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-                    <Timer
-                        className="h-4 w-4 text-slate-500"
-                        aria-hidden="true"
-                    />
-                    Theatre utilization
-                </h2>
-                <p className="text-xs text-slate-500">
-                    Booked time against available time today
-                </p>
-            </div>
-
-            <ul className="space-y-3">
-                {data.map((t) => {
-                    const pct = Math.min(Math.max(t.percent, 0), 100);
-                    return (
-                        <li key={t.theatre}>
-                            <div className="mb-1 flex justify-between text-xs">
-                                <span className="font-medium text-slate-700">
-                                    {t.theatre}
-                                </span>
-                                <span className="text-slate-600 tabular-nums">
-                                    {pct}%
-                                </span>
-                            </div>
-                            <div
-                                role="progressbar"
-                                aria-label={`${t.theatre} utilization`}
-                                aria-valuenow={pct}
-                                aria-valuemin={0}
-                                aria-valuemax={100}
-                                className="h-2 overflow-hidden rounded-full bg-slate-100"
-                            >
-                                <div
-                                    className={`h-full rounded-full ${utilizationColor(pct)}`}
-                                    style={{ width: `${pct}%` }}
-                                />
-                            </div>
-                        </li>
-                    );
-                })}
                 {data.length === 0 && (
-                    <li className="text-xs text-slate-500">
-                        No theatre data available.
-                    </li>
+                    <p className="w-full text-center text-xs text-slate-500">
+                        No trend data available.
+                    </p>
                 )}
-            </ul>
+            </div>
         </section>
     );
 }
 
-// ─── Today's theatre list (queue) ─────────────────────────────
+// ─── Today's theatre queue ────────────────────────────────────
 
-function TheatreList({ rows }: { rows: SurgicalCase[] }) {
+function TheatreList({ rows }: { rows: TheaterCase[] }) {
     return (
         <section className="rounded-xl bg-white p-4 shadow-sm">
             <div className="mb-3 flex items-center justify-between">
                 <div>
                     <h2 className="text-sm font-semibold text-slate-800">
-                        Today’s theatre list
+                        Today’s theatre queue
                     </h2>
                     <p className="text-xs text-slate-500">
-                        Scheduled and ongoing procedures
+                        Patients waiting and recently cleared
                     </p>
                 </div>
                 <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
-                    {rows.length} cases
+                    {rows.length} patients
                 </span>
             </div>
 
@@ -506,11 +428,11 @@ function TheatreList({ rows }: { rows: SurgicalCase[] }) {
                 <table className="w-full text-left text-xs">
                     <thead className="text-slate-500">
                         <tr className="border-b border-slate-200">
-                            <th className="py-2 pr-3 font-medium">Time</th>
+                            <th className="py-2 pr-3 font-medium">Arrived</th>
                             <th className="py-2 pr-3 font-medium">Patient</th>
-                            <th className="py-2 pr-3 font-medium">Procedure</th>
-                            <th className="py-2 pr-3 font-medium">Surgeon</th>
-                            <th className="py-2 pr-3 font-medium">Theatre</th>
+                            <th className="py-2 pr-3 font-medium">Visit</th>
+                            <th className="py-2 pr-3 font-medium">Priority</th>
+                            <th className="py-2 pr-3 font-medium">Time</th>
                             <th className="py-2 font-medium">Status</th>
                         </tr>
                     </thead>
@@ -521,7 +443,7 @@ function TheatreList({ rows }: { rows: SurgicalCase[] }) {
                                 className="border-b border-slate-100 last:border-0"
                             >
                                 <td className="py-3 pr-3 text-slate-600 tabular-nums">
-                                    {c.scheduledTime}
+                                    {c.arrivedAt}
                                 </td>
                                 <td className="py-3 pr-3">
                                     <p className="font-medium text-slate-800">
@@ -531,20 +453,24 @@ function TheatreList({ rows }: { rows: SurgicalCase[] }) {
                                         {c.patientCode}
                                     </p>
                                 </td>
-                                <td className="py-3 pr-3 text-slate-600">
-                                    {c.procedure}
+                                <td className="py-3 pr-3 text-slate-600 capitalize">
+                                    {c.visitType}
                                 </td>
-                                <td className="py-3 pr-3 text-slate-600">
-                                    {c.surgeon}
+                                <td className="py-3 pr-3">
+                                    <span
+                                        className={`rounded-full px-2 py-1 text-[10px] font-medium whitespace-nowrap capitalize ${PRIORITY_STYLES[c.priority] ?? PRIORITY_STYLES.routine}`}
+                                    >
+                                        {c.priority}
+                                    </span>
                                 </td>
-                                <td className="py-3 pr-3 whitespace-nowrap text-slate-600">
-                                    {c.theatre}
+                                <td className="py-3 pr-3 whitespace-nowrap text-slate-600 tabular-nums">
+                                    {formatDuration(c.minutes)}
                                 </td>
                                 <td className="py-3">
                                     <span
-                                        className={`rounded-full px-2 py-1 text-[10px] font-medium whitespace-nowrap capitalize ${CASE_STATUS_STYLES[c.status]}`}
+                                        className={`rounded-full px-2 py-1 text-[10px] font-medium whitespace-nowrap capitalize ${CASE_STATUS_STYLES[c.status] ?? CASE_STATUS_STYLES.waiting}`}
                                     >
-                                        {c.status.replace('-', ' ')}
+                                        {c.status}
                                     </span>
                                 </td>
                             </tr>
@@ -555,7 +481,7 @@ function TheatreList({ rows }: { rows: SurgicalCase[] }) {
                                     colSpan={6}
                                     className="py-8 text-center text-slate-500"
                                 >
-                                    No procedures scheduled today.
+                                    No patients in the theatre queue today.
                                 </td>
                             </tr>
                         )}
@@ -572,10 +498,12 @@ function SummaryCard({
     title,
     subtitle,
     data,
+    emptyText,
 }: {
     title: string;
     subtitle: string;
     data: SummaryDatum[];
+    emptyText: string;
 }) {
     const total = data.reduce((sum, item) => sum + item.value, 0);
 
@@ -650,6 +578,9 @@ function SummaryCard({
                             </div>
                         );
                     })}
+                    {data.length === 0 && (
+                        <p className="text-xs text-slate-500">{emptyText}</p>
+                    )}
                 </div>
             </div>
         </section>
@@ -679,7 +610,7 @@ function NotificationsPanel({ alerts }: { alerts: TheaterAlert[] }) {
                         Notifications
                     </h2>
                     <p className="text-xs text-slate-500">
-                        Theatre alerts and pre-op checks
+                        Queue alerts and recent activity
                     </p>
                 </div>
                 <span className="text-lg font-semibold text-slate-900">
@@ -724,7 +655,8 @@ function NotificationsPanel({ alerts }: { alerts: TheaterAlert[] }) {
 
             <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto px-2 pb-3">
                 {visible.map((alert) => {
-                    const style = ALERT_STYLES[alert.category];
+                    const style =
+                        ALERT_STYLES[alert.category] ?? ALERT_STYLES.info;
                     const Icon = style.icon;
                     return (
                         <li
@@ -743,7 +675,7 @@ function NotificationsPanel({ alerts }: { alerts: TheaterAlert[] }) {
                                         {alert.title}
                                     </p>
                                     <span className="shrink-0 text-[10px] text-slate-500">
-                                        {alert.time}
+                                        {timeAgo(alert.createdAt)}
                                     </span>
                                 </div>
                                 <p className="mt-1 text-[11px] text-slate-500">
@@ -773,7 +705,6 @@ export default function TheaterDashboard({
     procedureTrend: incomingTrend,
     urgencyData: incomingUrgency,
     anaesthesiaData: incomingAnaesthesia,
-    utilization: incomingUtilization,
 }: TheaterDashboardProps = {}) {
     const stats: TheaterStats = { ...DUMMY_STATS, ...(incomingStats ?? {}) };
     const cases = incomingCases ?? DUMMY_CASES;
@@ -782,11 +713,10 @@ export default function TheaterDashboard({
     const trend = incomingTrend ?? DUMMY_TREND;
     const urgencyData = incomingUrgency ?? DUMMY_URGENCY;
     const anaesthesiaData = incomingAnaesthesia ?? DUMMY_ANAESTHESIA;
-    const utilization = incomingUtilization ?? DUMMY_UTILIZATION;
 
     const statCards = [
         {
-            label: 'Scheduled today',
+            label: 'Booked today',
             value: stats.scheduledToday,
             icon: <CalendarCheck className="h-4 w-4" />,
             tone: 'bg-blue-100',
@@ -798,7 +728,7 @@ export default function TheaterDashboard({
             tone: 'bg-green-100',
         },
         {
-            label: 'In theatre now',
+            label: 'In theatre queue',
             value: stats.inTheatre,
             icon: <Scissors className="h-4 w-4" />,
             tone: 'bg-yellow-100',
@@ -814,16 +744,16 @@ export default function TheaterDashboard({
     return (
         <AppLayout
             breadcrumbs={[
-                { href: '/dashboard', title: 'Altaf Memeorial Hospital' },
+                { href: '/dashboard', title: 'Altaf Memorial Hospital' },
                 { href: '/dashboard', title: 'Dashboard' },
                 { href: '', title: 'Theater' },
             ]}
         >
-            <div className="bg-blue-50 p-2">
+            <div className="bg-blue-50">
                 <PageHeader
                     icon={<Scissors className="h-5 w-5" />}
                     title="Theater department"
-                    subtitle="Manage theatre lists, procedures and pre-operative readiness"
+                    subtitle="Monitor the theatre queue, procedures and patient priority"
                 />
             </div>
 
@@ -837,8 +767,7 @@ export default function TheaterDashboard({
                     </div>
 
                     <ProcedureBreakdown data={procedureData} />
-                    <ProcedureTrend data={trend} />
-                    <TheatreUtilization data={utilization} />
+                    <VolumeTrend data={trend} />
                     <TheatreList rows={cases} />
                 </div>
 
@@ -848,13 +777,15 @@ export default function TheaterDashboard({
                         <div className="flex min-w-0 flex-col gap-4">
                             <SummaryCard
                                 title="Case urgency"
-                                subtitle="Elective, urgent and emergency cases"
+                                subtitle="Routine, urgent and emergency patients"
                                 data={urgencyData}
+                                emptyText="No patients this month."
                             />
                             <SummaryCard
                                 title="Anaesthesia type"
-                                subtitle="Anaesthesia used across procedures"
+                                subtitle="Anaesthesia ordered across procedures"
                                 data={anaesthesiaData}
+                                emptyText="No anaesthesia orders this month."
                             />
                         </div>
 

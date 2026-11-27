@@ -14,7 +14,7 @@ Route::prefix('maternal-child-health')->group(function () {
 
     // clinical queues
     Route::get('/appointments/{departmentId}', [MaternalChildHealthController::class, 'appointments']);
-    Route::get('queue', [MaternalChildHealthController::class, 'queue']);
+    Route::get('queue/{departmentId}', [MaternalChildHealthController::class, 'queue']);
     Route::get('maternal-care', [MaternalChildHealthController::class, 'maternalCare']);
     Route::get('child-health', [MaternalChildHealthController::class, 'childHealth']);
     Route::get('processed', [MaternalChildHealthController::class, 'processed']);
