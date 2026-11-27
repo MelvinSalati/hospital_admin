@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
-class MaternalchildhealthDashboardController extends Controller
+class MaternalChildHealthDashboardController extends Controller
 {
     // Table names (adjust here if yours differ)
     private const T_PATIENTS     = 'patients';
