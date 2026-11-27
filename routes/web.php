@@ -38,7 +38,7 @@ use App\Http\Controllers\Patients\MartenalChildHealthController;
 use App\Http\Controllers\Patients\PaymentsController;
 
 use App\Models\Patients\ImagingOrder;
-
+use Illuminate\Support\Facades\Log;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
@@ -81,134 +81,69 @@ Route::inertia('/', 'welcome', [
 |
 */
 
-Route::middleware(['auth', 'verified'])->group(function () {
 
-    /*
-    |--------------------------------------------------------------------------
-    | Dynamic Department Dashboard Redirect
-    |--------------------------------------------------------------------------
-    */
+
+Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::get('/dashboard', function () {
 
         $user = auth()->user();
 
-        $department = DB::table('user_profiles')
-            ->join(
-                'departments',
-                'departments.id',
-                '=',
-                'user_profiles.department_id'
-            )
-            ->where('user_profiles.user_id', $user->id)
-            ->select([
-                'departments.id',
-                'departments.name',
-            ])
-            ->first();
+        try {
+            $profile = DB::table('user_profiles')
+                ->where('user_id', $user->id)
+                ->first();
 
-        if (!$department) {
-            abort(
-                403,
-                'Your account has no department assigned. Please contact the system administrator.'
+            if (!$profile) {
+                Log::warning('Dashboard redirect: User profile not found', [
+                    'user_id' => $user->id,
+                ]);
+
+                return redirect('/patients');
+            }
+
+            if (!$profile->department_id) {
+                Log::warning('Dashboard redirect: Department not assigned', [
+                    'user_id' => $user->id,
+                    'profile_id' => $profile->id ?? null,
+                ]);
+
+                return redirect('/patients');
+            }
+
+            $department = DB::table('departments')
+                ->where('id', $profile->department_id)
+                ->first();
+
+            if (!$department) {
+                Log::error('Dashboard redirect: Department does not exist', [
+                    'user_id' => $user->id,
+                    'department_id' => $profile->department_id,
+                ]);
+
+                return redirect('/patients');
+            }
+
+            $departmentSlug = Str::slug($department->name);
+
+            return redirect()->to(
+                "/{$departmentSlug}/dashboard/{$department->id}"
             );
+        } catch (\Throwable $e) {
+
+            Log::error('Dashboard redirect failed', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
+
+            return redirect('/patients')
+                ->with('error', 'Unable to determine your department dashboard.');
         }
-
-        $departmentSlug = Str::slug($department->name);
-
-        return redirect()->to(
-            '/' . $departmentSlug . '/dashboard/' . $department->id
-        );
     })->name('dashboard');
 
-
-    /*
-    |--------------------------------------------------------------------------
-    | General Patient Navigation
-    |--------------------------------------------------------------------------
-    */
-
-    Route::get('/patients', function () {
-        return Inertia::render('patients/registry');
-    })->name('patient');
-
-
-    /*
-    |--------------------------------------------------------------------------
-    | Reception Navigation
-    |--------------------------------------------------------------------------
-    */
-
-    Route::get('/reception', function () {
-        return Inertia::render('receptions/reception');
-    })->name('reception');
-
-    Route::get('/reception/queues', [
-        ReceptionController::class,
-        'queues',
-    ])->name('reception.queues');
-
-    Route::get('/patients/register', [
-        PatientController::class,
-        'create',
-    ])->name('patients.create');
-
-
-    /*
-    |--------------------------------------------------------------------------
-    | Pharmacy Navigation
-    |--------------------------------------------------------------------------
-    */
-
-    Route::get('/pharmacy', [
-        PharmacyController::class,
-        'index',
-    ])->name('pharmacy');
-
-
-    /*
-    |--------------------------------------------------------------------------
-    | Maternal and Child Health Navigation
-    |--------------------------------------------------------------------------
-    */
-
-    Route::get('/mch', [
-        MartenalChildHealthController::class,
-        'index',
-    ])->name('mch');
-
-
-    /*
-    |--------------------------------------------------------------------------
-    | Theatre Navigation
-    |--------------------------------------------------------------------------
-    */
-
-    Route::get('/theater', [
-        TheaterController::class,
-        'index',
-    ])->name('theater');
-
-
-    /*
-    |--------------------------------------------------------------------------
-    | Dental Navigation
-    |--------------------------------------------------------------------------
-    */
-
-    Route::resource('/dental', DentalController::class);
-
-
-    /*
-    |--------------------------------------------------------------------------
-    | Ophthalmology Navigation
-    |--------------------------------------------------------------------------
-    */
-
-    Route::get('/opthamology', [
-        OpthamologyController::class,
-        'index',
-    ])->name('opthamology');
+    // Keep your other routes here...
 });
 
 
